@@ -1,0 +1,14 @@
+# crawl output
+data/
+*.db
+*.db-wal
+*.db-shm
+
+# python
+__pycache__/
+*.pyc
+.venv/
+
+# local artifacts
+.env
+*.log

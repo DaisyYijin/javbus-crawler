@@ -1,0 +1,19 @@
+services:
+  crawler:
+    build: .
+    image: seedmm-crawler
+    container_name: seedmm-crawler
+    volumes:
+      - ./data:/data
+    environment:
+      SEEDMM_BASE: https://www.seedmm.bond
+      DB_PATH: /data/seedmm.db
+      DELAY_SECONDS: "2.0"
+      JITTER_SECONDS: "1.0"
+      MAX_RETRIES: "3"
+      TIMEOUT: "30"
+    # One-shot job: docker compose run needs explicit args.
+    #   docker compose run --rm crawler --pages 1-10
+    # Or run the default (page 1):
+    #   docker compose up
+    restart: "no"
