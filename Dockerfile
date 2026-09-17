@@ -1,4 +1,7 @@
-FROM python:3.12-slim
+# Override with a registry mirror when docker.io is unreachable, e.g.
+#   docker build --build-arg PYTHON_IMAGE=docker.m.daocloud.io/library/python:3.12-slim .
+ARG PYTHON_IMAGE=python:3.12-slim
+FROM ${PYTHON_IMAGE}
 
 WORKDIR /app
 
