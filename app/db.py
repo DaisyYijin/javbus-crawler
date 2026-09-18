@@ -68,6 +68,8 @@ def connect(db_path: str) -> sqlite3.Connection:
         conn.execute("ALTER TABLE movies ADD COLUMN matched_tags TEXT NOT NULL DEFAULT '[]'")
     if "matched_count" not in cols:
         conn.execute("ALTER TABLE movies ADD COLUMN matched_count INTEGER NOT NULL DEFAULT 0")
+    if "category" not in cols:
+        conn.execute("ALTER TABLE movies ADD COLUMN category TEXT NOT NULL DEFAULT ''")
     conn.commit()
     return conn
 
@@ -79,8 +81,8 @@ def upsert_movie(conn: sqlite3.Connection, movie: Movie) -> None:
         INSERT INTO movies (code, url, title, cover, release_date, duration,
                             director, studio, label, series, actors, genres,
                             samples, magnet_count, matched_tags, matched_count,
-                            first_seen, last_seen)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                            category, first_seen, last_seen)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(code) DO UPDATE SET
             url=excluded.url, title=excluded.title, cover=excluded.cover,
             release_date=excluded.release_date, duration=excluded.duration,
@@ -90,6 +92,7 @@ def upsert_movie(conn: sqlite3.Connection, movie: Movie) -> None:
             samples=excluded.samples, magnet_count=excluded.magnet_count,
             matched_tags=excluded.matched_tags,
             matched_count=excluded.matched_count,
+            category=excluded.category,
             last_seen=excluded.last_seen
         """,
         (
@@ -102,6 +105,7 @@ def upsert_movie(conn: sqlite3.Connection, movie: Movie) -> None:
             len(movie.magnets),
             json.dumps(movie.matched_tags, ensure_ascii=False),
             len(movie.matched_tags),
+            movie.category,
             now, now,
         ),
     )
@@ -135,14 +139,18 @@ _MOVIE_COLUMNS = "code, title, cover, release_date, duration, studio, label, ser
 
 
 def list_movies(conn: sqlite3.Connection, q: str = "", page: int = 1, size: int = 20,
-                sort: str = "new"):
+                sort: str = "new", category: str = ""):
     """Paged movie list; sort: new (default) | match | magnets."""
     size = max(1, min(size, 100))
-    where, params = "", []
+    clauses, params = [], []
     if q:
-        where = "WHERE code LIKE ? OR title LIKE ? OR actors LIKE ?"
         like = f"%{q}%"
-        params = [like, like, like]
+        clauses.append("(code LIKE ? OR title LIKE ? OR actors LIKE ?)")
+        params += [like, like, like]
+    if category in ("censored", "uncensored"):
+        clauses.append("category = ?")
+        params.append(category)
+    where = ("WHERE " + " AND ".join(clauses)) if clauses else ""
     total = conn.execute(f"SELECT COUNT(*) FROM movies {where}", params).fetchone()[0]
     offset = (max(1, page) - 1) * size
     order = {
@@ -202,3 +210,38 @@ def get_movie(conn: sqlite3.Connection, code: str) -> dict | None:
         )
     ]
     return movie
+
+
+def library_stats(conn: sqlite3.Connection, category: str = "") -> dict:
+    """Counts per category + top genre tags for the given channel ('' = all)."""
+    where, params = "", []
+    if category in ("censored", "uncensored"):
+        where = "WHERE category = ?"
+        params = [category]
+
+    by_cat = {"censored": 0, "uncensored": 0}
+    for cat, n in conn.execute(
+            "SELECT category, COUNT(*) FROM movies GROUP BY category"):
+        by_cat[cat if cat in by_cat else "unknown"] = n
+
+    total = conn.execute(f"SELECT COUNT(*) FROM movies {where}", params).fetchone()[0]
+    magnets = conn.execute(
+        f"SELECT COALESCE(SUM(magnet_count),0) FROM movies {where}", params
+    ).fetchone()[0]
+
+    genre_rows = conn.execute(
+        f"SELECT genres FROM movies {where}", params).fetchall()
+    from collections import Counter
+    counter: Counter = Counter()
+    for (g,) in genre_rows:
+        try:
+            counter.update(json.loads(g or "[]"))
+        except (TypeError, ValueError):
+            pass
+    top_genres = [{"tag": t, "count": n} for t, n in counter.most_common(15)]
+    return {
+        "total": total,
+        "magnets": magnets,
+        "by_category": by_cat,
+        "top_genres": top_genres,
+    }

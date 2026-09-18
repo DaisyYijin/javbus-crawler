@@ -9,43 +9,39 @@
     --sb-w: 220px;
     --bg: #f6f7f9; --card: #fff; --line: #e4e7ec;
     --txt: #20242c; --mut: #6b7280;
-    --pri: #4f6ef7; --pri-2: #4f6ef7; --pri-grad: #4f6ef7;
-    --pri-soft: #edf1fe;
-    --ok: #16a34a; --warn: #d97706; --err: #dc2626;
+    --pri: #4f6ef7; --pri-soft: #edf1fe;
+    --ok: #16a34a; --err: #dc2626;
     --sb-bg: #ffffff; --sb-txt: #4b5261;
-    --radius: 8px; --shadow: none;
+    --radius: 8px;
   }
   * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
   html, body { margin: 0; height: 100%; }
   body { font-family: -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif; background: var(--bg); color: var(--txt); }
 
-  /* ---------- layout ---------- */
   .layout { display: flex; min-height: 100vh; }
   main { flex: 1; min-width: 0; padding: 20px 22px 40px; margin-left: var(--sb-w); }
 
-  /* ---------- sidebar (light) ---------- */
   aside {
     position: fixed; inset: 0 auto 0 0; width: var(--sb-w); z-index: 50;
-    background: var(--sb-bg); color: var(--sb-txt);
-    border-right: 1px solid var(--line);
+    background: var(--sb-bg); color: var(--sb-txt); border-right: 1px solid var(--line);
     display: flex; flex-direction: column; padding: 16px 12px;
     transition: transform .25s ease;
   }
   .brand { display: flex; align-items: center; gap: 10px; padding: 4px 10px 16px; color: var(--txt); }
-  .brand .logo {
-    width: 32px; height: 32px; border-radius: 8px; background: var(--pri);
-    display: flex; align-items: center; justify-content: center; font-size: 16px; flex: none;
+  .brand .logo, .topbar .logo {
+    width: 32px; height: 32px; border-radius: 8px; background: var(--pri); color: #fff;
+    display: flex; align-items: center; justify-content: center; font-size: 15px; font-weight: 700; flex: none;
   }
-  .brand b { font-size: 15px; letter-spacing: .2px; }
+  .brand b { font-size: 15px; }
   .brand small { display: block; font-weight: 400; color: var(--mut); font-size: 11px; }
   nav { display: flex; flex-direction: column; gap: 2px; }
   .nav-item {
     display: flex; align-items: center; gap: 11px; padding: 10px 12px; border-radius: 8px;
-    color: var(--sb-txt); text-decoration: none; font-size: 14px; cursor: pointer; border: none;
+    color: var(--sb-txt); font-size: 14px; cursor: pointer; border: none;
     background: none; width: 100%; text-align: left; font-family: inherit;
   }
-  .nav-item .ico { width: 20px; display: flex; align-items: center; justify-content: center; }
-  .nav-item .ico svg { width: 16px; height: 16px; display: block; }
+  .nav-item .ico { width: 20px; display: flex; }
+  .nav-item .ico svg { width: 16px; height: 16px; }
   .nav-item:hover { background: #f2f4f8; color: var(--txt); }
   .nav-item.active { background: var(--pri-soft); color: var(--pri); font-weight: 600; }
   .side-foot { margin-top: auto; padding: 12px; font-size: 12px; color: var(--mut); line-height: 1.7; }
@@ -53,112 +49,95 @@
   .side-foot .dot.run { background: var(--pri); animation: pulse 1.2s infinite; }
   @keyframes pulse { 50% { opacity: .35; } }
 
-  /* mobile top bar (light) */
   .topbar { display: none; position: sticky; top: 0; z-index: 40; background: #fff; color: var(--txt); border-bottom: 1px solid var(--line); padding: 12px 16px; align-items: center; gap: 12px; }
-  .topbar .logo { width: 28px; height: 28px; border-radius: 8px; background: var(--pri); display: flex; align-items: center; justify-content: center; font-size: 14px; }
   .topbar b { font-size: 15px; }
   .burger { margin-left: auto; background: none; border: none; color: var(--txt); font-size: 20px; padding: 4px 8px; cursor: pointer; }
   .backdrop { display: none; position: fixed; inset: 0; background: rgba(30,35,50,.35); z-index: 45; }
 
-  /* ---------- common ---------- */
-  .page { display: none; animation: fade .2s ease; max-width: 1100px; margin: 0 auto; }
+  .page { display: none; max-width: 1100px; margin: 0 auto; }
   .page.active { display: block; }
-  @keyframes fade { from { opacity: 0; transform: translateY(6px); } }
-  .page-head { display: flex; align-items: baseline; gap: 10px; margin: 4px 0 16px; }
+  .page-head { display: flex; align-items: baseline; gap: 10px; margin: 4px 0 16px; flex-wrap: wrap; }
   .page-head h1 { font-size: 19px; margin: 0; }
   .page-head span { color: var(--mut); font-size: 13px; }
-  .card { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow); padding: 18px; margin-bottom: 16px; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 18px; margin-bottom: 16px; }
   .card h2 { font-size: 13px; margin: 0 0 14px; color: var(--mut); text-transform: uppercase; letter-spacing: .6px; font-weight: 600; }
-  label { display: block; font-size: 13px; margin: 10px 0 4px; color: var(--txt); font-weight: 500; }
+  label { display: block; font-size: 13px; margin: 10px 0 4px; font-weight: 500; }
   label small { color: var(--mut); font-weight: 400; }
-  input[type=text], input[type=number], input[type=password] {
+  input[type=text], input[type=number], input[type=password], select {
     width: 100%; padding: 9px 11px; border: 1px solid var(--line); border-radius: 9px;
-    font-size: 14px; background: #fafbfd; transition: border .15s;
+    font-size: 14px; background: #fafbfd; font-family: inherit;
   }
-  input:focus { outline: none; border-color: var(--pri); background: #fff; box-shadow: 0 0 0 3px rgba(79,110,247,.12); }
+  input:focus, select:focus { outline: none; border-color: var(--pri); background: #fff; }
   .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 12px; }
-  button { padding: 9px 16px; border: none; border-radius: 9px; font-size: 14px; cursor: pointer; font-family: inherit; transition: filter .15s, transform .05s; }
-  button:active { transform: scale(.97); }
+  button { padding: 9px 16px; border: none; border-radius: 9px; font-size: 14px; cursor: pointer; font-family: inherit; }
   button:disabled { opacity: .45; cursor: not-allowed; }
-  .primary { background: var(--pri-grad); color: #fff; }
+  .primary { background: var(--pri); color: #fff; }
   .ok { background: var(--ok); color: #fff; }
-  .danger { background: var(--err); color: #fff; }
+  .danger { background: #fff; color: var(--err); border: 1px solid var(--err); }
   .ghost { background: #eef0f6; color: var(--txt); }
-  button:not(:disabled):hover { filter: brightness(1.08); }
   .row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
   .msg { font-size: 13px; } .msg.ok { color: var(--ok); } .msg.err { color: var(--err); }
-
-  /* ---------- dashboard ---------- */
-  .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-bottom: 16px; }
-  .stat { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow); padding: 14px 16px; }
-  .stat .num { font-size: 26px; font-weight: 700; letter-spacing: -.5px; }
-  .stat .lbl { font-size: 12px; color: var(--mut); margin-top: 2px; }
-  .stat.accent { background: var(--pri-soft); border: 1px solid #dbe4fd; color: var(--pri); }
-  .stat.accent .lbl { color: var(--pri); opacity: .75; }
-  .pill { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; padding: 3px 11px; border-radius: 999px; background: #eef0f6; color: var(--mut); font-weight: 500; }
-  .pill.run { background: #e3e9ff; color: var(--pri); }
+  .pill { display: inline-flex; align-items: center; font-size: 12px; padding: 3px 11px; border-radius: 999px; background: #eef0f6; color: var(--mut); font-weight: 500; }
+  .pill.run { background: var(--pri-soft); color: var(--pri); }
   .pill.err { background: #fdeaea; color: var(--err); }
-  pre#log {
-    background: #f6f7f9; color: #3a4150; font-size: 12px; line-height: 1.6; padding: 14px;
-    border: 1px solid var(--line); border-radius: 10px; height: 260px; overflow: auto; white-space: pre-wrap; word-break: break-all;
-    font-family: "Cascadia Code", Consolas, monospace; margin: 0;
-  }
+  .kv { font-size: 13px; color: var(--mut); }
+  .kv b { color: var(--pri); }
 
-  /* ---------- data table ---------- */
-  .table-wrap { overflow-x: auto; border-radius: 10px; border: 1px solid var(--line); }
-  table { width: 100%; border-collapse: collapse; font-size: 13.5px; min-width: 640px; }
+  .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; margin-bottom: 16px; }
+  .stat { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 13px 15px; }
+  .stat .num { font-size: 24px; font-weight: 700; }
+  .stat .lbl { font-size: 12px; color: var(--mut); margin-top: 2px; }
+  .depth-line { font-size: 13px; color: var(--mut); margin: 0 0 16px; }
+  .depth-line b { color: var(--pri); }
+  .kv-line { font-size: 13px; color: var(--mut); margin: 0 0 16px; }
+  .kv-line b { color: var(--txt); }
+
+  .gbar-row { display: flex; align-items: center; gap: 8px; margin: 5px 0; font-size: 13px; cursor: pointer; }
+  .gbar-row:hover .gname { color: var(--pri); }
+  .gname { width: 110px; flex: none; text-align: right; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .gbar { height: 12px; background: var(--pri-soft); border-radius: 4px; overflow: hidden; flex: 1; }
+  .gbar i { display: block; height: 100%; background: var(--pri); }
+  .gcount { width: 44px; color: var(--mut); }
+
+  pre#log { background: #f6f7f9; color: #3a4150; font-size: 12.5px; line-height: 1.6; padding: 14px;
+    border: 1px solid var(--line); border-radius: 10px; height: 60vh; overflow: auto;
+    white-space: pre-wrap; word-break: break-all; font-family: "Cascadia Code", Consolas, monospace; margin: 0; }
+
+  .table-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 10px; }
+  table { width: 100%; border-collapse: collapse; font-size: 13.5px; min-width: 720px; }
   th, td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--line); }
-  th { color: var(--mut); font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: .4px; background: #fafbfd; }
+  th { color: var(--mut); font-weight: 600; font-size: 12px; background: #fafbfd; }
   tbody tr:last-child td { border-bottom: none; }
-  tr.movie { cursor: pointer; transition: background .1s; }
-  tr.movie:hover { background: #f5f7ff; }
+  tr.movie { cursor: pointer; } tr.movie:hover { background: #f5f7ff; }
   tr.detail td { background: #fafbfd; }
   .mag { font-size: 12.5px; word-break: break-all; line-height: 1.9; }
   .mag a { color: var(--pri); text-decoration: none; } .mag a:hover { text-decoration: underline; }
   .tag { display: inline-block; background: #eef0f6; border-radius: 6px; padding: 1px 7px; margin: 1px 2px 1px 0; font-size: 12px; color: var(--mut); }
+  .tag.hit { background: var(--pri-soft); color: var(--pri); cursor: pointer; }
   .code { font-weight: 700; color: var(--pri); }
+  .cat { font-size: 11px; padding: 1px 6px; border-radius: 5px; }
+  .cat.censored { background: var(--pri-soft); color: var(--pri); }
+  .cat.uncensored { background: #fee9e7; color: #d44c3f; }
+  .cat.unknown { background: #eef0f6; color: var(--mut); }
   .pager { display: flex; gap: 8px; align-items: center; justify-content: flex-end; margin-top: 12px; font-size: 13px; color: var(--mut); }
 
-  /* ---------- update banner ---------- */
-  .banner { display: none; padding: 13px 16px; border-radius: var(--radius); margin-bottom: 16px; font-size: 14px; background: linear-gradient(135deg,#fff7e0,#ffefd0); border: 1px solid #f0d48a; }
-  .banner code { background: #ffffffb3; padding: 1px 6px; border-radius: 5px; }
-  #upd-notes { display: none; margin-top: 10px; white-space: pre-wrap; font-size: 13px; background: #ffffffaa; padding: 10px 12px; border-radius: 8px; }
+  .banner { display: none; padding: 13px 16px; border-radius: var(--radius); margin-bottom: 16px; font-size: 14px; background: #fff8e6; border: 1px solid #f0d48a; }
+  #upd-notes { display: none; margin-top: 10px; white-space: pre-wrap; font-size: 13px; }
 
-  /* ---------- mobile ---------- */
   @media (max-width: 860px) {
     main { margin-left: 0; padding: 14px 14px 80px; }
     .topbar { display: flex; }
     aside { transform: translateX(-100%); width: 260px; }
-    aside.open { transform: none; box-shadow: 0 0 40px rgba(0,0,0,.4); }
+    aside.open { transform: none; box-shadow: 0 0 40px rgba(0,0,0,.25); }
     .backdrop.show { display: block; }
-    .page-head h1 { font-size: 17px; }
-    .stat .num { font-size: 21px; }
-    pre#log { height: 210px; font-size: 11px; }
     .grid { grid-template-columns: 1fr 1fr; }
+    pre#log { height: 55vh; font-size: 11.5px; }
   }
   @media (max-width: 480px) { .grid { grid-template-columns: 1fr; } }
 </style>
 </head>
 <body>
 
-<!-- login overlay -->
-<div id="login-overlay" style="display:none;position:fixed;inset:0;z-index:99;background:rgba(240,243,250,.72);backdrop-filter:blur(3px);align-items:center;justify-content:center;padding:20px">
-  <div style="width:100%;max-width:340px;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:28px 26px;box-shadow:0 12px 40px rgba(30,40,70,.12)">
-    <div style="display:flex;align-items:center;gap:11px;margin-bottom:14px">
-      <div style="width:38px;height:38px;border-radius:11px;background:var(--pri);display:flex;align-items:center;justify-content:center;font-size:19px;font-weight:700;color:#fff;flex:none">J</div>
-      <div><b style="font-size:16px">JavBus Crawler</b><div style="font-size:12px;color:var(--mut);margin-top:1px">请使用管理员账号登录</div></div>
-    </div>
-    <label>用户名</label>
-    <input id="login-user" type="text" autocomplete="username" placeholder="admin" style="margin-bottom:2px">
-    <label>密码</label>
-    <input id="login-pass" type="password" autocomplete="current-password" placeholder="••••••••"
-           onkeydown="if(event.key==='Enter')doLogin()">
-    <button class="primary" onclick="doLogin()" style="width:100%;margin-top:16px;padding:10px 16px">登 录</button>
-    <div id="login-msg" class="msg err" style="margin-top:10px;text-align:center;min-height:18px"></div>
-  </div>
-</div>
-
-<!-- mobile top bar -->
 <div class="topbar">
   <div class="logo">J</div><b>JavBus Crawler</b>
   <button class="burger" onclick="toggleMenu()" aria-label="菜单">≡</button>
@@ -172,10 +151,11 @@
       <div><b>JavBus Crawler</b><small id="side-ver">v{{ version }}</small></div>
     </div>
     <nav>
-      <button class="nav-item active" data-page="dashboard"><span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg></span>仪表盘</button>
-      <button class="nav-item" data-page="data"><span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><circle cx="3.5" cy="6" r="0.5" fill="currentColor"/><circle cx="3.5" cy="12" r="0.5" fill="currentColor"/><circle cx="3.5" cy="18" r="0.5" fill="currentColor"/></svg></span>采集数据</button>
-      <button class="nav-item" data-page="settings"><span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/></svg></span>采集设置</button>
-      <button class="nav-item" data-page="about"><span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg></span>关于 / 更新</button>
+      <button class="nav-item active" data-page="dashboard"><span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg></span>仪表盘</button>
+      <button class="nav-item" data-page="data"><span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><circle cx="3.5" cy="6" r="0.5" fill="currentColor"/><circle cx="3.5" cy="12" r="0.5" fill="currentColor"/><circle cx="3.5" cy="18" r="0.5" fill="currentColor"/></svg></span>采集数据</button>
+      <button class="nav-item" data-page="logs"><span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="14" y2="17"/></svg></span>运行日志</button>
+      <button class="nav-item" data-page="settings"><span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/></svg></span>采集设置</button>
+      <button class="nav-item" data-page="about"><span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg></span>关于 / 更新</button>
     </nav>
     <div class="side-foot">
       <div><span class="dot" id="side-dot"></span><span id="side-state">空闲</span></div>
@@ -197,56 +177,82 @@
       <div class="page-head"><h1>仪表盘</h1><span id="upd-pill" class="pill" style="display:none"></span></div>
 
       <div class="stats">
-        <div class="stat accent"><div class="num" id="s-total">–</div><div class="lbl">已采集影片</div></div>
+        <div class="stat"><div class="num" id="s-total">–</div><div class="lbl">影片总数</div></div>
+        <div class="stat"><div class="num" id="s-censored">–</div><div class="lbl">有码</div></div>
+        <div class="stat"><div class="num" id="s-uncensored">–</div><div class="lbl">无码</div></div>
         <div class="stat"><div class="num" id="s-magnets">–</div><div class="lbl">磁力链接</div></div>
-        <div class="stat"><div class="num" id="s-new">–</div><div class="lbl">上次新增</div></div>
-        <div class="stat"><div class="num" id="s-errors">–</div><div class="lbl">上次错误</div></div>
+        <div class="stat"><div class="num" id="s-lastnew">–</div><div class="lbl">上次新增</div></div>
+      </div>
+
+      <div class="card">
+        <h2>分类标签统计 <span id="genre-cat" style="font-weight:400;text-transform:none;letter-spacing:0">（全部频道）</span> · 点击标签可筛选</h2>
+        <div id="genre-bars"></div>
       </div>
 
       <div class="card">
         <h2>采集控制</h2>
         <div class="row">
           <div><label>采集模式</label>
-            <select id="mode" onchange="updateModeHint()" style="padding:9px 11px;border:1px solid var(--line);border-radius:9px;font-size:14px;background:#fafbfd">
-              <option value="new">追新：从第 1 页检查新片</option>
-              <option value="backfill">补历史：从上次深度继续往后</option>
+            <select id="mode" onchange="updateModeHint()">
+              <option value="new">追新：检查新片</option>
+              <option value="backfill">补历史：继续往后</option>
             </select></div>
-          <div><label id="pages-label">页码范围</label><input id="pages" type="text" value="1" style="width:130px" placeholder="如 1 或 2-10"></div>
+          <div><label id="pages-label">页码范围</label><input id="pages" type="text" value="1" style="width:120px" placeholder="如 1 或 2-10"></div>
           <label style="margin:22px 10px 0 0"><input type="checkbox" id="opt-magnets" checked> 抓取磁力</label>
           <label style="margin:22px 10px 0 0"><input type="checkbox" id="opt-refresh"> 刷新已有</label>
-          <div style="flex:1"></div>
-          <button class="ok" id="btn-start" onclick="startCrawl()" style="margin-top:14px">开始采集</button>
-          <button class="danger" id="btn-stop" onclick="stopCrawl()" disabled style="margin-top:14px">停止</button>
         </div>
-        <div style="font-size:12px;color:var(--mut);margin-top:6px" id="mode-hint"></div>
-        <div class="row" style="margin-top:10px">
+        <div style="font-size:12px;color:var(--mut);margin-top:8px" id="mode-hint"></div>
+        <div class="row" style="margin-top:12px">
+          <button class="ok" id="btn-start" onclick="startCrawl()">开始采集</button>
+          <button class="danger" id="btn-stop" onclick="stopCrawl()" disabled>停止</button>
           <span id="crawl-state" class="pill">空闲</span>
-          <span id="crawl-stats" class="msg"></span>
         </div>
-        <pre id="log" style="margin-top:12px"></pre>
+      </div>
+
+      <div class="card">
+        <div class="kv depth-line" style="margin:0"><b>历史深度</b>：有码第 <span id="d-censored">0</span> 页 ｜ 无码第 <span id="d-uncensored">0</span> 页</div>
+        <div class="kv" style="margin-top:4px"><b>上次任务</b>：<span id="last-run">–</span></div>
+      </div>
+    </section>
+
+    <!-- ============ logs ============ -->
+    <section class="page" id="page-logs">
+      <div class="page-head"><h1>运行日志</h1><span>自动刷新中</span></div>
+      <div class="card">
+        <div class="row" style="margin-bottom:12px">
+          <label style="margin:0"><input type="checkbox" id="log-auto" checked> 自动刷新</label>
+          <button class="ghost" onclick="clearLogView()">清屏</button>
+          <span id="log-lines" class="kv"></span>
+        </div>
+        <pre id="log"></pre>
       </div>
     </section>
 
     <!-- ============ data ============ -->
     <section class="page" id="page-data">
-      <div class="page-head"><h1>采集数据</h1><span id="data-total" style="color:var(--mut);font-size:13px"></span></div>
+      <div class="page-head"><h1>采集数据</h1><span id="data-total"></span></div>
       <div class="card">
         <div class="row" style="margin-bottom:12px">
-          <input id="q" type="text" placeholder="搜索番号 / 标题 / 演员" style="max-width:260px"
+          <input id="q" type="text" placeholder="搜索番号 / 标题 / 演员" style="max-width:240px"
                  onkeydown="if(event.key==='Enter')loadMovies(1)">
-          <select id="sort" onchange="loadMovies(1)" style="padding:8px 10px;border:1px solid var(--line);border-radius:9px;font-size:13px;background:#fafbfd">
+          <select id="f-cat" onchange="loadMovies(1)">
+            <option value="">全部频道</option>
+            <option value="censored">有码</option>
+            <option value="uncensored">无码</option>
+          </select>
+          <select id="sort" onchange="loadMovies(1)">
             <option value="new">最新入库</option>
             <option value="match">匹配优先</option>
             <option value="magnets">磁力最多</option>
           </select>
-          <button class="primary" onclick="loadMovies(1)">搜索</button>
-          <button class="ghost" onclick="location.href='/api/export'">导出全部 JSON</button>
+          <button class="primary" onclick="loadMovies(1)">筛选</button>
           <div style="flex:1"></div>
-          <button class="danger" onclick="clearData()" style="background:#fff;color:var(--err);border:1px solid var(--err)">清空全部数据</button>
+          <button class="ghost" onclick="location.href='/api/export'">导出 JSON</button>
+          <button class="danger" onclick="clearData()">清空数据</button>
         </div>
         <div class="table-wrap">
         <table>
-          <thead><tr><th>封面</th><th>番号</th><th>标题</th><th>匹配</th><th>发行日期</th><th>磁力</th><th>入库时间</th></tr></thead>
+          <thead><tr><th>封面</th><th>番号</th><th>标题</th><th>频道</th><th>匹配</th><th>发行日期</th><th>磁力</th><th>入库时间</th></tr></thead>
           <tbody id="movie-rows"></tbody>
         </table>
         </div>
@@ -265,8 +271,8 @@
         <h2>站点与频道</h2>
         <div class="grid">
           <div><label>站点地址 <small>BASE_URL</small></label><input id="c_BASE_URL" type="text"></div>
-          <div><label>采集频道 <small>CATEGORY</small></label>
-            <select id="c_CATEGORY" style="width:100%;padding:9px 11px;border:1px solid var(--line);border-radius:9px;font-size:14px;background:#fafbfd">
+          <div><label>采集频道 <small>CATEGORY · 自动采集使用</small></label>
+            <select id="c_CATEGORY">
               <option value="censored">有码（默认）</option>
               <option value="uncensored">无码</option>
             </select></div>
@@ -283,24 +289,24 @@
           <div><label>网页端口 <small>WEB_PORT · 重启容器生效</small></label><input id="c_WEB_PORT" type="number" min="1" max="65535"></div>
         </div>
 
-        <h2 style="margin-top:18px">定时自动采集 <small style="font-weight:400">（服务常驻期间生效）</small></h2>
-        <div class="grid">
-          <div><label style="margin-top:14px"><input type="checkbox" id="c_AUTO_CRAWL_ENABLED"> 启用自动采集</label></div>
-          <div><label>间隔（小时） <small>AUTO_CRAWL_INTERVAL_HOURS</small></label><input id="c_AUTO_CRAWL_INTERVAL_HOURS" type="number" step="0.5" min="0.5" max="720"></div>
-          <div><label>每次页码范围 <small>AUTO_CRAWL_PAGES</small></label><input id="c_AUTO_CRAWL_PAGES" type="text" placeholder="如 1-3"></div>
-        </div>
-
-        <h2 style="margin-top:18px">精准筛选 <small style="font-weight:400">（匹配影片标签或磁力名称）</small></h2>
+        <h2 style="margin-top:18px">精准筛选 <small>（匹配影片标签或磁力名称）</small></h2>
         <div class="grid">
           <div style="grid-column:1/-1"><label>筛选关键词（逗号分隔） <small>TAG_FILTERS</small></label>
             <input id="c_TAG_FILTERS" type="text" placeholder="如: 4K,高畫質,中文字幕">
-            <div style="font-size:12px;color:var(--mut);margin-top:4px">常用：4K / 高畫質 / 1080p / 60fps / VR専用 / 中文字幕（磁力名）</div></div>
+            <div style="font-size:12px;color:var(--mut);margin-top:4px">常用：4K / 高畫質 / 1080p / 60fps / VR専用 / 中文字幕（磁力名）。保存后自动重算全库标记。</div></div>
           <div><label>筛选模式 <small>TAG_FILTER_MODE</small></label>
-            <select id="c_TAG_FILTER_MODE" style="width:100%;padding:9px 11px;border:1px solid var(--line);border-radius:9px;font-size:14px;background:#fafbfd">
-              <option value="mark">全部采集，标记匹配（数据页可按匹配优先排序）</option>
-              <option value="only">仅采集匹配的影片（跳过不匹配，最省时间）</option>
+            <select id="c_TAG_FILTER_MODE">
+              <option value="mark">全部采集，标记匹配</option>
+              <option value="only">仅采集匹配的影片</option>
               <option value="all">不筛选</option>
             </select></div>
+        </div>
+
+        <h2 style="margin-top:18px">定时自动采集</h2>
+        <div class="grid">
+          <div><label style="margin-top:14px"><input type="checkbox" id="c_AUTO_CRAWL_ENABLED"> 启用自动采集（追新模式）</label></div>
+          <div><label>间隔（小时） <small>AUTO_CRAWL_INTERVAL_HOURS</small></label><input id="c_AUTO_CRAWL_INTERVAL_HOURS" type="number" step="0.5" min="0.5" max="720"></div>
+          <div><label>每次检查页数 <small>AUTO_CRAWL_PAGES</small></label><input id="c_AUTO_CRAWL_PAGES" type="text" placeholder="如 1-3"></div>
         </div>
 
         <div class="row" style="margin-top:16px">
@@ -337,7 +343,7 @@
 </div>
 
 <script>
-let curPage = 1, pollTimer = null;
+let curPage = 1, curSort = 'new', curCat = '', pollTimer = null;
 const $ = id => document.getElementById(id);
 
 /* ---------- auth ---------- */
@@ -355,7 +361,6 @@ function showLogin(msg) {
 }
 function hideLogin() { $('login-overlay').style.display = 'none'; }
 async function doLogin() {
-  $('login-msg').textContent = '';
   const body = {user: $('login-user').value.trim(), password: $('login-pass').value};
   const r = await _rawFetch('/api/login', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body)});
   const j = await r.json();
@@ -365,14 +370,13 @@ async function doLogin() {
 async function doLogout() {
   await _rawFetch('/api/logout', {method:'POST'});
   showLogin('已退出');
-  $('login-pass').value = '';
 }
 window.addEventListener('load', async () => {
   const r = await _rawFetch('/api/config');
   if (r.status === 401) showLogin();
 });
 
-/* ---------- menu / routing (with page persistence) ---------- */
+/* ---------- menu / routing ---------- */
 function activatePage(page) {
   const btn = document.querySelector(`.nav-item[data-page="${page}"]`);
   if (btn) btn.click();
@@ -403,7 +407,7 @@ function toggleMenu(force) {
 /* ---------- config ---------- */
 let SITE_BASE = '';
 async function loadConfig() {
-  const r = await fetch('/api/config'); const j = await r.json();
+  const j = await (await fetch('/api/config')).json();
   SITE_BASE = (j.config.BASE_URL || '').replace(/\/+$/, '');
   for (const [k, v] of Object.entries(j.config)) {
     const el = $('c_' + k); if (!el) continue;
@@ -419,8 +423,7 @@ async function saveConfig() {
     .forEach(k => { const el = $('c_' + k); if (el) body[k] = el.value; });
   const cb = $('c_AUTO_CRAWL_ENABLED');
   if (cb) body.AUTO_CRAWL_ENABLED = cb.checked;
-  const r = await fetch('/api/config', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body)});
-  const j = await r.json();
+  const j = await (await fetch('/api/config', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body)})).json();
   const m = $('cfg-msg');
   m.textContent = j.ok ? '✓ 已保存' : ('✗ ' + j.error);
   m.className = 'msg ' + (j.ok ? 'ok' : 'err');
@@ -429,84 +432,87 @@ async function saveConfig() {
 /* ---------- crawl ---------- */
 function updateModeHint() {
   const m = $('mode').value;
-  const lbl = $('pages-label'), inp = $('pages');
-  if (m === 'backfill') {
-    lbl.textContent = '本次页数';
-    inp.placeholder = '如 20（自动从上次深度+1 开始）';
-    if (!/^\d+$/.test(inp.value)) inp.value = '20';
-  } else {
-    lbl.textContent = '页码范围';
-    inp.placeholder = '如 1 或 2-10';
-  }
+  $('mode-hint').textContent = m === 'backfill'
+    ? '自动从上次采集深度 +1 页继续往后翻；翻到站点尽头会自动停止。'
+    : '从第 1 页开始检查，已入库的番号自动跳过，只入库新片。';
 }
 async function startCrawl() {
   const body = {mode: $('mode').value, pages: $('pages').value || '1',
                 magnets: $('opt-magnets').checked, refresh: $('opt-refresh').checked};
-  const r = await fetch('/api/crawl/start', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body)});
-  const j = await r.json();
-  if (!j.ok) { $('crawl-stats').textContent = j.error; return; }
+  const j = await (await fetch('/api/crawl/start', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body)})).json();
+  if (!j.ok) { $('last-run').textContent = '启动失败: ' + j.error; return; }
   pollStatus();
 }
 async function stopCrawl() { await fetch('/api/crawl/stop', {method:'POST'}); }
 
+let lastDepths = {};
 async function pollStatus() {
   try {
     const j = await (await fetch('/api/crawl/status')).json();
     const st = $('crawl-state'), dot = $('side-dot'), ss = $('side-state');
     if (j.running) {
-      st.textContent = '● 运行中'; st.className = 'pill run';
+      st.textContent = '运行中'; st.className = 'pill run';
       dot.className = 'dot run'; ss.textContent = '采集运行中';
     } else {
-      st.textContent = j.error ? '● 出错' : '● 空闲';
-      st.className = 'pill' + (j.error ? ' err' : '');
+      st.textContent = j.error ? '出错' : '空闲'; st.className = 'pill' + (j.error ? ' err' : '');
       dot.className = 'dot'; ss.textContent = j.error ? '出错' : '空闲';
     }
     $('btn-start').disabled = j.running; $('btn-stop').disabled = !j.running;
-    const s = j.stats || {};
     const d = j.depths || {};
-    let txt = `历史深度: 有码第 ${d.censored||0} 页 ｜ 无码第 ${d.uncensored||0} 页`;
-    if (j.running || Object.keys(s).length) {
-      txt += ` ｜ 本次: 页 ${s.pages||0} 新增 ${s.new||0} 更新 ${s.updated||0} 磁力 ${s.magnets||0} 错误 ${s.errors||0}` +
-        (s.stopped ? ' ｜ 已手动停止' : '');
-      $('s-new').textContent = s.new ?? '–';
-      $('s-errors').textContent = s.errors ?? '–';
-      if (j.error) txt += ' ｜ ' + j.error;
+    lastDepths = d;
+    $('d-censored').textContent = d.censored ?? 0;
+    $('d-uncensored').textContent = d.uncensored ?? 0;
+    const s = j.stats || {};
+    let last = '–';
+    if (Object.keys(s).length) {
+      last = `新增 ${s.new||0} · 更新 ${s.updated||0} · 磁力 ${s.magnets||0} · 跳过 ${s.skipped||0} · 错误 ${s.errors||0}` + (s.stopped ? ' · 已手动停止' : '');
+      $('s-lastnew').textContent = s.new ?? '–';
+      if (j.error) last += ' ｜ ' + j.error;
+    } else { last = (j.finished_at ? j.finished_at.replace('T',' ').slice(0,16) + ' UTC' : '–'); }
+    $('last-run').textContent = '深度 有码' + (d.censored ?? 0) + ' / 无码 ' + (d.uncensored ?? 0) + ' ｜ ' + last;
+    const log = $('log'); if (log) {
+      const atBottom = log.scrollTop + log.clientHeight >= log.scrollHeight - 30;
+      log.textContent = (j.log_tail || []).join('\n') || '（暂无日志）';
+      $('log-lines') && ($('log-lines').textContent = (j.log_tail || []).length + ' 行');
+      if (atBottom) log.scrollTop = log.scrollHeight;
     }
-    $('crawl-stats').textContent = txt;
-    const log = $('log'); const atBottom = log.scrollTop + log.clientHeight >= log.scrollHeight - 30;
-    log.textContent = (j.log_tail || []).join('\n') || '（暂无日志，点击「开始采集」运行一次）';
-    if (atBottom) log.scrollTop = log.scrollHeight;
-    if (j.running && !pollTimer) pollTimer = setInterval(pollStatus, 2000);
-    if (!j.running && pollTimer && Object.keys(s).length) { clearInterval(pollTimer); pollTimer = null; loadStats(); loadMovies(curPage); }
   } catch (e) {}
 }
 async function loadStats() {
   try {
-    const j = await (await fetch('/api/movies?size=1')).json();
+    const j = await (await fetch('/api/stats')).json();
     $('s-total').textContent = j.total;
+    $('s-censored').textContent = j.by_category.censored || 0;
+    $('s-uncensored').textContent = j.by_category.uncensored || 0;
+    $('s-magnets').textContent = j.magnets;
   } catch (e) {}
 }
 window.addEventListener('load', () => { pollStatus(); setInterval(pollStatus, 5000); loadStats(); });
 
-/* ---------- data ---------- */
-let curSort = 'new';
-async function clearData() {
-  if (!confirm('确定清空全部采集数据？\n\n所有影片与磁力记录将被删除，采集深度归零。此操作不可恢复！')) return;
-  if (!confirm('再次确认：真的要清空吗？（建议先「导出全部 JSON」备份）')) return;
-  const j = await (await fetch('/api/data/clear', {method:'POST'})).json();
-  if (j.ok) {
-    alert('已清空 ' + j.deleted + ' 部影片记录。');
-    loadStats(); loadMovies(1); pollStatus();
-  } else {
-    alert('清空失败: ' + (j.error || '未知错误'));
-  }
+/* ---------- genre bars ---------- */
+async function loadGenres(cat) {
+  cat = cat || '';
+  try {
+    const j = await (await fetch('/api/stats?category=' + cat)).json();
+    const top = (j.top_genres || []).slice(0, 12);
+    const max = top.length ? top[0].count : 1;
+    $('genre-bars').innerHTML = top.map(g => `
+      <div class="gbar-row" onclick="searchTag('${esc(g.tag)}')" title="筛选「${esc(g.tag)}」">
+        <span class="gname">${esc(g.tag)}</span>
+        <span class="gbar"><i style="width:${Math.max(4, Math.round(g.count / max * 100))}%"></i></span>
+        <span class="gcount">${g.count}</span>
+      </div>`).join('') || '<div class="kv">暂无数据</div>';
+  } catch (e) {}
 }
+
+/* ---------- data ---------- */
 async function loadMovies(page) {
   curPage = Math.max(1, page || 1);
   const q = $('q').value.trim();
   curSort = $('sort') ? $('sort').value : 'new';
-  try { localStorage.setItem('jc.q', q); localStorage.setItem('jc.sort', curSort); } catch (e) {}
-  const r = await fetch(`/api/movies?q=${encodeURIComponent(q)}&page=${curPage}&size=20&sort=${curSort}`);
+  curCat = $('f-cat') ? $('f-cat').value : '';
+  try { localStorage.setItem('jc.q', q); localStorage.setItem('jc.sort', curSort); localStorage.setItem('jc.cat', curCat); } catch (e) {}
+  const r = await fetch(`/api/movies?q=${encodeURIComponent(q)}&page=${curPage}&size=20&sort=${curSort}&category=${curCat}`);
   const j = await r.json();
   $('data-total').textContent = `共 ${j.total} 部`;
   $('pg-info').textContent = `第 ${j.page} / ${Math.max(1, Math.ceil(j.total / j.size))} 页`;
@@ -514,22 +520,25 @@ async function loadMovies(page) {
   $('movie-rows').innerHTML = (j.items || []).map(m => {
     let matched = [];
     try { matched = JSON.parse(m.matched_tags || '[]'); } catch (e) {}
+    const catName = m.category === 'censored' ? '有码' : m.category === 'uncensored' ? '无码' : '未知';
     return `
     <tr class="movie" onclick="toggleDetail('${m.code}', this)">
       <td><img src="${coverUrl(m.cover)}" loading="lazy" alt="" style="width:54px;height:38px;object-fit:cover;border-radius:4px;border:1px solid var(--line)" onerror="this.style.visibility='hidden'"></td>
       <td><span class="code">${m.code}</span></td>
       <td>${esc(m.title)}</td>
-      <td>${matched.length ? matched.map(t=>`<span class="tag" style="background:var(--pri-soft);color:var(--pri);cursor:pointer" onclick="event.stopPropagation();searchTag('${esc(t)}')">${esc(t)}</span>`).join('') : '<span style="color:var(--line)">—</span>'}</td>
+      <td><span class="cat ${m.category||'unknown'}">${catName}</span></td>
+      <td>${matched.length ? matched.map(t=>`<span class="tag hit" onclick="event.stopPropagation();searchTag('${esc(t)}')">${esc(t)}</span>`).join('') : '<span style="color:var(--line)">—</span>'}</td>
       <td>${m.release_date || ''}</td>
       <td>${m.magnet_count}</td><td style="color:var(--mut)">${(m.first_seen || '').replace('T',' ').slice(5,16)}</td>
     </tr>`;
-  }).join('') || '<tr><td colspan="7" style="color:var(--mut);text-align:center;padding:30px">暂无数据，去仪表盘运行一次采集吧</td></tr>';
+  }).join('') || '<tr><td colspan="8" style="color:var(--mut);text-align:center;padding:30px">暂无数据，去仪表盘运行一次采集吧</td></tr>';
 }
 function coverUrl(c) {
   if (!c) return '';
   return /^https?:/.test(c) ? c : SITE_BASE + c;
 }
 function searchTag(text) {
+  activatePage('data');
   $('q').value = text;
   loadMovies(1);
 }
@@ -544,17 +553,26 @@ async function toggleDetail(code, tr) {
   const samples = (m.samples || []).slice(0, 12).map(s =>
     `<a href="${esc(/^https?:/.test(s) ? s : SITE_BASE + s)}" target="_blank"><img src="${esc(/^https?:/.test(s) ? s : SITE_BASE + s)}" loading="lazy" style="width:96px;height:64px;object-fit:cover;border-radius:5px;border:1px solid var(--line);margin:2px"></a>`
   ).join('');
-  row.innerHTML = `<td colspan="7">
+  row.innerHTML = `<td colspan="8">
     <div class="mag"><b>导演</b> ${esc(m.director)||'-'}　<b>片商</b> <a href="javascript:void(0)" onclick="searchTag('${esc(m.studio)}')" style="color:inherit">${esc(m.studio)||'-'}</a>
     　<b>发行</b> ${esc(m.label)||'-'}　<b>时长</b> ${esc(m.duration)||'-'}　<b>系列</b> ${esc(m.series)||'-'}</div>
     <div class="mag" style="margin:4px 0"><b>演员</b> ${(m.actors||[]).map(a=>`<span class="tag" style="cursor:pointer" onclick="searchTag('${esc(a)}')">${esc(a)}</span>`).join('')||'-'}
-    　<b>类别</b> ${(m.genres||[]).map(g=>`<span class="tag">${esc(g)}</span>`).join('')||'-'}</div>
+    　<b>类别</b> ${(m.genres||[]).map(g=>`<span class="tag" onclick="searchTag('${esc(g)}')" style="cursor:pointer">${esc(g)}</span>`).join('')||'-'}</div>
     ${mags}
     ${samples ? `<div class="mag" style="margin-top:6px"><b>样图</b></div><div style="display:flex;flex-wrap:wrap">${samples}</div>` : ''}
     <div class="mag"><a href="${esc(m.url)}" target="_blank">原页面 ↗</a></div></td>`;
   tr.after(row);
 }
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+/* ---------- clear ---------- */
+async function clearData() {
+  if (!confirm('确定清空全部采集数据？\n\n所有影片与磁力记录将被删除，采集深度归零。此操作不可恢复！')) return;
+  if (!confirm('再次确认：真的要清空吗？（建议先「导出 JSON」备份）')) return;
+  const j = await (await fetch('/api/data/clear', {method:'POST'})).json();
+  if (j.ok) { alert('已清空 ' + j.deleted + ' 部影片记录。'); loadStats(); loadMovies(1); loadGenres(); pollStatus(); }
+  else alert('清空失败: ' + (j.error || '未知错误'));
+}
 
 /* ---------- update ---------- */
 async function checkUpdate(manual) {
@@ -563,7 +581,7 @@ async function checkUpdate(manual) {
     const pill = $('upd-pill');
     if (j.latest) {
       pill.style.display = ''; pill.textContent = '新版本 ' + j.latest.tag; pill.className = 'pill run';
-      pill.onclick = () => document.querySelector('[data-page="about"]').click();
+      pill.onclick = () => activatePage('about');
       $('upd-tag').textContent = j.latest.tag;
       $('upd-notes').textContent = j.latest.notes;
       $('update-banner').style.display = 'block';
@@ -577,33 +595,21 @@ async function checkUpdate(manual) {
   } catch (e) { if (manual) $('about-upd').textContent = '检查失败（离线？）'; }
 }
 function toggleNotes() { const n = $('upd-notes'); n.style.display = n.style.display === 'none' ? 'block' : 'none'; }
-
 async function applyUpdate() {
   const card = $('about-changelog-card'), body = $('about-changelog');
   card.style.display = ''; body.textContent = '正在拉取最新镜像并重建容器…（约 30-60 秒，期间网页短暂无响应属正常）';
-  document.querySelector('[data-page="about"]').click();
+  activatePage('about');
   let j;
   try {
     j = await (await fetch('/api/update/apply', {method:'POST'})).json();
-  } catch (e) {
-    body.textContent = '✗ 请求失败: ' + e;
-    return;
-  }
-  if (j.ok && j.updated) {          // container replaced, wait for the new version
-    waitForRebirth(j.new_image || '');
-    return;
-  }
-  if (j.ok && !j.updated) {         // image already current
-    body.textContent = '✓ ' + j.message;
-    return;
-  }
-  // needs_socket or error -> show guidance
+  } catch (e) { body.textContent = '请求失败: ' + e; return; }
+  if (j.ok && j.updated) { waitForRebirth(j.new_image || ''); return; }
+  if (j.ok && !j.updated) { body.textContent = '✓ ' + j.message; return; }
   body.textContent = (j.error || j.note || '更新失败') + '\n\n' + (j.commands || []).join('\n');
 }
-
 function waitForRebirth(newImage) {
   const body = $('about-changelog');
-  const before = '{{ version }}';   // version of this (old) page
+  const before = '{{ version }}';
   let tries = 0;
   const timer = setInterval(async () => {
     tries++;
@@ -611,16 +617,13 @@ function waitForRebirth(newImage) {
       const r = await fetch('/api/update/check', {cache:'no-store'});
       if (r.ok) {
         const j = await r.json();
-        // the old container keeps serving until the switch-over; only a
-        // changed version number proves the new container took over
         if (j.current && j.current !== before) {
           clearInterval(timer);
-          body.textContent = '✓ 更新完成：v' + j.current +
-            (newImage ? '（镜像 ' + newImage + '）' : '') + '，即将刷新页面…';
+          body.textContent = '✓ 更新完成：v' + j.current + (newImage ? '（镜像 ' + newImage + '）' : '') + '，即将刷新页面…';
           setTimeout(() => location.reload(true), 1500);
         }
       }
-    } catch (e) { /* still restarting */ }
+    } catch (e) {}
     if (tries > 45) { clearInterval(timer); body.textContent = '切换耗时较长，请稍后手动刷新页面。'; }
   }, 2000);
 }
@@ -633,7 +636,10 @@ window.addEventListener('load', () => {
     if (savedQ) $('q').value = savedQ;
     const savedSort = localStorage.getItem('jc.sort');
     if (savedSort && $('sort')) $('sort').value = savedSort;
+    const savedCat = localStorage.getItem('jc.cat');
+    if (savedCat && $('f-cat')) $('f-cat').value = savedCat;
   } catch (e) {}
+  loadGenres($('f-cat') ? $('f-cat').value : '');
   loadMovies(1);
 });
 </script>

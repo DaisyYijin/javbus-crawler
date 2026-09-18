@@ -135,6 +135,7 @@ def run_job(
                     continue
 
                 movie = parse_detail(detail_html, item.code, item.url)
+                movie.category = category
                 if magnets:
                     sv = parse_movie_script_vars(detail_html)
                     if sv.get("gid"):

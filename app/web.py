@@ -266,6 +266,9 @@ def create_app() -> Flask:
         sort = request.args.get("sort", "new")
         if sort not in ("new", "match", "magnets"):
             sort = "new"
+        category = request.args.get("category", "")
+        if category not in ("censored", "uncensored"):
+            category = ""
         try:
             page = max(1, int(request.args.get("page", 1)))
             size = max(1, min(int(request.args.get("size", 20)), 100))
@@ -273,10 +276,23 @@ def create_app() -> Flask:
             page, size = 1, 20
         conn = sqlite3.connect(settings.load()["DB_PATH"], timeout=10)
         try:
-            total, items = db.list_movies(conn, q=q, page=page, size=size, sort=sort)
+            total, items = db.list_movies(conn, q=q, page=page, size=size,
+                                          sort=sort, category=category)
         finally:
             conn.close()
         return jsonify({"total": total, "page": page, "size": size, "sort": sort, "items": items})
+
+    @app.get("/api/stats")
+    def stats():
+        category = request.args.get("category", "")
+        if category not in ("censored", "uncensored"):
+            category = ""
+        conn = sqlite3.connect(settings.load()["DB_PATH"], timeout=15)
+        try:
+            data = db.library_stats(conn, category=category)
+        finally:
+            conn.close()
+        return jsonify(data)
 
     @app.get("/api/movies/<code>")
     def movie_detail(code: str):
