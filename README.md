@@ -69,6 +69,26 @@ docker run --rm -v "$(pwd)/data:/data" alpine \
 - 限速默认 2-3 秒/请求，礼貌抓取；404 跳过，网络错误指数退避重试。
 - 断点续采：按番号幂等 upsert，重复运行不产生重复行。
 
+## 在线更新
+
+程序通过 GitHub Releases 检测新版本（仅标准库，无额外依赖）：
+
+```bash
+# 采集时自动检查；发现新版会在启动时提醒
+docker compose run --rm crawler --pages 1
+
+# 手动检查并查看更新日志
+docker compose run --rm crawler --check-update
+
+# 查看更新日志并执行更新（仅在宿主机源码目录下运行有效）
+python -m app.main --update
+```
+
+- 容器内运行 `--update` 只会提示需要在宿主机执行的命令（容器无法重建自身镜像）：
+  `git pull && docker compose build`，或直接 `docker pull ghcr.io/daisyyijin/javbus-crawler:latest`
+- 离线环境 / CI：加 `--no-check-update` 跳过启动检查
+- 更新源可用 `UPDATE_REPO` 环境变量覆盖（默认 `DaisyYijin/javbus-crawler`）
+
 ## 注意
 
 - 请遵守目标站点的服务条款与当地法律，控制采集频率，数据仅供个人学习研究。

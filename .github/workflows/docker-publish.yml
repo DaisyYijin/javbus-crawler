@@ -3,6 +3,7 @@ name: docker-publish
 on:
   push:
     branches: [main]
+    tags: ["v*"]
   workflow_dispatch:
 
 jobs:
@@ -21,12 +22,21 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Determine image tags
+        id: tags
+        run: |
+          TAGS="ghcr.io/daisyyijin/javbus-crawler:latest"
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            TAGS="$TAGS,ghcr.io/daisyyijin/javbus-crawler:${GITHUB_REF#refs/tags/}"
+          fi
+          echo "tags=$TAGS" >> "$GITHUB_OUTPUT"
+
       - name: Build and push image
         uses: docker/build-push-action@v6
         with:
           context: .
           push: true
-          tags: ghcr.io/daisyyijin/javbus-crawler:latest
+          tags: ${{ steps.tags.outputs.tags }}
 
       - name: Smoke-test image
         run: docker run --rm ghcr.io/daisyyijin/javbus-crawler:latest --help

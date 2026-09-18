@@ -1,4 +1,7 @@
-"""Entry point: crawl listing pages, fetch details + magnets, store in SQLite."""
+"""Entry point: crawl listing pages, fetch details + magnets, store in SQLite.
+
+Also implements --check-update / --update online updates via GitHub Releases.
+"""
 from __future__ import annotations
 
 import argparse
@@ -9,7 +12,7 @@ import sys
 import time
 from urllib.parse import urlencode
 
-from . import db, settings
+from . import db, settings, updater
 from .fetcher import Fetcher
 from .parser import parse_detail, parse_list, parse_movie_script_vars, parse_magnets
 
@@ -115,7 +118,30 @@ def main(argv: list[str] | None = None) -> int:
                     help="skip magnet fetching")
     ap.add_argument("--refresh", action="store_true",
                     help="re-fetch movies already in the database")
+    ap.add_argument("--check-update", action="store_true",
+                    help="check GitHub for a newer release and show its changelog")
+    ap.add_argument("--update", action="store_true",
+                    help="show the changelog of the newest release and update (host only)")
+    ap.add_argument("--no-check-update", dest="startup_check", action="store_false",
+                    help="skip the update check at startup")
     args = ap.parse_args(argv)
+
+    if args.update:
+        return updater.run_update()
+    if args.check_update:
+        rel = updater.check_for_update()
+        if rel:
+            updater.print_changelog(rel)
+        else:
+            print(f"已是最新版本 v{updater.__version__}")
+        return 0
+    if args.startup_check:
+        try:
+            rel = updater.check_for_update()
+            if rel:
+                updater.print_update_notice(rel)
+        except Exception:  # never let the check block crawling
+            pass
 
     settings.DELAY_SECONDS = args.delay
     t0 = time.monotonic()
