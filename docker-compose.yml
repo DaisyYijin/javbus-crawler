@@ -6,7 +6,7 @@
 services:
   crawler:
     image: ghcr.io/daisyyijin/javbus-crawler:latest
-    container_name: seedmm-crawler
+    container_name: javbus-crawler
     ports:
       - "7878:7878"
     volumes:

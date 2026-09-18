@@ -3,113 +3,295 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>seedmm-crawler v{{ version }}</title>
+<title>JavBus Crawler v{{ version }}</title>
 <style>
-  :root { --bg:#f4f5f7; --card:#fff; --line:#e2e4e8; --txt:#24292f; --mut:#6a737d; --acc:#0969da; --ok:#1a7f37; --warn:#9a6700; --err:#cf222e; }
-  * { box-sizing:border-box; }
-  body { margin:0; font-family:-apple-system,"Segoe UI","Microsoft YaHei",sans-serif; background:var(--bg); color:var(--txt); }
-  .wrap { max-width:1080px; margin:0 auto; padding:16px; }
-  header { display:flex; align-items:center; gap:10px; padding:10px 0; }
-  header h1 { font-size:18px; margin:0; }
-  .badge { background:var(--acc); color:#fff; border-radius:10px; padding:1px 8px; font-size:12px; }
-  .card { background:var(--card); border:1px solid var(--line); border-radius:8px; padding:14px 16px; margin-bottom:14px; }
-  .card h2 { font-size:14px; margin:0 0 10px; color:var(--mut); text-transform:uppercase; letter-spacing:.5px; }
-  label { display:block; font-size:13px; margin:8px 0 3px; }
-  label small { color:var(--mut); }
-  input[type=text], input[type=number] { width:100%; padding:6px 8px; border:1px solid var(--line); border-radius:6px; font-size:14px; }
-  .grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(200px,1fr)); gap:10px; }
-  button { padding:6px 14px; border:none; border-radius:6px; font-size:14px; cursor:pointer; }
-  .primary { background:var(--acc); color:#fff; } .ok { background:var(--ok); color:#fff; }
-  .danger { background:var(--err); color:#fff; } .plain { background:#eaeef2; }
-  button:disabled { opacity:.5; cursor:not-allowed; }
-  .row { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
-  .pill { font-size:12px; padding:2px 8px; border-radius:10px; background:#eaeef2; color:var(--mut); }
-  .pill.run { background:#ddf4ff; color:var(--acc); }
-  pre#log { background:#0d1117; color:#c9d1d9; font-size:12px; line-height:1.5; padding:10px; border-radius:6px; height:220px; overflow:auto; white-space:pre-wrap; }
-  table { width:100%; border-collapse:collapse; font-size:13px; }
-  th, td { text-align:left; padding:6px 8px; border-bottom:1px solid var(--line); }
-  th { color:var(--mut); font-weight:600; }
-  tr.movie { cursor:pointer; } tr.movie:hover { background:#f6f8fa; }
-  .mag { font-size:12px; word-break:break-all; }
-  .banner { display:none; padding:10px 14px; border-radius:8px; margin-bottom:14px; font-size:14px; }
-  .banner.up { display:block; background:#fff8c5; border:1px solid #d4a72c66; }
-  .banner code { background:#ffffffcc; padding:1px 5px; border-radius:4px; }
-  .msg { font-size:13px; margin-left:8px; } .msg.ok { color:var(--ok); } .msg.err { color:var(--err); }
-  .pager { display:flex; gap:8px; align-items:center; justify-content:flex-end; margin-top:8px; font-size:13px; }
+  :root {
+    --sb-w: 230px;
+    --bg: #f0f2f7; --card: #fff; --line: #e4e7ee;
+    --txt: #1c2333; --mut: #7a8299;
+    --pri: #4f6ef7; --pri-2: #7c5cf0; --pri-grad: linear-gradient(135deg,#4f6ef7,#7c5cf0);
+    --ok: #16a34a; --warn: #d97706; --err: #dc2626;
+    --sb-bg: #171d33; --sb-txt: #aab3d0;
+    --radius: 12px; --shadow: 0 1px 3px rgba(23,29,51,.08), 0 8px 24px rgba(23,29,51,.06);
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; height: 100%; }
+  body { font-family: -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif; background: var(--bg); color: var(--txt); }
+
+  /* ---------- layout ---------- */
+  .layout { display: flex; min-height: 100vh; }
+  main { flex: 1; min-width: 0; padding: 20px 22px 40px; margin-left: var(--sb-w); }
+
+  /* ---------- sidebar ---------- */
+  aside {
+    position: fixed; inset: 0 auto 0 0; width: var(--sb-w); z-index: 50;
+    background: var(--sb-bg); color: var(--sb-txt);
+    display: flex; flex-direction: column; padding: 18px 12px;
+    transition: transform .25s ease;
+  }
+  .brand { display: flex; align-items: center; gap: 10px; padding: 6px 10px 18px; color: #fff; }
+  .brand .logo {
+    width: 34px; height: 34px; border-radius: 10px; background: var(--pri-grad);
+    display: flex; align-items: center; justify-content: center; font-size: 17px; flex: none;
+  }
+  .brand b { font-size: 15px; letter-spacing: .3px; }
+  .brand small { display: block; font-weight: 400; color: var(--sb-txt); font-size: 11px; }
+  nav { display: flex; flex-direction: column; gap: 4px; }
+  .nav-item {
+    display: flex; align-items: center; gap: 11px; padding: 11px 12px; border-radius: 10px;
+    color: var(--sb-txt); text-decoration: none; font-size: 14px; cursor: pointer; border: none;
+    background: none; width: 100%; text-align: left; font-family: inherit;
+  }
+  .nav-item .ico { width: 20px; text-align: center; font-size: 15px; }
+  .nav-item:hover { background: rgba(255,255,255,.07); color: #fff; }
+  .nav-item.active { background: var(--pri-grad); color: #fff; font-weight: 600; box-shadow: 0 4px 14px rgba(79,110,247,.4); }
+  .side-foot { margin-top: auto; padding: 12px; font-size: 12px; color: var(--mut); line-height: 1.7; }
+  .side-foot .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--ok); margin-right: 5px; }
+  .side-foot .dot.run { background: var(--pri); animation: pulse 1.2s infinite; }
+  @keyframes pulse { 50% { opacity: .35; } }
+
+  /* mobile top bar */
+  .topbar { display: none; position: sticky; top: 0; z-index: 40; background: var(--sb-bg); color: #fff; padding: 12px 16px; align-items: center; gap: 12px; }
+  .topbar .logo { width: 30px; height: 30px; border-radius: 9px; background: var(--pri-grad); display: flex; align-items: center; justify-content: center; }
+  .topbar b { font-size: 15px; }
+  .burger { margin-left: auto; background: none; border: none; color: #fff; font-size: 20px; padding: 4px 8px; cursor: pointer; }
+  .backdrop { display: none; position: fixed; inset: 0; background: rgba(0,0,0,.45); z-index: 45; }
+
+  /* ---------- common ---------- */
+  .page { display: none; animation: fade .2s ease; max-width: 1100px; margin: 0 auto; }
+  .page.active { display: block; }
+  @keyframes fade { from { opacity: 0; transform: translateY(6px); } }
+  .page-head { display: flex; align-items: baseline; gap: 10px; margin: 4px 0 16px; }
+  .page-head h1 { font-size: 19px; margin: 0; }
+  .page-head span { color: var(--mut); font-size: 13px; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow); padding: 18px; margin-bottom: 16px; }
+  .card h2 { font-size: 13px; margin: 0 0 14px; color: var(--mut); text-transform: uppercase; letter-spacing: .6px; font-weight: 600; }
+  label { display: block; font-size: 13px; margin: 10px 0 4px; color: var(--txt); font-weight: 500; }
+  label small { color: var(--mut); font-weight: 400; }
+  input[type=text], input[type=number] {
+    width: 100%; padding: 9px 11px; border: 1px solid var(--line); border-radius: 9px;
+    font-size: 14px; background: #fafbfd; transition: border .15s;
+  }
+  input:focus { outline: none; border-color: var(--pri); background: #fff; box-shadow: 0 0 0 3px rgba(79,110,247,.12); }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 12px; }
+  button { padding: 9px 16px; border: none; border-radius: 9px; font-size: 14px; cursor: pointer; font-family: inherit; transition: filter .15s, transform .05s; }
+  button:active { transform: scale(.97); }
+  button:disabled { opacity: .45; cursor: not-allowed; }
+  .primary { background: var(--pri-grad); color: #fff; }
+  .ok { background: var(--ok); color: #fff; }
+  .danger { background: var(--err); color: #fff; }
+  .ghost { background: #eef0f6; color: var(--txt); }
+  button:not(:disabled):hover { filter: brightness(1.08); }
+  .row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+  .msg { font-size: 13px; } .msg.ok { color: var(--ok); } .msg.err { color: var(--err); }
+
+  /* ---------- dashboard ---------- */
+  .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-bottom: 16px; }
+  .stat { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow); padding: 14px 16px; }
+  .stat .num { font-size: 26px; font-weight: 700; letter-spacing: -.5px; }
+  .stat .lbl { font-size: 12px; color: var(--mut); margin-top: 2px; }
+  .stat.accent { background: var(--pri-grad); border: none; color: #fff; }
+  .stat.accent .lbl { color: rgba(255,255,255,.8); }
+  .pill { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; padding: 3px 11px; border-radius: 999px; background: #eef0f6; color: var(--mut); font-weight: 500; }
+  .pill.run { background: #e3e9ff; color: var(--pri); }
+  .pill.err { background: #fdeaea; color: var(--err); }
+  pre#log {
+    background: #10142a; color: #ccd3f0; font-size: 12px; line-height: 1.6; padding: 14px;
+    border-radius: 10px; height: 260px; overflow: auto; white-space: pre-wrap; word-break: break-all;
+    font-family: "Cascadia Code", Consolas, monospace; margin: 0;
+  }
+
+  /* ---------- data table ---------- */
+  .table-wrap { overflow-x: auto; border-radius: 10px; border: 1px solid var(--line); }
+  table { width: 100%; border-collapse: collapse; font-size: 13.5px; min-width: 640px; }
+  th, td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--line); }
+  th { color: var(--mut); font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: .4px; background: #fafbfd; }
+  tbody tr:last-child td { border-bottom: none; }
+  tr.movie { cursor: pointer; transition: background .1s; }
+  tr.movie:hover { background: #f5f7ff; }
+  tr.detail td { background: #fafbfd; }
+  .mag { font-size: 12.5px; word-break: break-all; line-height: 1.9; }
+  .mag a { color: var(--pri); text-decoration: none; } .mag a:hover { text-decoration: underline; }
+  .tag { display: inline-block; background: #eef0f6; border-radius: 6px; padding: 1px 7px; margin: 1px 2px 1px 0; font-size: 12px; color: var(--mut); }
+  .code { font-weight: 700; color: var(--pri); }
+  .pager { display: flex; gap: 8px; align-items: center; justify-content: flex-end; margin-top: 12px; font-size: 13px; color: var(--mut); }
+
+  /* ---------- update banner ---------- */
+  .banner { display: none; padding: 13px 16px; border-radius: var(--radius); margin-bottom: 16px; font-size: 14px; background: linear-gradient(135deg,#fff7e0,#ffefd0); border: 1px solid #f0d48a; }
+  .banner code { background: #ffffffb3; padding: 1px 6px; border-radius: 5px; }
+  #upd-notes { display: none; margin-top: 10px; white-space: pre-wrap; font-size: 13px; background: #ffffffaa; padding: 10px 12px; border-radius: 8px; }
+
+  /* ---------- mobile ---------- */
+  @media (max-width: 860px) {
+    main { margin-left: 0; padding: 14px 14px 80px; }
+    .topbar { display: flex; }
+    aside { transform: translateX(-100%); width: 260px; }
+    aside.open { transform: none; box-shadow: 0 0 40px rgba(0,0,0,.4); }
+    .backdrop.show { display: block; }
+    .page-head h1 { font-size: 17px; }
+    .stat .num { font-size: 21px; }
+    pre#log { height: 210px; font-size: 11px; }
+    .grid { grid-template-columns: 1fr 1fr; }
+  }
+  @media (max-width: 480px) { .grid { grid-template-columns: 1fr; } }
 </style>
 </head>
 <body>
-<div class="wrap">
-  <header>
-    <h1>seedmm-crawler</h1><span class="badge">v{{ version }}</span>
-    <span id="upd-pill" class="pill" style="display:none">检查更新中…</span>
-  </header>
 
-  <div id="update-banner" class="banner up">
-    <b>发现新版本 <span id="upd-tag"></span></b>（当前 v{{ version }}）
-    <button class="plain" onclick="toggleNotes()" style="margin:0 6px">查看更新日志</button>
-    <button class="primary" onclick="applyUpdate()">如何更新</button>
-    <div id="upd-notes" style="display:none;margin-top:8px;white-space:pre-wrap;font-size:13px"></div>
-  </div>
+<!-- mobile top bar -->
+<div class="topbar">
+  <div class="logo">🕷️</div><b>JavBus Crawler</b>
+  <button class="burger" onclick="toggleMenu()">☰</button>
+</div>
+<div class="backdrop" id="backdrop" onclick="toggleMenu()"></div>
 
-  <div class="card">
-    <h2>采集设置（保存后立即生效）</h2>
-    <div class="grid">
-      <div><label>站点地址 <small>SEEDMM_BASE</small></label><input id="c_BASE_URL" type="text"></div>
-      <div><label>请求间隔（秒） <small>DELAY_SECONDS</small></label><input id="c_DELAY_SECONDS" type="number" step="0.1" min="0"></div>
-      <div><label>随机抖动（秒） <small>JITTER_SECONDS</small></label><input id="c_JITTER_SECONDS" type="number" step="0.1" min="0"></div>
-      <div><label>重试次数 <small>MAX_RETRIES</small></label><input id="c_MAX_RETRIES" type="number" min="1" max="10"></div>
-      <div><label>超时（秒） <small>TIMEOUT</small></label><input id="c_TIMEOUT" type="number" min="5" max="300"></div>
-      <div><label>网页端口 <small>WEB_PORT，重启容器后生效</small></label><input id="c_WEB_PORT" type="number" min="1" max="65535"></div>
+<div class="layout">
+  <aside id="sidebar">
+    <div class="brand">
+      <div class="logo">🕷️</div>
+      <div><b>JavBus Crawler</b><small id="side-ver">v{{ version }}</small></div>
     </div>
-    <div class="row" style="margin-top:10px">
-      <button class="primary" onclick="saveConfig()">保存配置</button>
-      <span id="cfg-msg" class="msg"></span>
+    <nav>
+      <button class="nav-item active" data-page="dashboard"><span class="ico">📊</span>仪表盘</button>
+      <button class="nav-item" data-page="data"><span class="ico">🎞️</span>采集数据</button>
+      <button class="nav-item" data-page="settings"><span class="ico">⚙️</span>采集设置</button>
+      <button class="nav-item" data-page="about"><span class="ico">🛰️</span>关于 / 更新</button>
+    </nav>
+    <div class="side-foot">
+      <div><span class="dot" id="side-dot"></span><span id="side-state">空闲</span></div>
+      <div style="margin-top:6px">seedmm.bond 采集器</div>
     </div>
-  </div>
+  </aside>
 
-  <div class="card">
-    <h2>采集控制</h2>
-    <div class="row">
-      <label style="margin:0">页码</label>
-      <input id="pages" type="text" value="1" style="width:110px" placeholder="如 1 或 2-10">
-      <label style="margin:0"><input type="checkbox" id="opt-magnets" checked> 抓磁力</label>
-      <label style="margin:0"><input type="checkbox" id="opt-refresh"> 刷新已有</label>
-      <button class="ok" id="btn-start" onclick="startCrawl()">开始采集</button>
-      <button class="danger" id="btn-stop" onclick="stopCrawl()" disabled>停止</button>
-      <span id="crawl-state" class="pill">空闲</span>
-      <span id="crawl-stats" class="msg"></span>
-    </div>
-    <pre id="log" style="margin-top:10px"></pre>
-  </div>
+  <main>
+    <!-- ============ dashboard ============ -->
+    <section class="page active" id="page-dashboard">
+      <div id="update-banner" class="banner">
+        🚀 <b>发现新版本 <span id="upd-tag"></span></b>（当前 v{{ version }}）
+        <button class="ghost" onclick="toggleNotes()" style="margin:0 4px;padding:5px 12px">更新日志</button>
+        <button class="primary" onclick="applyUpdate()" style="padding:5px 12px">如何更新</button>
+        <div id="upd-notes"></div>
+      </div>
 
-  <div class="card">
-    <h2>采集数据</h2>
-    <div class="row" style="margin-bottom:8px">
-      <input id="q" type="text" placeholder="搜索番号 / 标题 / 演员" style="width:260px">
-      <button class="primary" onclick="loadMovies(1)">搜索</button>
-      <span id="data-total" class="msg"></span>
-    </div>
-    <div style="overflow-x:auto">
-    <table>
-      <thead><tr><th>番号</th><th>标题</th><th>发行日期</th><th>磁力</th><th>入库时间</th></tr></thead>
-      <tbody id="movie-rows"></tbody>
-    </table>
-    </div>
-    <div class="pager">
-      <button class="plain" onclick="loadMovies(curPage-1)" id="pg-prev">上一页</button>
-      <span id="pg-info"></span>
-      <button class="plain" onclick="loadMovies(curPage+1)" id="pg-next">下一页</button>
-    </div>
-  </div>
+      <div class="page-head"><h1>仪表盘</h1><span id="upd-pill" class="pill" style="display:none"></span></div>
+
+      <div class="stats">
+        <div class="stat accent"><div class="num" id="s-total">–</div><div class="lbl">已采集影片</div></div>
+        <div class="stat"><div class="num" id="s-magnets">–</div><div class="lbl">磁力链接</div></div>
+        <div class="stat"><div class="num" id="s-new">–</div><div class="lbl">上次新增</div></div>
+        <div class="stat"><div class="num" id="s-errors">–</div><div class="lbl">上次错误</div></div>
+      </div>
+
+      <div class="card">
+        <h2>采集控制</h2>
+        <div class="row">
+          <div><label>页码范围</label><input id="pages" type="text" value="1" style="width:130px" placeholder="如 1 或 2-10"></div>
+          <label style="margin:22px 10px 0 0"><input type="checkbox" id="opt-magnets" checked> 抓取磁力</label>
+          <label style="margin:22px 10px 0 0"><input type="checkbox" id="opt-refresh"> 刷新已有</label>
+          <div style="flex:1"></div>
+          <button class="ok" id="btn-start" onclick="startCrawl()" style="margin-top:14px">▶ 开始采集</button>
+          <button class="danger" id="btn-stop" onclick="stopCrawl()" disabled style="margin-top:14px">■ 停止</button>
+        </div>
+        <div class="row" style="margin-top:10px">
+          <span id="crawl-state" class="pill">空闲</span>
+          <span id="crawl-stats" class="msg"></span>
+        </div>
+        <pre id="log" style="margin-top:12px"></pre>
+      </div>
+    </section>
+
+    <!-- ============ data ============ -->
+    <section class="page" id="page-data">
+      <div class="page-head"><h1>采集数据</h1><span id="data-total" style="color:var(--mut);font-size:13px"></span></div>
+      <div class="card">
+        <div class="row" style="margin-bottom:12px">
+          <input id="q" type="text" placeholder="🔍 搜索番号 / 标题 / 演员" style="max-width:300px"
+                 onkeydown="if(event.key==='Enter')loadMovies(1)">
+          <button class="primary" onclick="loadMovies(1)">搜索</button>
+        </div>
+        <div class="table-wrap">
+        <table>
+          <thead><tr><th>番号</th><th>标题</th><th>发行日期</th><th>磁力</th><th>入库时间</th></tr></thead>
+          <tbody id="movie-rows"></tbody>
+        </table>
+        </div>
+        <div class="pager">
+          <button class="ghost" onclick="loadMovies(curPage-1)" id="pg-prev">← 上一页</button>
+          <span id="pg-info"></span>
+          <button class="ghost" onclick="loadMovies(curPage+1)" id="pg-next">下一页 →</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ settings ============ -->
+    <section class="page" id="page-settings">
+      <div class="page-head"><h1>采集设置</h1><span>保存后立即生效</span></div>
+      <div class="card">
+        <h2>站点与抓取</h2>
+        <div class="grid">
+          <div><label>站点地址 <small>BASE_URL</small></label><input id="c_BASE_URL" type="text"></div>
+          <div><label>请求间隔（秒） <small>DELAY_SECONDS</small></label><input id="c_DELAY_SECONDS" type="number" step="0.1" min="0"></div>
+          <div><label>随机抖动（秒） <small>JITTER_SECONDS</small></label><input id="c_JITTER_SECONDS" type="number" step="0.1" min="0"></div>
+          <div><label>重试次数 <small>MAX_RETRIES</small></label><input id="c_MAX_RETRIES" type="number" min="1" max="10"></div>
+          <div><label>超时（秒） <small>TIMEOUT</small></label><input id="c_TIMEOUT" type="number" min="5" max="300"></div>
+          <div><label>网页端口 <small>WEB_PORT · 重启容器生效</small></label><input id="c_WEB_PORT" type="number" min="1" max="65535"></div>
+        </div>
+        <div class="row" style="margin-top:16px">
+          <button class="primary" onclick="saveConfig()">保存配置</button>
+          <span id="cfg-msg" class="msg"></span>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ about ============ -->
+    <section class="page" id="page-about">
+      <div class="page-head"><h1>关于 / 更新</h1></div>
+      <div class="card">
+        <h2>版本信息</h2>
+        <div class="mag">
+          当前版本：<b>v{{ version }}</b>　|　项目主页：
+          <a href="https://github.com/DaisyYijin/javbus-crawler" target="_blank">DaisyYijin/javbus-crawler</a><br>
+          镜像：<code>ghcr.io/daisyyijin/javbus-crawler:latest</code>
+        </div>
+        <div class="row" style="margin-top:12px">
+          <button class="primary" onclick="checkUpdate(true)">检查更新</button>
+          <span id="about-upd" class="msg"></span>
+        </div>
+      </div>
+      <div class="card" id="about-changelog-card" style="display:none">
+        <h2>更新日志</h2>
+        <div class="mag" id="about-changelog" style="white-space:pre-wrap"></div>
+        <div class="row" style="margin-top:12px">
+          <button class="primary" onclick="applyUpdate()">如何更新</button>
+        </div>
+      </div>
+    </section>
+  </main>
 </div>
 
 <script>
 let curPage = 1, pollTimer = null;
-
 const $ = id => document.getElementById(id);
 
-// ---------- config ----------
+/* ---------- menu / routing ---------- */
+document.querySelectorAll('.nav-item').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.nav-item').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+    $('page-' + btn.dataset.page).classList.add('active');
+    if (btn.dataset.page === 'data') loadMovies(curPage);
+    if (window.innerWidth <= 860) toggleMenu(false);
+    window.scrollTo(0, 0);
+  });
+});
+function toggleMenu(force) {
+  const open = force !== undefined ? force : !$('sidebar').classList.contains('open');
+  $('sidebar').classList.toggle('open', open);
+  $('backdrop').classList.toggle('show', open);
+}
+
+/* ---------- config ---------- */
 async function loadConfig() {
   const r = await fetch('/api/config'); const j = await r.json();
   for (const [k, v] of Object.entries(j.config)) {
@@ -123,11 +305,11 @@ async function saveConfig() {
   const r = await fetch('/api/config', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body)});
   const j = await r.json();
   const m = $('cfg-msg');
-  m.textContent = j.ok ? '已保存 ✓' : ('保存失败: ' + j.error);
+  m.textContent = j.ok ? '✓ 已保存' : ('✗ ' + j.error);
   m.className = 'msg ' + (j.ok ? 'ok' : 'err');
 }
 
-// ---------- crawl ----------
+/* ---------- crawl ---------- */
 async function startCrawl() {
   const body = {pages: $('pages').value || '1', magnets: $('opt-magnets').checked, refresh: $('opt-refresh').checked};
   const r = await fetch('/api/crawl/start', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body)});
@@ -139,25 +321,42 @@ async function stopCrawl() { await fetch('/api/crawl/stop', {method:'POST'}); }
 
 async function pollStatus() {
   try {
-    const r = await fetch('/api/crawl/status'); const j = await r.json();
-    const st = $('crawl-state');
-    if (j.running) { st.textContent = '运行中'; st.className = 'pill run'; }
-    else { st.textContent = j.error ? '出错' : '空闲'; st.className = 'pill'; }
+    const j = await (await fetch('/api/crawl/status')).json();
+    const st = $('crawl-state'), dot = $('side-dot'), ss = $('side-state');
+    if (j.running) {
+      st.textContent = '● 运行中'; st.className = 'pill run';
+      dot.className = 'dot run'; ss.textContent = '采集运行中';
+    } else {
+      st.textContent = j.error ? '● 出错' : '● 空闲';
+      st.className = 'pill' + (j.error ? ' err' : '');
+      dot.className = 'dot'; ss.textContent = j.error ? '出错' : '空闲';
+    }
     $('btn-start').disabled = j.running; $('btn-stop').disabled = !j.running;
     const s = j.stats || {};
-    $('crawl-stats').textContent = j.running || Object.keys(s).length
-      ? `页 ${s.pages||0}｜新增 ${s.new||0}｜更新 ${s.updated||0}｜磁力 ${s.magnets||0}｜错误 ${s.errors||0}${s.stopped ? '｜已手动停止' : ''}` : '';
-    if (j.error) $('crawl-stats').textContent += '｜' + j.error;
+    if (j.running || Object.keys(s).length) {
+      $('crawl-stats').textContent =
+        `页 ${s.pages||0} ｜ 新增 ${s.new||0} ｜ 更新 ${s.updated||0} ｜ 磁力 ${s.magnets||0} ｜ 错误 ${s.errors||0}` +
+        (s.stopped ? ' ｜ 已手动停止' : '');
+      $('s-new').textContent = s.new ?? '–';
+      $('s-errors').textContent = s.errors ?? '–';
+      if (j.error) $('crawl-stats').textContent += ' ｜ ' + j.error;
+    }
     const log = $('log'); const atBottom = log.scrollTop + log.clientHeight >= log.scrollHeight - 30;
-    log.textContent = (j.log_tail || []).join('\n') || '（暂无日志）';
+    log.textContent = (j.log_tail || []).join('\n') || '（暂无日志，点击「开始采集」运行一次）';
     if (atBottom) log.scrollTop = log.scrollHeight;
     if (j.running && !pollTimer) pollTimer = setInterval(pollStatus, 2000);
-    if (!j.running && pollTimer && Object.keys(s).length) { clearInterval(pollTimer); pollTimer = null; loadMovies(curPage); }
+    if (!j.running && pollTimer && Object.keys(s).length) { clearInterval(pollTimer); pollTimer = null; loadStats(); loadMovies(curPage); }
   } catch (e) {}
 }
-window.addEventListener('load', () => { pollStatus(); pollTimer = setInterval(pollStatus, 5000); });
+async function loadStats() {
+  try {
+    const j = await (await fetch('/api/movies?size=1')).json();
+    $('s-total').textContent = j.total;
+  } catch (e) {}
+}
+window.addEventListener('load', () => { pollStatus(); setInterval(pollStatus, 5000); loadStats(); });
 
-// ---------- data ----------
+/* ---------- data ---------- */
 async function loadMovies(page) {
   curPage = Math.max(1, page || 1);
   const q = $('q').value.trim();
@@ -168,50 +367,59 @@ async function loadMovies(page) {
   $('pg-prev').disabled = j.page <= 1; $('pg-next').disabled = j.page * j.size >= j.total;
   $('movie-rows').innerHTML = (j.items || []).map(m => `
     <tr class="movie" onclick="toggleDetail('${m.code}', this)">
-      <td><b>${m.code}</b></td><td>${esc(m.title)}</td><td>${m.release_date || ''}</td>
-      <td>${m.magnet_count}</td><td>${(m.first_seen || '').replace('T',' ')}</td>
-    </tr>`).join('') || '<tr><td colspan="5" style="color:#6a737d">暂无数据，先运行一次采集</td></tr>';
+      <td><span class="code">${m.code}</span></td>
+      <td>${esc(m.title)}</td><td>${m.release_date || ''}</td>
+      <td>${m.magnet_count}</td><td style="color:var(--mut)">${(m.first_seen || '').replace('T',' ').slice(5,16)}</td>
+    </tr>`).join('') || '<tr><td colspan="5" style="color:var(--mut);text-align:center;padding:30px">暂无数据，去仪表盘运行一次采集吧</td></tr>';
 }
 async function toggleDetail(code, tr) {
   const next = tr.nextElementSibling;
-  if (next && next.className === 'detail') { next.remove(); return; }
-  const r = await fetch('/api/movies/' + encodeURIComponent(code)); const m = await r.json();
+  if (next && next.classList.contains('detail')) { next.remove(); return; }
+  const m = await (await fetch('/api/movies/' + encodeURIComponent(code))).json();
   const row = document.createElement('tr'); row.className = 'detail';
   const mags = (m.magnets || []).map(x =>
-    `<div class="mag">🔗 <a href="${esc(x.link)}" target="_blank">${esc(x.name) || x.hash}</a>　${esc(x.size)}　${esc(x.date)}</div>`).join('') || '<div class="mag">无磁力</div>';
+    `<div class="mag">🧲 <a href="${esc(x.link)}" target="_blank">${esc(x.name) || x.hash}</a>　<span style="color:var(--mut)">${esc(x.size)} · ${esc(x.date)}</span></div>`
+  ).join('') || '<div class="mag" style="color:var(--mut)">无磁力链接</div>';
   row.innerHTML = `<td colspan="5">
     <div class="mag"><b>导演</b> ${esc(m.director)||'-'}　<b>片商</b> ${esc(m.studio)||'-'}　<b>发行</b> ${esc(m.label)||'-'}　<b>时长</b> ${esc(m.duration)||'-'}　<b>系列</b> ${esc(m.series)||'-'}</div>
-    <div class="mag"><b>演员</b> ${(m.actors||[]).join('、')||'-'}　<b>类别</b> ${(m.genres||[]).join('、')||'-'}</div>
-    <div class="mag"><b>磁力链接</b></div>${mags}
+    <div class="mag" style="margin:4px 0"><b>演员</b> ${(m.actors||[]).map(a=>`<span class="tag">${esc(a)}</span>`).join('')||'-'}
+    　<b>类别</b> ${(m.genres||[]).map(g=>`<span class="tag">${esc(g)}</span>`).join('')||'-'}</div>
+    ${mags}
     <div class="mag"><a href="${esc(m.url)}" target="_blank">原页面 ↗</a></div></td>`;
   tr.after(row);
 }
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
-// ---------- update ----------
-async function checkUpdate() {
+/* ---------- update ---------- */
+async function checkUpdate(manual) {
   try {
-    const r = await fetch('/api/update/check'); const j = await r.json();
+    const j = await (await fetch('/api/update/check')).json();
     const pill = $('upd-pill');
     if (j.latest) {
-      pill.style.display = ''; pill.textContent = '有新版本 ' + j.latest.tag;
-      pill.className = 'pill run'; pill.style.cursor = 'pointer';
-      pill.onclick = () => $('update-banner').scrollIntoView({behavior:'smooth'});
+      pill.style.display = ''; pill.textContent = '🚀 新版本 ' + j.latest.tag; pill.className = 'pill run';
+      pill.onclick = () => document.querySelector('[data-page="about"]').click();
       $('upd-tag').textContent = j.latest.tag;
       $('upd-notes').textContent = j.latest.notes;
       $('update-banner').style.display = 'block';
-    } else { pill.style.display = ''; pill.textContent = 'v' + j.current + ' 已是最新'; }
-  } catch (e) { $('upd-pill').style.display = 'none'; }
+      $('about-changelog').textContent = j.latest.notes;
+      $('about-changelog-card').style.display = '';
+      $('about-upd').textContent = '有新版本 ' + j.latest.tag;
+    } else {
+      $('about-upd').textContent = manual ? '✓ 已是最新版本' : '';
+      if (!manual) { pill.style.display = ''; pill.textContent = '✓ v' + j.current + ' 最新'; }
+    }
+  } catch (e) { if (manual) $('about-upd').textContent = '检查失败（离线？）'; }
 }
 function toggleNotes() { const n = $('upd-notes'); n.style.display = n.style.display === 'none' ? 'block' : 'none'; }
 async function applyUpdate() {
   const j = await (await fetch('/api/update/apply', {method:'POST'})).json();
-  $('upd-notes').style.display = 'block';
-  $('upd-notes').textContent = j.note + '\n\n' + j.commands.join('\n');
+  $('about-changelog-card').style.display = '';
+  $('about-changelog').textContent = j.note + '\n\n' + j.commands.join('\n');
+  document.querySelector('[data-page="about"]').click();
 }
 
 window.addEventListener('load', loadConfig);
-window.addEventListener('load', checkUpdate);
+window.addEventListener('load', () => checkUpdate(false));
 window.addEventListener('load', () => loadMovies(1));
 </script>
 </body>

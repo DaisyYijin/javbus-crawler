@@ -1,7 +1,9 @@
-# seedmm-crawler
+# javbus-crawler
 
 Docker 化的 [seedmm.bond](https://seedmm.bond)（JavBus 系 AV 磁力站）采集器，**带网页管理界面**：
 在浏览器里修改全部配置、启动/停止采集、实时看日志、浏览已采集的影片与磁力链接。
+
+界面为侧边栏菜单布局（仪表盘 / 采集数据 / 采集设置 / 关于），桌面与移动端自适应。
 
 ## 快速开始
 
