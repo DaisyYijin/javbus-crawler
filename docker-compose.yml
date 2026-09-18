@@ -1,6 +1,6 @@
 # 常驻 Web 服务：所有配置在网页里改，不再使用环境变量。
 #   启动:  docker compose up -d
-#   界面:  http://localhost:8000
+#   界面:  http://localhost:7878
 #   数据:  ./data/seedmm.db   配置: ./data/config.json
 #   更新:  docker compose pull && docker compose up -d
 services:
@@ -8,7 +8,7 @@ services:
     image: ghcr.io/daisyyijin/javbus-crawler:latest
     container_name: seedmm-crawler
     ports:
-      - "8000:8000"
+      - "7878:7878"
     volumes:
       - ./data:/data
     restart: unless-stopped

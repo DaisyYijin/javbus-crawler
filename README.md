@@ -10,7 +10,7 @@ Docker 化的 [seedmm.bond](https://seedmm.bond)（JavBus 系 AV 磁力站）采
 docker compose up -d
 ```
 
-打开 **http://localhost:8000** 即可使用：
+打开 **http://localhost:7878** 即可使用：
 
 - **采集设置**：站点地址、请求间隔、随机抖动、重试次数、超时、端口——全部在网页表单里改，
   保存即生效（持久化在 `./data/config.json`，不再使用环境变量）
@@ -22,7 +22,7 @@ docker compose up -d
 ## 项目结构
 
 ```
-├── docker-compose.yml      # 常驻 Web 服务, 端口 8000
+├── docker-compose.yml      # 常驻 Web 服务, 端口 7878
 ├── Dockerfile
 ├── app/
 │   ├── main.py             # 入口：默认启动 Web（serve）；crawl 子命令保留 CLI 采集
@@ -48,7 +48,7 @@ docker compose up -d
 | `JITTER_SECONDS` | `1.0` | 请求间隔随机抖动上限（秒） |
 | `MAX_RETRIES` | `3` | 单请求重试次数（指数退避） |
 | `TIMEOUT` | `30` | 请求超时（秒） |
-| `WEB_PORT` | `8000` | Web 端口（重启容器后生效） |
+| `WEB_PORT` | `7878` | Web 端口（重启容器后生效） |
 | `USER_AGENT` | Chrome UA | 请求头 |
 
 ## CLI（可选）
@@ -95,3 +95,5 @@ docker compose run --rm crawler --check-update
 ## 注意
 
 - 请遵守目标站点的服务条款与当地法律，控制采集频率，数据仅供个人学习研究。
+- 从 v0.3.0 升级的用户：若 `data/config.json` 中保存过 `WEB_PORT: 8000`，请在网页中改为 `7878`
+  并更新 compose 的端口映射（或直接删除 `config.json` 重新生成）。

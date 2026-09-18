@@ -20,7 +20,7 @@ DEFAULTS: dict = {
     "JITTER_SECONDS": 1.0,
     "MAX_RETRIES": 3,
     "TIMEOUT": 30,
-    "WEB_PORT": 8000,
+    "WEB_PORT": 7878,
     "USER_AGENT": (
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
         "(KHTML, like Gecko) Chrome/126.0 Safari/537.36"
