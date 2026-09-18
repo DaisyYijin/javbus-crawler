@@ -206,13 +206,19 @@
       <div class="card">
         <h2>采集控制</h2>
         <div class="row">
-          <div><label>页码范围</label><input id="pages" type="text" value="1" style="width:130px" placeholder="如 1 或 2-10"></div>
+          <div><label>采集模式</label>
+            <select id="mode" onchange="updateModeHint()" style="padding:9px 11px;border:1px solid var(--line);border-radius:9px;font-size:14px;background:#fafbfd">
+              <option value="new">追新：从第 1 页检查新片</option>
+              <option value="backfill">补历史：从上次深度继续往后</option>
+            </select></div>
+          <div><label id="pages-label">页码范围</label><input id="pages" type="text" value="1" style="width:130px" placeholder="如 1 或 2-10"></div>
           <label style="margin:22px 10px 0 0"><input type="checkbox" id="opt-magnets" checked> 抓取磁力</label>
           <label style="margin:22px 10px 0 0"><input type="checkbox" id="opt-refresh"> 刷新已有</label>
           <div style="flex:1"></div>
           <button class="ok" id="btn-start" onclick="startCrawl()" style="margin-top:14px">开始采集</button>
           <button class="danger" id="btn-stop" onclick="stopCrawl()" disabled style="margin-top:14px">停止</button>
         </div>
+        <div style="font-size:12px;color:var(--mut);margin-top:6px" id="mode-hint"></div>
         <div class="row" style="margin-top:10px">
           <span id="crawl-state" class="pill">空闲</span>
           <span id="crawl-stats" class="msg"></span>
@@ -419,8 +425,21 @@ async function saveConfig() {
 }
 
 /* ---------- crawl ---------- */
+function updateModeHint() {
+  const m = $('mode').value;
+  const lbl = $('pages-label'), inp = $('pages');
+  if (m === 'backfill') {
+    lbl.textContent = '本次页数';
+    inp.placeholder = '如 20（自动从上次深度+1 开始）';
+    if (!/^\d+$/.test(inp.value)) inp.value = '20';
+  } else {
+    lbl.textContent = '页码范围';
+    inp.placeholder = '如 1 或 2-10';
+  }
+}
 async function startCrawl() {
-  const body = {pages: $('pages').value || '1', magnets: $('opt-magnets').checked, refresh: $('opt-refresh').checked};
+  const body = {mode: $('mode').value, pages: $('pages').value || '1',
+                magnets: $('opt-magnets').checked, refresh: $('opt-refresh').checked};
   const r = await fetch('/api/crawl/start', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body)});
   const j = await r.json();
   if (!j.ok) { $('crawl-stats').textContent = j.error; return; }
@@ -442,14 +461,16 @@ async function pollStatus() {
     }
     $('btn-start').disabled = j.running; $('btn-stop').disabled = !j.running;
     const s = j.stats || {};
+    const d = j.depths || {};
+    let txt = `历史深度: 有码第 ${d.censored||0} 页 ｜ 无码第 ${d.uncensored||0} 页`;
     if (j.running || Object.keys(s).length) {
-      $('crawl-stats').textContent =
-        `页 ${s.pages||0} ｜ 新增 ${s.new||0} ｜ 更新 ${s.updated||0} ｜ 磁力 ${s.magnets||0} ｜ 错误 ${s.errors||0}` +
+      txt += ` ｜ 本次: 页 ${s.pages||0} 新增 ${s.new||0} 更新 ${s.updated||0} 磁力 ${s.magnets||0} 错误 ${s.errors||0}` +
         (s.stopped ? ' ｜ 已手动停止' : '');
       $('s-new').textContent = s.new ?? '–';
       $('s-errors').textContent = s.errors ?? '–';
-      if (j.error) $('crawl-stats').textContent += ' ｜ ' + j.error;
+      if (j.error) txt += ' ｜ ' + j.error;
     }
+    $('crawl-stats').textContent = txt;
     const log = $('log'); const atBottom = log.scrollTop + log.clientHeight >= log.scrollHeight - 30;
     log.textContent = (j.log_tail || []).join('\n') || '（暂无日志，点击「开始采集」运行一次）';
     if (atBottom) log.scrollTop = log.scrollHeight;

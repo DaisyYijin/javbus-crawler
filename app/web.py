@@ -111,6 +111,7 @@ def _crawl_thread(params: dict) -> None:
             pages=params.get("pages", "1"),
             magnets=bool(params.get("magnets", True)),
             refresh=bool(params.get("refresh", False)),
+            mode=params.get("mode", "new"),
             stop_check=lambda: _job["stop"],
         )
     except StopRequested:
@@ -199,18 +200,23 @@ def create_app() -> Flask:
     @app.post("/api/crawl/start")
     def crawl_start():
         body = request.get_json(silent=True) or {}
+        mode = body.get("mode", "new")
+        if mode not in ("new", "backfill"):
+            mode = "new"
         pages = str(body.get("pages", "1"))
-        try:
-            crawler.parse_pages(pages)  # validate early
-        except ValueError as exc:
-            return jsonify({"ok": False, "error": str(exc)}), 400
+        if mode == "new":
+            # only "new" uses a page range; backfill takes a page count
+            try:
+                crawler.parse_pages(pages)  # validate early
+            except ValueError as exc:
+                return jsonify({"ok": False, "error": str(exc)}), 400
         with _job_lock:
             if _job["running"]:
                 return jsonify({"ok": False, "error": "已有采集任务在运行"}), 409
             _job.update(
                 running=True, stop=False, stats={}, error=None,
                 started_at=_now(), finished_at=None,
-                params={"pages": pages,
+                params={"pages": pages, "mode": mode,
                         "magnets": bool(body.get("magnets", True)),
                         "refresh": bool(body.get("refresh", False))},
             )
@@ -230,6 +236,18 @@ def create_app() -> Flask:
 
     @app.get("/api/crawl/status")
     def crawl_status():
+        depths = {}
+        try:
+            conn = sqlite3.connect(settings.load()["DB_PATH"], timeout=10)
+            try:
+                depths = {
+                    "censored": db.get_meta(conn, "max_page:censored", "0"),
+                    "uncensored": db.get_meta(conn, "max_page:uncensored", "0"),
+                }
+            finally:
+                conn.close()
+        except Exception:
+            depths = {"censored": "0", "uncensored": "0"}
         return jsonify({
             "running": _job["running"],
             "params": _job["params"],
@@ -237,6 +255,7 @@ def create_app() -> Flask:
             "error": _job["error"],
             "started_at": _job["started_at"],
             "finished_at": _job["finished_at"],
+            "depths": depths,
             "log_tail": list(_logs)[-200:],
         })
 

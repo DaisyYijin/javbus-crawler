@@ -58,9 +58,17 @@ def run_job(
     pages: str = "1",
     magnets: bool = True,
     refresh: bool = False,
+    mode: str = "new",
     stop_check=None,
 ) -> dict:
-    """Run one crawl job with a config snapshot. Returns stats."""
+    """Run one crawl job with a config snapshot. Returns stats.
+
+    mode: "new"      – crawl the given page range from page 1 (catch up on new
+                       releases; already-known codes are skipped)
+          "backfill" – continue the history: auto-start after the deepest page
+                       crawled so far (per category); `pages` is the number of
+                       pages to walk this run. Stops early at the site's end.
+    """
     fetcher = Fetcher(
         base_url=cfg["BASE_URL"],
         delay=cfg["DELAY_SECONDS"],
@@ -75,7 +83,24 @@ def run_job(
     section = "/uncensored" if category == "uncensored" else ""
     conn = db.connect(cfg["DB_PATH"])
     known = db.known_codes(conn)
-    log.info("开始采集: 频道=%s pages=%s base=%s 已入库=%d delay=%.1fs",
+    depth = int(db.get_meta(conn, f"max_page:{category}", "0") or 0)
+
+    if mode == "backfill":
+        try:
+            count = int(str(pages).strip())
+        except ValueError:
+            count = len(parse_pages(pages))  # e.g. "2-5" -> 4 pages
+        count = max(1, min(count, 500))
+        if depth <= 0:
+            raise ValueError("尚无采集深度记录：请先用「追新」模式采集第 1 页")
+        page_list = list(range(depth + 1, depth + 1 + count))
+        log.info("补历史: 从第 %d 页继续，本次 %d 页（当前深度 %d）",
+                 depth + 1, count, depth)
+    else:
+        page_list = parse_pages(pages)
+        mode = "new"
+    log.info("开始采集: 模式=%s 频道=%s pages=%s base=%s 已入库=%d delay=%.1fs",
+             "补历史" if mode == "backfill" else "追新",
              "无码" if section else "有码", pages, fetcher.base_url,
              len(known), fetcher.delay)
 
@@ -83,7 +108,7 @@ def run_job(
              "magnets": 0, "errors": 0, "stopped": False}
 
     try:
-        for page in parse_pages(pages):
+        for page in page_list:
             html = fetcher.get(f"{section}/page/{page}")
             if not html:
                 log.error("第 %d 页抓取失败，跳过", page)
@@ -91,8 +116,12 @@ def run_job(
                 continue
             items = parse_list(html, fetcher.base_url)
             if not items:
-                log.warning("第 %d 页没有条目（可能已到末尾）", page)
-                continue
+                log.warning("第 %d 页没有条目，已到站点尽头，停止补历史", page)
+                break
+            if page > depth:
+                depth = page
+                db.set_meta(conn, f"max_page:{category}", depth)
+                conn.commit()
             stats["pages"] += 1
             stats["listed"] += len(items)
             log.info("第 %d 页: %d 部影片", page, len(items))

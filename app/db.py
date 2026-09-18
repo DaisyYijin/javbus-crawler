@@ -37,7 +37,25 @@ CREATE TABLE IF NOT EXISTS magnets (
 );
 
 CREATE INDEX IF NOT EXISTS idx_magnets_code ON magnets(code);
+
+CREATE TABLE IF NOT EXISTS meta (
+    key   TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+);
 """
+
+
+def get_meta(conn: sqlite3.Connection, key: str, default: str = "") -> str:
+    row = conn.execute("SELECT value FROM meta WHERE key = ?", (key,)).fetchone()
+    return row[0] if row else default
+
+
+def set_meta(conn: sqlite3.Connection, key: str, value) -> None:
+    conn.execute(
+        "INSERT INTO meta(key, value) VALUES (?, ?) "
+        "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+        (key, str(value)),
+    )
 
 
 def connect(db_path: str) -> sqlite3.Connection:
