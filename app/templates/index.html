@@ -68,7 +68,7 @@
   .card h2 { font-size: 13px; margin: 0 0 14px; color: var(--mut); text-transform: uppercase; letter-spacing: .6px; font-weight: 600; }
   label { display: block; font-size: 13px; margin: 10px 0 4px; color: var(--txt); font-weight: 500; }
   label small { color: var(--mut); font-weight: 400; }
-  input[type=text], input[type=number] {
+  input[type=text], input[type=number], input[type=password] {
     width: 100%; padding: 9px 11px; border: 1px solid var(--line); border-radius: 9px;
     font-size: 14px; background: #fafbfd; transition: border .15s;
   }
@@ -139,19 +139,19 @@
 <body>
 
 <!-- login overlay -->
-<div id="login-overlay" style="display:none;position:fixed;inset:0;z-index:99;background:rgba(23,29,51,.55);backdrop-filter:blur(4px)">
-  <div style="max-width:340px;margin:14vh auto 0;background:var(--card);border-radius:14px;padding:26px;box-shadow:0 20px 60px rgba(0,0,0,.35)">
-    <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px">
-      <div style="width:36px;height:36px;border-radius:10px;background:var(--pri-grad);display:flex;align-items:center;justify-content:center;font-size:18px">🕷️</div>
-      <div><b style="font-size:15px">JavBus Crawler</b><div style="font-size:12px;color:var(--mut)">请登录后使用</div></div>
+<div id="login-overlay" style="display:none;position:fixed;inset:0;z-index:99;background:rgba(23,29,51,.62);backdrop-filter:blur(4px);align-items:center;justify-content:center;padding:20px">
+  <div style="width:100%;max-width:340px;background:var(--card);border-radius:14px;padding:28px 26px;box-shadow:0 20px 60px rgba(0,0,0,.35)">
+    <div style="display:flex;align-items:center;gap:11px;margin-bottom:14px">
+      <div style="width:38px;height:38px;border-radius:11px;background:var(--pri-grad);display:flex;align-items:center;justify-content:center;font-size:19px;flex:none">🕷️</div>
+      <div><b style="font-size:16px">JavBus Crawler</b><div style="font-size:12px;color:var(--mut);margin-top:1px">请使用管理员账号登录</div></div>
     </div>
     <label>用户名</label>
-    <input id="login-user" type="text" autocomplete="username" style="margin-bottom:4px">
+    <input id="login-user" type="text" autocomplete="username" placeholder="admin" style="margin-bottom:2px">
     <label>密码</label>
-    <input id="login-pass" type="password" autocomplete="current-password"
+    <input id="login-pass" type="password" autocomplete="current-password" placeholder="••••••••"
            onkeydown="if(event.key==='Enter')doLogin()">
-    <button class="primary" onclick="doLogin()" style="width:100%;margin-top:14px">登 录</button>
-    <div id="login-msg" class="msg err" style="margin-top:8px;text-align:center"></div>
+    <button class="primary" onclick="doLogin()" style="width:100%;margin-top:16px;padding:10px 16px">登 录</button>
+    <div id="login-msg" class="msg err" style="margin-top:10px;text-align:center;min-height:18px"></div>
   </div>
 </div>
 
@@ -300,7 +300,7 @@ window.fetch = (url, opts) => _rawFetch(url, opts).then(r => {
   return r;
 });
 function showLogin(msg) {
-  $('login-overlay').style.display = 'block';
+  $('login-overlay').style.display = 'flex';
   $('login-msg').textContent = msg || '';
   setTimeout(() => $('login-user').focus(), 50);
 }
