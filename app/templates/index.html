@@ -44,7 +44,8 @@
     color: var(--sb-txt); text-decoration: none; font-size: 14px; cursor: pointer; border: none;
     background: none; width: 100%; text-align: left; font-family: inherit;
   }
-  .nav-item .ico { width: 20px; text-align: center; font-size: 15px; }
+  .nav-item .ico { width: 20px; display: flex; align-items: center; justify-content: center; }
+  .nav-item .ico svg { width: 16px; height: 16px; display: block; }
   .nav-item:hover { background: #f2f4f8; color: var(--txt); }
   .nav-item.active { background: var(--pri-soft); color: var(--pri); font-weight: 600; }
   .side-foot { margin-top: auto; padding: 12px; font-size: 12px; color: var(--mut); line-height: 1.7; }
@@ -144,7 +145,7 @@
 <div id="login-overlay" style="display:none;position:fixed;inset:0;z-index:99;background:rgba(240,243,250,.72);backdrop-filter:blur(3px);align-items:center;justify-content:center;padding:20px">
   <div style="width:100%;max-width:340px;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:28px 26px;box-shadow:0 12px 40px rgba(30,40,70,.12)">
     <div style="display:flex;align-items:center;gap:11px;margin-bottom:14px">
-      <div style="width:38px;height:38px;border-radius:11px;background:var(--pri-grad);display:flex;align-items:center;justify-content:center;font-size:19px;flex:none">🕷️</div>
+      <div style="width:38px;height:38px;border-radius:11px;background:var(--pri);display:flex;align-items:center;justify-content:center;font-size:19px;font-weight:700;color:#fff;flex:none">J</div>
       <div><b style="font-size:16px">JavBus Crawler</b><div style="font-size:12px;color:var(--mut);margin-top:1px">请使用管理员账号登录</div></div>
     </div>
     <label>用户名</label>
@@ -159,27 +160,27 @@
 
 <!-- mobile top bar -->
 <div class="topbar">
-  <div class="logo">🕷️</div><b>JavBus Crawler</b>
-  <button class="burger" onclick="toggleMenu()">☰</button>
+  <div class="logo">J</div><b>JavBus Crawler</b>
+  <button class="burger" onclick="toggleMenu()" aria-label="菜单">≡</button>
 </div>
 <div class="backdrop" id="backdrop" onclick="toggleMenu()"></div>
 
 <div class="layout">
   <aside id="sidebar">
     <div class="brand">
-      <div class="logo">🕷️</div>
+      <div class="logo">J</div>
       <div><b>JavBus Crawler</b><small id="side-ver">v{{ version }}</small></div>
     </div>
     <nav>
-      <button class="nav-item active" data-page="dashboard"><span class="ico">📊</span>仪表盘</button>
-      <button class="nav-item" data-page="data"><span class="ico">🎞️</span>采集数据</button>
-      <button class="nav-item" data-page="settings"><span class="ico">⚙️</span>采集设置</button>
-      <button class="nav-item" data-page="about"><span class="ico">🛰️</span>关于 / 更新</button>
+      <button class="nav-item active" data-page="dashboard"><span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg></span>仪表盘</button>
+      <button class="nav-item" data-page="data"><span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><circle cx="3.5" cy="6" r="0.5" fill="currentColor"/><circle cx="3.5" cy="12" r="0.5" fill="currentColor"/><circle cx="3.5" cy="18" r="0.5" fill="currentColor"/></svg></span>采集数据</button>
+      <button class="nav-item" data-page="settings"><span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/></svg></span>采集设置</button>
+      <button class="nav-item" data-page="about"><span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg></span>关于 / 更新</button>
     </nav>
     <div class="side-foot">
       <div><span class="dot" id="side-dot"></span><span id="side-state">空闲</span></div>
       <div style="margin-top:6px">seedmm.bond 采集器</div>
-      <button class="ghost" onclick="doLogout()" style="margin-top:8px;padding:5px 10px;font-size:12px">🚪 退出登录</button>
+      <button class="ghost" onclick="doLogout()" style="margin-top:8px;padding:5px 10px;font-size:12px">退出登录</button>
     </div>
   </aside>
 
@@ -187,9 +188,9 @@
     <!-- ============ dashboard ============ -->
     <section class="page active" id="page-dashboard">
       <div id="update-banner" class="banner">
-        🚀 <b>发现新版本 <span id="upd-tag"></span></b>（当前 v{{ version }}）
+        <b>发现新版本 <span id="upd-tag"></span></b>（当前 v{{ version }}）
         <button class="ghost" onclick="toggleNotes()" style="margin:0 4px;padding:5px 12px">更新日志</button>
-        <button class="primary" onclick="applyUpdate()" style="padding:5px 12px">🚀 一键更新</button>
+        <button class="primary" onclick="applyUpdate()" style="padding:5px 12px">一键更新</button>
         <div id="upd-notes"></div>
       </div>
 
@@ -209,8 +210,8 @@
           <label style="margin:22px 10px 0 0"><input type="checkbox" id="opt-magnets" checked> 抓取磁力</label>
           <label style="margin:22px 10px 0 0"><input type="checkbox" id="opt-refresh"> 刷新已有</label>
           <div style="flex:1"></div>
-          <button class="ok" id="btn-start" onclick="startCrawl()" style="margin-top:14px">▶ 开始采集</button>
-          <button class="danger" id="btn-stop" onclick="stopCrawl()" disabled style="margin-top:14px">■ 停止</button>
+          <button class="ok" id="btn-start" onclick="startCrawl()" style="margin-top:14px">开始采集</button>
+          <button class="danger" id="btn-stop" onclick="stopCrawl()" disabled style="margin-top:14px">停止</button>
         </div>
         <div class="row" style="margin-top:10px">
           <span id="crawl-state" class="pill">空闲</span>
@@ -225,10 +226,10 @@
       <div class="page-head"><h1>采集数据</h1><span id="data-total" style="color:var(--mut);font-size:13px"></span></div>
       <div class="card">
         <div class="row" style="margin-bottom:12px">
-          <input id="q" type="text" placeholder="🔍 搜索番号 / 标题 / 演员" style="max-width:300px"
+          <input id="q" type="text" placeholder="搜索番号 / 标题 / 演员" style="max-width:300px"
                  onkeydown="if(event.key==='Enter')loadMovies(1)">
           <button class="primary" onclick="loadMovies(1)">搜索</button>
-          <button class="ghost" onclick="location.href='/api/export'">⬇ 导出全部 JSON</button>
+          <button class="ghost" onclick="location.href='/api/export'">导出全部 JSON</button>
         </div>
         <div class="table-wrap">
         <table>
@@ -302,7 +303,7 @@
         <h2>更新日志</h2>
         <div class="mag" id="about-changelog" style="white-space:pre-wrap"></div>
         <div class="row" style="margin-top:12px">
-          <button class="primary" onclick="applyUpdate()">🚀 一键更新</button>
+          <button class="primary" onclick="applyUpdate()">一键更新</button>
         </div>
       </div>
     </section>
@@ -477,7 +478,7 @@ async function toggleDetail(code, tr) {
   const m = await (await fetch('/api/movies/' + encodeURIComponent(code))).json();
   const row = document.createElement('tr'); row.className = 'detail';
   const mags = (m.magnets || []).map(x =>
-    `<div class="mag">🧲 <a href="${esc(x.link)}" target="_blank">${esc(x.name) || x.hash}</a>　<span style="color:var(--mut)">${esc(x.size)} · ${esc(x.date)}</span></div>`
+    `<div class="mag"><a href="${esc(x.link)}" target="_blank">${esc(x.name) || x.hash}</a>　<span style="color:var(--mut)">${esc(x.size)} · ${esc(x.date)}</span></div>`
   ).join('') || '<div class="mag" style="color:var(--mut)">无磁力链接</div>';
   const samples = (m.samples || []).slice(0, 12).map(s =>
     `<a href="${esc(/^https?:/.test(s) ? s : SITE_BASE + s)}" target="_blank"><img src="${esc(/^https?:/.test(s) ? s : SITE_BASE + s)}" loading="lazy" style="width:96px;height:64px;object-fit:cover;border-radius:5px;border:1px solid var(--line);margin:2px"></a>`
@@ -500,7 +501,7 @@ async function checkUpdate(manual) {
     const j = await (await fetch('/api/update/check')).json();
     const pill = $('upd-pill');
     if (j.latest) {
-      pill.style.display = ''; pill.textContent = '🚀 新版本 ' + j.latest.tag; pill.className = 'pill run';
+      pill.style.display = ''; pill.textContent = '新版本 ' + j.latest.tag; pill.className = 'pill run';
       pill.onclick = () => document.querySelector('[data-page="about"]').click();
       $('upd-tag').textContent = j.latest.tag;
       $('upd-notes').textContent = j.latest.notes;
@@ -518,7 +519,7 @@ function toggleNotes() { const n = $('upd-notes'); n.style.display = n.style.dis
 
 async function applyUpdate() {
   const card = $('about-changelog-card'), body = $('about-changelog');
-  card.style.display = ''; body.textContent = '⏳ 正在拉取最新镜像并重建容器…（约 30-60 秒，期间网页短暂无响应属正常）';
+  card.style.display = ''; body.textContent = '正在拉取最新镜像并重建容器…（约 30-60 秒，期间网页短暂无响应属正常）';
   document.querySelector('[data-page="about"]').click();
   let j;
   try {
@@ -553,13 +554,13 @@ function waitForRebirth(newImage) {
         // changed version number proves the new container took over
         if (j.current && j.current !== before) {
           clearInterval(timer);
-          body.textContent = '✅ 更新完成：v' + j.current +
+          body.textContent = '✓ 更新完成：v' + j.current +
             (newImage ? '（镜像 ' + newImage + '）' : '') + '，即将刷新页面…';
           setTimeout(() => location.reload(true), 1500);
         }
       }
     } catch (e) { /* still restarting */ }
-    if (tries > 45) { clearInterval(timer); body.textContent = '⏳ 切换耗时较长，请稍后手动刷新页面。'; }
+    if (tries > 45) { clearInterval(timer); body.textContent = '切换耗时较长，请稍后手动刷新页面。'; }
   }, 2000);
 }
 
