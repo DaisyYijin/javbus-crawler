@@ -146,11 +146,11 @@ def run_job(
 
                 # tag filtering: match genres + magnet names against keywords
                 keywords = [k for k in str(cfg.get("TAG_FILTERS") or "").split(",") if k.strip()]
-                mode = cfg.get("TAG_FILTER_MODE", "all")
+                filter_mode = cfg.get("TAG_FILTER_MODE", "all")
                 if keywords:
                     movie.matched_tags = compute_matched(
                         movie.genres, [m.name for m in movie.magnets], keywords)
-                    if mode == "only" and not movie.matched_tags:
+                    if filter_mode == "only" and not movie.matched_tags:
                         stats.setdefault("skipped", 0)
                         stats["skipped"] += 1
                         log.info("跳过 %s（不匹配筛选: %s）", item.code, ",".join(keywords))

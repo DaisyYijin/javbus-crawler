@@ -100,9 +100,9 @@ def save(partial: dict) -> dict:
         raise ValueError("CATEGORY 只支持 censored / uncensored")
     if "TAG_FILTER_MODE" in clean and clean["TAG_FILTER_MODE"] not in ("all", "only", "mark"):
         raise ValueError("TAG_FILTER_MODE 只支持 all / only / mark")
-    if clean.get("AUTO_CRAWL_INTERVAL_HOURS", 0) != 0 and clean["AUTO_CRAWL_INTERVAL_HOURS"] <= 0:
+    if "AUTO_CRAWL_INTERVAL_HOURS" in clean and clean["AUTO_CRAWL_INTERVAL_HOURS"] <= 0:
         raise ValueError("自动采集间隔必须大于 0")
-    if clean.get("AUTO_CRAWL_INTERVAL_HOURS", 24) > 24 * 30:
+    if clean.get("AUTO_CRAWL_INTERVAL_HOURS", 0) > 24 * 30:
         raise ValueError("自动采集间隔过长（上限 720 小时）")
 
     with _lock:

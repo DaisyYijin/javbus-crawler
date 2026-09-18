@@ -30,13 +30,21 @@ _COOKIE = "jc_token"
 _SESSIONS_FILE = os.path.join(settings.DATADIR, "sessions.json")
 
 
-def _load_tokens() -> set[str]:
+_SESSION_TTL = 7 * 24 * 3600  # must match the login cookie's max_age
+
+
+def _load_tokens() -> dict[str, float]:
+    """Load unexpired tokens as {token: expiry_ts}; legacy list files drop."""
     try:
         with open(_SESSIONS_FILE, encoding="utf-8") as fh:
             data = json.load(fh)
-        return set(data) if isinstance(data, list) else set()
+        if isinstance(data, dict):
+            now = time.time()
+            return {t: float(exp) for t, exp in data.items()
+                    if isinstance(exp, (int, float)) and float(exp) > now}
     except (OSError, ValueError):
-        return set()
+        pass
+    return {}
 
 
 def _save_tokens() -> None:
@@ -44,13 +52,24 @@ def _save_tokens() -> None:
         os.makedirs(settings.DATADIR, exist_ok=True)
         tmp = _SESSIONS_FILE + ".tmp"
         with open(tmp, "w", encoding="utf-8") as fh:
-            json.dump(sorted(_tokens), fh)
+            json.dump(_tokens, fh)
         os.replace(tmp, _SESSIONS_FILE)
     except OSError as exc:
         log.warning("保存会话失败: %s", exc)
 
 
-_tokens: set[str] = _load_tokens()
+_tokens: dict[str, float] = _load_tokens()
+
+
+def _token_valid(token: str) -> bool:
+    exp = _tokens.get(token)
+    if exp is None:
+        return False
+    if exp < time.time():
+        _tokens.pop(token, None)
+        _save_tokens()
+        return False
+    return True
 
 
 def _admin_password() -> str:
@@ -136,7 +155,7 @@ def create_app() -> Flask:
         if request.path in _public or request.path.startswith("/static"):
             return None
         token = request.cookies.get(_COOKIE, "")
-        if token and token in _tokens:
+        if token and _token_valid(token):
             return None
         return jsonify({"ok": False, "error": "未登录或会话已过期"}), 401
 
@@ -145,13 +164,14 @@ def create_app() -> Flask:
         body = request.get_json(silent=True) or {}
         user = str(body.get("user", ""))
         password = str(body.get("password", ""))
-        ok = (hmac.compare_digest(user, ADMIN_USER)
-              and hmac.compare_digest(password, _admin_password()))
+        ok = (hmac.compare_digest(user.encode("utf-8"), ADMIN_USER.encode("utf-8"))
+              and hmac.compare_digest(password.encode("utf-8"),
+                                      _admin_password().encode("utf-8")))
         if not ok:
             time.sleep(0.8)  # crude brute-force delay
             return jsonify({"ok": False, "error": "用户名或密码错误"}), 401
         token = secrets.token_urlsafe(32)
-        _tokens.add(token)
+        _tokens[token] = time.time() + _SESSION_TTL
         _save_tokens()
         resp = jsonify({"ok": True, "user": ADMIN_USER})
         resp.set_cookie(_COOKIE, token, httponly=True, samesite="Strict",
@@ -162,7 +182,7 @@ def create_app() -> Flask:
     @app.post("/api/logout")
     def logout():
         token = request.cookies.get(_COOKIE, "")
-        _tokens.discard(token)
+        _tokens.pop(token, None)
         _save_tokens()
         resp = jsonify({"ok": True})
         resp.delete_cookie(_COOKIE, path="/")
@@ -173,7 +193,7 @@ def create_app() -> Flask:
     def index():
         # Not logged in -> standalone login page, the main UI stays hidden.
         token = request.cookies.get(_COOKIE, "")
-        if not (token and token in _tokens):
+        if not (token and _token_valid(token)):
             return render_template("login.html", version=__version__)
         return render_template("index.html", version=__version__)
 

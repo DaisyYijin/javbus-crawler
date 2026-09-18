@@ -1,6 +1,6 @@
 """Entry point.
 
-Default (no args): start the web UI on 0.0.0.0:8000 (port from config).
+Default (no args): start the web UI on 0.0.0.0:<WEB_PORT> (default 7878).
 Subcommands:
   crawl   one-shot CLI crawl (uses web-configured settings)
   serve   start the web UI explicitly
