@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+import os
 import sqlite3
 import threading
 from collections import deque
@@ -198,6 +199,26 @@ def create_app() -> Flask:
     return app
 
 
+def _startup_selfcheck() -> None:
+    """Verify the data directory and database are usable; log actionable hints."""
+    cfg = settings.load()
+    db_path = cfg["DB_PATH"]
+    datadir = os.path.dirname(db_path) or "."
+    if not os.path.isdir(datadir):
+        log.error("自检失败: 数据目录 %s 不存在（检查卷挂载）", datadir)
+        return
+    if not os.access(datadir, os.W_OK):
+        log.error("自检失败: 数据目录 %s 不可写。宿主机执行: sudo chown -R 65534:65534 <挂载目录> 后重启容器", datadir)
+        return
+    try:
+        conn = db.connect(db_path)
+        conn.close()
+        log.info("自检通过: 数据库 %s 可读写", db_path)
+    except sqlite3.Error as exc:
+        log.error("自检失败: 无法打开数据库 %s (%s)。若文件属主异常，宿主机执行: "
+                  "sudo chown -R 65534:65534 <挂载目录> 后重启容器", db_path, exc)
+
+
 def run(host: str = "0.0.0.0", port: int | None = None) -> None:
     """Serve the web UI (waitress, production WSGI)."""
     from waitress import serve
@@ -209,5 +230,6 @@ def run(host: str = "0.0.0.0", port: int | None = None) -> None:
     if port is None:
         port = int(settings.load()["WEB_PORT"])
     app = create_app()
+    _startup_selfcheck()
     log.info("Web 界面: http://%s:%d （配置文件 %s）", host, port, settings.CONFIG_PATH)
     serve(app, host=host, port=port, threads=8)
