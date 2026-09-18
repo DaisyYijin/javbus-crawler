@@ -241,6 +241,8 @@
           </select>
           <button class="primary" onclick="loadMovies(1)">搜索</button>
           <button class="ghost" onclick="location.href='/api/export'">导出全部 JSON</button>
+          <div style="flex:1"></div>
+          <button class="danger" onclick="clearData()" style="background:#fff;color:var(--err);border:1px solid var(--err)">清空全部数据</button>
         </div>
         <div class="table-wrap">
         <table>
@@ -488,6 +490,17 @@ window.addEventListener('load', () => { pollStatus(); setInterval(pollStatus, 50
 
 /* ---------- data ---------- */
 let curSort = 'new';
+async function clearData() {
+  if (!confirm('确定清空全部采集数据？\n\n所有影片与磁力记录将被删除，采集深度归零。此操作不可恢复！')) return;
+  if (!confirm('再次确认：真的要清空吗？（建议先「导出全部 JSON」备份）')) return;
+  const j = await (await fetch('/api/data/clear', {method:'POST'})).json();
+  if (j.ok) {
+    alert('已清空 ' + j.deleted + ' 部影片记录。');
+    loadStats(); loadMovies(1); pollStatus();
+  } else {
+    alert('清空失败: ' + (j.error || '未知错误'));
+  }
+}
 async function loadMovies(page) {
   curPage = Math.max(1, page || 1);
   const q = $('q').value.trim();

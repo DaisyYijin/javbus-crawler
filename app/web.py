@@ -328,6 +328,22 @@ def create_app() -> Flask:
             "Content-Disposition": 'attachment; filename="javbus-crawler-export.json"',
         }
 
+    @app.post("/api/data/clear")
+    def data_clear():
+        """Erase all crawled movies + magnets and reset the page depth."""
+        conn = sqlite3.connect(settings.load()["DB_PATH"], timeout=30)
+        try:
+            deleted = conn.execute("SELECT COUNT(*) FROM movies").fetchone()[0]
+            conn.execute("DELETE FROM magnets")
+            conn.execute("DELETE FROM movies")
+            for cat in ("censored", "uncensored"):
+                db.set_meta(conn, f"max_page:{cat}", 0)
+            conn.commit()
+        finally:
+            conn.close()
+        log.warning("已清空全部采集数据（%d 部影片）并重置采集深度", deleted)
+        return jsonify({"ok": True, "deleted": deleted})
+
     # ---------------- update ----------------
     @app.get("/api/update/check")
     def update_check():
