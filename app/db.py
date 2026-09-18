@@ -238,7 +238,7 @@ def library_stats(conn: sqlite3.Connection, category: str = "") -> dict:
             counter.update(json.loads(g or "[]"))
         except (TypeError, ValueError):
             pass
-    top_genres = [{"tag": t, "count": n} for t, n in counter.most_common(15)]
+    top_genres = [{"tag": t, "count": n} for t, n in counter.most_common()]
     return {
         "total": total,
         "magnets": magnets,

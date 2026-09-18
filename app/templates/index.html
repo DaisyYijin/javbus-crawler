@@ -134,12 +134,19 @@
     pre#log { height: 55vh; font-size: 11.5px; }
   }
   @media (max-width: 480px) { .grid { grid-template-columns: 1fr; } }
+  .corner-log { position: fixed; top: 12px; right: 20px; z-index: 46; background: var(--card);
+    border: 1px solid var(--line); border-radius: 999px; padding: 7px 15px; font-size: 13px;
+    color: var(--txt); cursor: pointer; }
+  .corner-log:hover { border-color: var(--pri); color: var(--pri); }
+  @media (max-width: 860px) { .corner-log { top: 11px; right: 64px; padding: 5px 12px; } }
 </style>
 </head>
 <body>
 
+<button class="corner-log" onclick="activatePage('logs')">运行日志</button>
 <div class="topbar">
   <div class="logo">J</div><b>JavBus Crawler</b>
+  <button class="ghost" onclick="activatePage('logs')" style="margin-left:auto;padding:5px 10px;font-size:12px">日志</button>
   <button class="burger" onclick="toggleMenu()" aria-label="菜单">≡</button>
 </div>
 <div class="backdrop" id="backdrop" onclick="toggleMenu()"></div>
@@ -153,13 +160,13 @@
     <nav>
       <button class="nav-item active" data-page="dashboard"><span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg></span>仪表盘</button>
       <button class="nav-item" data-page="data"><span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><circle cx="3.5" cy="6" r="0.5" fill="currentColor"/><circle cx="3.5" cy="12" r="0.5" fill="currentColor"/><circle cx="3.5" cy="18" r="0.5" fill="currentColor"/></svg></span>采集数据</button>
-      <button class="nav-item" data-page="logs"><span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="14" y2="17"/></svg></span>运行日志</button>
       <button class="nav-item" data-page="settings"><span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/></svg></span>采集设置</button>
       <button class="nav-item" data-page="about"><span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg></span>关于 / 更新</button>
     </nav>
     <div class="side-foot">
       <div><span class="dot" id="side-dot"></span><span id="side-state">空闲</span></div>
       <div style="margin-top:6px">seedmm.bond 采集器</div>
+      <div id="side-update" style="margin-top:6px;cursor:pointer" onclick="activatePage('about')">v{{ version }} · 检查更新</div>
       <button class="ghost" onclick="doLogout()" style="margin-top:8px;padding:5px 10px;font-size:12px">退出登录</button>
     </div>
   </aside>
@@ -490,18 +497,25 @@ async function loadStats() {
 window.addEventListener('load', () => { pollStatus(); setInterval(pollStatus, 5000); loadStats(); });
 
 /* ---------- genre bars ---------- */
+let showAllGenres = false;
+function toggleAllGenres() { showAllGenres = !showAllGenres; loadGenres($('f-cat') ? $('f-cat').value : ''); }
 async function loadGenres(cat) {
   cat = cat || '';
   try {
     const j = await (await fetch('/api/stats?category=' + cat)).json();
-    const top = (j.top_genres || []).slice(0, 12);
-    const max = top.length ? top[0].count : 1;
-    $('genre-bars').innerHTML = top.map(g => `
+    const all = j.top_genres || [];
+    const list = showAllGenres ? all : all.slice(0, 25);
+    const max = list.length ? list[0].count : 1;
+    $('genre-bars').innerHTML = list.map(g => `
       <div class="gbar-row" onclick="searchTag('${esc(g.tag)}')" title="筛选「${esc(g.tag)}」">
         <span class="gname">${esc(g.tag)}</span>
         <span class="gbar"><i style="width:${Math.max(4, Math.round(g.count / max * 100))}%"></i></span>
         <span class="gcount">${g.count}</span>
       </div>`).join('') || '<div class="kv">暂无数据</div>';
+    if (all.length > 25) {
+      $('genre-bars').insertAdjacentHTML('beforeend',
+        `<div class="kv" style="margin-top:8px;cursor:pointer;color:var(--pri)" onclick="toggleAllGenres()">${showAllGenres ? '收起' : '显示全部 ' + all.length + ' 个分类'}</div>`);
+    }
   } catch (e) {}
 }
 
