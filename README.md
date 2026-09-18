@@ -22,19 +22,35 @@ Docker 化的 [seedmm.bond](https://seedmm.bond)（JavBus 系 AV 磁力站）采
 
 ## 使用
 
+**方式一：镜像部署（推荐，无需克隆仓库）**
+
+把仓库中的 `docker-compose.yml` 保存到任意目录，直接运行：
+
 ```bash
-# 采集第 1 页（每页 30 部影片）
-docker compose up
+# 采集第 1 页（每页 30 部影片，data/ 自动创建）
+docker compose run --rm crawler --pages 1
 
-# 采集第 2-10 页
+# 采集第 2-10 页 / 增量重跑（已在库中的番号自动跳过）
 docker compose run --rm crawler --pages 2-10
-
-# 增量重跑（已在库中的番号自动跳过）
-docker compose run --rm crawler --pages 1-10
 
 # 只抓元数据不抓磁力 / 调整限速
 docker compose run --rm crawler --pages 1 --no-magnets
 docker compose run --rm crawler --pages 1 --delay 5
+
+# 更新镜像
+docker compose pull
+```
+
+**方式二：源码部署（克隆本仓库）**
+
+```bash
+git clone https://github.com/DaisyYijin/javbus-crawler.git
+cd javbus-crawler
+# docker.io 不可达时可用国内镜像：
+#   docker build --build-arg PYTHON_IMAGE=docker.m.daocloud.io/library/python:3.12-slim \
+#     -t ghcr.io/daisyyijin/javbus-crawler:latest .
+docker build -t ghcr.io/daisyyijin/javbus-crawler:latest .
+docker compose run --rm crawler --pages 1
 ```
 
 ## 配置（环境变量）
