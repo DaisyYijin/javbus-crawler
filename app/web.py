@@ -90,6 +90,19 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
+def _recompute_thread(keywords: list[str]) -> None:
+    """Recompute match marks for the whole library (background)."""
+    try:
+        conn = sqlite3.connect(settings.load()["DB_PATH"], timeout=60)
+        try:
+            n = db.recompute_matched(conn, keywords)
+        finally:
+            conn.close()
+        log.info("筛选标记已按关键词 [%s] 重算 %d 部", ",".join(keywords) or "空", n)
+    except Exception:
+        log.exception("重算筛选标记失败")
+
+
 def _crawl_thread(params: dict) -> None:
     cfg = settings.load()  # snapshot taken at start
     try:
@@ -171,12 +184,16 @@ def create_app() -> Flask:
     @app.post("/api/config")
     def post_config():
         body = request.get_json(silent=True) or {}
+        old_filters = settings.load().get("TAG_FILTERS", "")
         try:
             cfg = settings.save(body)
             log.info("配置已更新: %s", {k: v for k, v in body.items() if k != "USER_AGENT"})
-            return jsonify({"ok": True, "config": cfg})
         except ValueError as exc:
             return jsonify({"ok": False, "error": str(exc)}), 400
+        if "TAG_FILTERS" in body and body["TAG_FILTERS"] != old_filters:
+            keywords = [k for k in cfg["TAG_FILTERS"].split(",") if k.strip()]
+            threading.Thread(target=_recompute_thread, args=(keywords,), daemon=True).start()
+        return jsonify({"ok": True, "config": cfg})
 
     # ---------------- crawl control ----------------
     @app.post("/api/crawl/start")
@@ -227,6 +244,9 @@ def create_app() -> Flask:
     @app.get("/api/movies")
     def movies():
         q = (request.args.get("q") or "").strip()
+        sort = request.args.get("sort", "new")
+        if sort not in ("new", "match", "magnets"):
+            sort = "new"
         try:
             page = max(1, int(request.args.get("page", 1)))
             size = max(1, min(int(request.args.get("size", 20)), 100))
@@ -234,10 +254,10 @@ def create_app() -> Flask:
             page, size = 1, 20
         conn = sqlite3.connect(settings.load()["DB_PATH"], timeout=10)
         try:
-            total, items = db.list_movies(conn, q=q, page=page, size=size)
+            total, items = db.list_movies(conn, q=q, page=page, size=size, sort=sort)
         finally:
             conn.close()
-        return jsonify({"total": total, "page": page, "size": size, "items": items})
+        return jsonify({"total": total, "page": page, "size": size, "sort": sort, "items": items})
 
     @app.get("/api/movies/<code>")
     def movie_detail(code: str):

@@ -41,6 +41,18 @@ def parse_pages(spec: str) -> list[int]:
     return list(range(start, end + 1))
 
 
+def compute_matched(tags: list[str], magnet_names: list[str], keywords: list[str]) -> list[str]:
+    """Return the filter keywords hit by genre tags or magnet link names."""
+    hits = []
+    for kw in keywords:
+        k = kw.strip()
+        if not k:
+            continue
+        if any(k in t for t in tags) or any(k in n for n in magnet_names):
+            hits.append(k)
+    return hits
+
+
 def run_job(
     cfg: dict,
     pages: str = "1",
@@ -101,6 +113,18 @@ def run_job(
                         movie.magnets = parse_magnets(frag) if frag else []
                     else:
                         log.warning("%s: 未找到 gid 参数，跳过磁力", item.code)
+
+                # tag filtering: match genres + magnet names against keywords
+                keywords = [k for k in str(cfg.get("TAG_FILTERS") or "").split(",") if k.strip()]
+                mode = cfg.get("TAG_FILTER_MODE", "all")
+                if keywords:
+                    movie.matched_tags = compute_matched(
+                        movie.genres, [m.name for m in movie.magnets], keywords)
+                    if mode == "only" and not movie.matched_tags:
+                        stats.setdefault("skipped", 0)
+                        stats["skipped"] += 1
+                        log.info("跳过 %s（不匹配筛选: %s）", item.code, ",".join(keywords))
+                        continue
 
                 is_new = item.code not in known
                 db.upsert_movie(conn, movie)

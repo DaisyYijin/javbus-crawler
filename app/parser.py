@@ -39,6 +39,7 @@ class Movie:
     genres: list[str] = field(default_factory=list)
     samples: list[str] = field(default_factory=list)
     magnets: list[Magnet] = field(default_factory=list)
+    matched_tags: list[str] = field(default_factory=list)  # tag-filter hits
 
 
 # ---------------------------------------------------------------- helpers --

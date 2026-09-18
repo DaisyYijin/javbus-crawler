@@ -26,6 +26,8 @@ DEFAULTS: dict = {
     "AUTO_CRAWL_ENABLED": False,      # periodic crawling in the web service
     "AUTO_CRAWL_INTERVAL_HOURS": 24.0,
     "AUTO_CRAWL_PAGES": "1-3",
+    "TAG_FILTERS": "",                # comma-separated keywords, e.g. "4K,高畫質,中文字幕"
+    "TAG_FILTER_MODE": "mark",        # all | only | mark
     "USER_AGENT": (
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
         "(KHTML, like Gecko) Chrome/126.0 Safari/537.36"
@@ -46,6 +48,8 @@ _TYPES = {
     "AUTO_CRAWL_ENABLED": bool,
     "AUTO_CRAWL_INTERVAL_HOURS": float,
     "AUTO_CRAWL_PAGES": str,
+    "TAG_FILTERS": str,
+    "TAG_FILTER_MODE": str,
     "USER_AGENT": str,
 }
 
@@ -92,6 +96,8 @@ def save(partial: dict) -> dict:
         raise ValueError("WEB_PORT 必须在 1-65535 之间")
     if "CATEGORY" in clean and clean["CATEGORY"] not in ("censored", "uncensored"):
         raise ValueError("CATEGORY 只支持 censored / uncensored")
+    if "TAG_FILTER_MODE" in clean and clean["TAG_FILTER_MODE"] not in ("all", "only", "mark"):
+        raise ValueError("TAG_FILTER_MODE 只支持 all / only / mark")
     if clean.get("AUTO_CRAWL_INTERVAL_HOURS", 0) != 0 and clean["AUTO_CRAWL_INTERVAL_HOURS"] <= 0:
         raise ValueError("自动采集间隔必须大于 0")
     if clean.get("AUTO_CRAWL_INTERVAL_HOURS", 24) > 24 * 30:

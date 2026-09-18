@@ -44,6 +44,12 @@ def connect(db_path: str) -> sqlite3.Connection:
     conn = sqlite3.connect(db_path)
     conn.execute("PRAGMA journal_mode=WAL")
     conn.executescript(_SCHEMA)
+    # --- lightweight migrations (older databases) ---
+    cols = {r[1] for r in conn.execute("PRAGMA table_info(movies)")}
+    if "matched_tags" not in cols:
+        conn.execute("ALTER TABLE movies ADD COLUMN matched_tags TEXT NOT NULL DEFAULT '[]'")
+    if "matched_count" not in cols:
+        conn.execute("ALTER TABLE movies ADD COLUMN matched_count INTEGER NOT NULL DEFAULT 0")
     conn.commit()
     return conn
 
@@ -54,8 +60,9 @@ def upsert_movie(conn: sqlite3.Connection, movie: Movie) -> None:
         """
         INSERT INTO movies (code, url, title, cover, release_date, duration,
                             director, studio, label, series, actors, genres,
-                            samples, magnet_count, first_seen, last_seen)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                            samples, magnet_count, matched_tags, matched_count,
+                            first_seen, last_seen)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(code) DO UPDATE SET
             url=excluded.url, title=excluded.title, cover=excluded.cover,
             release_date=excluded.release_date, duration=excluded.duration,
@@ -63,6 +70,8 @@ def upsert_movie(conn: sqlite3.Connection, movie: Movie) -> None:
             label=excluded.label, series=excluded.series,
             actors=excluded.actors, genres=excluded.genres,
             samples=excluded.samples, magnet_count=excluded.magnet_count,
+            matched_tags=excluded.matched_tags,
+            matched_count=excluded.matched_count,
             last_seen=excluded.last_seen
         """,
         (
@@ -72,7 +81,10 @@ def upsert_movie(conn: sqlite3.Connection, movie: Movie) -> None:
             json.dumps(movie.actors, ensure_ascii=False),
             json.dumps(movie.genres, ensure_ascii=False),
             json.dumps(movie.samples, ensure_ascii=False),
-            len(movie.magnets), now, now,
+            len(movie.magnets),
+            json.dumps(movie.matched_tags, ensure_ascii=False),
+            len(movie.matched_tags),
+            now, now,
         ),
     )
 
@@ -101,11 +113,12 @@ def known_codes(conn: sqlite3.Connection) -> set[str]:
 
 
 # ------------------------------------------------------------ web queries --
-_MOVIE_COLUMNS = "code, title, cover, release_date, duration, studio, label, series, magnet_count, first_seen"
+_MOVIE_COLUMNS = "code, title, cover, release_date, duration, studio, label, series, magnet_count, matched_tags, matched_count, first_seen"
 
 
-def list_movies(conn: sqlite3.Connection, q: str = "", page: int = 1, size: int = 20):
-    """Paged movie list with optional search; returns (total, rows-as-dicts)."""
+def list_movies(conn: sqlite3.Connection, q: str = "", page: int = 1, size: int = 20,
+                sort: str = "new"):
+    """Paged movie list; sort: new (default) | match | magnets."""
     size = max(1, min(size, 100))
     where, params = "", []
     if q:
@@ -114,13 +127,39 @@ def list_movies(conn: sqlite3.Connection, q: str = "", page: int = 1, size: int 
         params = [like, like, like]
     total = conn.execute(f"SELECT COUNT(*) FROM movies {where}", params).fetchone()[0]
     offset = (max(1, page) - 1) * size
+    order = {
+        "match": "matched_count DESC, first_seen DESC, code DESC",
+        "magnets": "magnet_count DESC, first_seen DESC, code DESC",
+    }.get(sort, "first_seen DESC, code DESC")
     rows = conn.execute(
         f"SELECT {_MOVIE_COLUMNS} FROM movies {where} "
-        f"ORDER BY first_seen DESC, code DESC LIMIT ? OFFSET ?",
+        f"ORDER BY {order} LIMIT ? OFFSET ?",
         params + [size, offset],
     ).fetchall()
     cols = _MOVIE_COLUMNS.split(", ")
     return total, [dict(zip(cols, r)) for r in rows]
+
+
+def recompute_matched(conn: sqlite3.Connection, keywords: list[str]) -> int:
+    """Recompute matched_tags/matched_count for every movie. Returns updated count."""
+    from .crawler import compute_matched
+
+    n = 0
+    for code, genres, in conn.execute("SELECT code, genres FROM movies").fetchall():
+        try:
+            tags = json.loads(genres or "[]")
+        except (TypeError, ValueError):
+            tags = []
+        names = [r[0] for r in conn.execute(
+            "SELECT name FROM magnets WHERE code = ?", (code,))]
+        matched = compute_matched(tags, names, keywords)
+        conn.execute(
+            "UPDATE movies SET matched_tags = ?, matched_count = ? WHERE code = ?",
+            (json.dumps(matched, ensure_ascii=False), len(matched), code),
+        )
+        n += 1
+    conn.commit()
+    return n
 
 
 def get_movie(conn: sqlite3.Connection, code: str) -> dict | None:
