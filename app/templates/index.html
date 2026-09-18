@@ -83,14 +83,26 @@
   .check-line input[type=checkbox] { width: 16px; height: 16px; accent-color: var(--pri); flex: none; margin: 0; }
   .hint { font-size: 12px; color: var(--mut); margin-top: 5px; line-height: 1.5; }
   .save-row { margin: 2px 0 10px; }
-  button { padding: 9px 16px; border: none; border-radius: 9px; font-size: 14px; cursor: pointer; font-family: inherit; }
+  button { padding: 9px 16px; border: none; border-radius: 9px; font-size: 14px; cursor: pointer; font-family: inherit;
+    transition: transform .08s ease, filter .15s ease, box-shadow .15s ease; }
   button:disabled { opacity: .45; cursor: not-allowed; }
+  button:not(:disabled):hover { filter: brightness(.97); box-shadow: 0 2px 8px rgba(20,25,40,.10); }
+  button:not(:disabled):active { transform: scale(.95); filter: brightness(.92); }
   .primary { background: var(--pri); color: #fff; }
   .ok { background: var(--ok); color: #fff; }
   .danger { background: #fff; color: var(--err); border: 1px solid var(--err); }
   .ghost { background: #eef0f6; color: var(--txt); }
   .row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
   .msg { font-size: 13px; } .msg.ok { color: var(--ok); } .msg.err { color: var(--err); }
+  #toasts { position: fixed; top: 18px; left: 18px; z-index: 999; display: flex; flex-direction: column; gap: 8px; }
+  .toast { display: flex; align-items: center; background: #fff; border: 1px solid var(--line); border-left: 4px solid var(--pri);
+    border-radius: 10px; box-shadow: 0 6px 24px rgba(20,25,40,.14); padding: 11px 16px; font-size: 13.5px;
+    min-width: 200px; max-width: 380px; animation: toast-in .3s cubic-bezier(.21,1.02,.73,1) both; }
+  .toast.ok { border-left-color: var(--ok); }
+  .toast.err { border-left-color: var(--err); }
+  .toast.out { animation: toast-out .25s ease both; }
+  @keyframes toast-in { from { opacity: 0; transform: translateX(-28px); } to { opacity: 1; transform: none; } }
+  @keyframes toast-out { to { opacity: 0; transform: translateX(-28px); } }
   .pill { display: inline-flex; align-items: center; font-size: 12px; padding: 3px 11px; border-radius: 999px; background: #eef0f6; color: var(--mut); font-weight: 500; }
   .pill.run { background: var(--pri-soft); color: var(--pri); }
   .pill.err { background: #fdeaea; color: var(--err); }
@@ -199,8 +211,8 @@
     </div>
     <nav>
       <button class="nav-item active" data-page="dashboard"><span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg></span>仪表盘</button>
-      <button class="nav-item" data-page="data"><span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><circle cx="3.5" cy="6" r="0.5" fill="currentColor"/><circle cx="3.5" cy="12" r="0.5" fill="currentColor"/><circle cx="3.5" cy="18" r="0.5" fill="currentColor"/></svg></span>采集数据</button>
       <button class="nav-item" data-page="settings"><span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/></svg></span>采集设置</button>
+      <button class="nav-item" data-page="data"><span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><circle cx="3.5" cy="6" r="0.5" fill="currentColor"/><circle cx="3.5" cy="12" r="0.5" fill="currentColor"/><circle cx="3.5" cy="18" r="0.5" fill="currentColor"/></svg></span>采集数据</button>
     </nav>
     <div class="side-foot">
       <div><span class="dot" id="side-dot"></span><span id="side-state">空闲</span></div>
@@ -330,9 +342,9 @@
               <option value="censored">有码（默认）</option>
               <option value="uncensored">无码</option>
             </select></div>
-          <div class="field w3"><label>HTTP 代理 <small>PROXY · 留空不使用</small></label><input id="c_PROXY" type="text" placeholder="http://127.0.0.1:7890"></div>
           <div class="field w3"><label>Metatube 服务地址 <small>METATUBE_URL · 留空隐藏详情页按钮</small></label><input id="c_METATUBE_URL" type="text" placeholder="http://192.168.1.10:8080"></div>
-          <div class="field w6"><label>User-Agent <small>USER_AGENT</small></label><input id="c_USER_AGENT" type="text"></div>
+          <div class="field w6"><label>User-Agent <small>USER_AGENT · 模拟浏览器身份</small></label><input id="c_USER_AGENT" type="text">
+            <div class="hint">网站靠它识别访问者身份；填常见浏览器标识可避免被反爬拦截。留空使用程序内置默认值，一般无需修改。</div></div>
         </div>
       </div>
 
@@ -350,9 +362,9 @@
       <div class="card">
         <h2>精准筛选 <small>（匹配影片标签或磁力名称）</small></h2>
         <div class="form-grid">
-          <div class="field w6"><label>筛选关键词（逗号分隔） <small>TAG_FILTERS</small></label>
+          <div class="field w6"><label>筛选关键词（逗号分隔，顺序即优先级） <small>TAG_FILTERS</small></label>
             <input id="c_TAG_FILTERS" type="text" placeholder="如: 4K,高畫質,中文字幕">
-            <div class="hint">常用：4K / 高畫質 / 1080p / 60fps / VR専用 / 中文字幕（磁力名）。保存后自动重算全库标记。</div></div>
+            <div class="hint">从左到右依次匹配磁力名称，命中即选中该磁力（★ 推荐）；全部未命中时选第一条磁力兜底。常用：4K / 高畫質 / 1080p / 60fps / VR専用 / 中文字幕。</div></div>
           <div class="field w3"><label>筛选模式 <small>TAG_FILTER_MODE</small></label>
             <select id="c_TAG_FILTER_MODE">
               <option value="mark">全部采集，标记匹配</option>
@@ -402,10 +414,21 @@
     </section>
   </main>
 </div>
+<div id="toasts"></div>
 
 <script>
 let curPage = 1, curSort = 'new', curCat = '', pollTimer = null;
 const $ = id => document.getElementById(id);
+function toast(msg, type = '', ms = 3200) {
+  const box = document.createElement('div');
+  box.className = 'toast ' + type;
+  box.textContent = msg;
+  $('toasts').appendChild(box);
+  setTimeout(() => {
+    box.classList.add('out');
+    box.addEventListener('animationend', () => box.remove(), { once: true });
+  }, ms);
+}
 
 /* ---------- auth ---------- */
 const _rawFetch = window.fetch.bind(window);
@@ -479,7 +502,7 @@ async function loadConfig() {
 }
 async function saveConfig() {
   const body = {};
-  ['BASE_URL','CATEGORY','PROXY','USER_AGENT','METATUBE_URL','DELAY_SECONDS','JITTER_SECONDS',
+  ['BASE_URL','CATEGORY','USER_AGENT','METATUBE_URL','DELAY_SECONDS','JITTER_SECONDS',
    'MAX_RETRIES','TIMEOUT','WEB_PORT','AUTO_CRAWL_INTERVAL_HOURS','AUTO_CRAWL_PAGES',
    'TAG_FILTERS','TAG_FILTER_MODE']
     .forEach(k => { const el = $('c_' + k); if (el) body[k] = el.value; });
@@ -489,6 +512,8 @@ async function saveConfig() {
   const m = $('cfg-msg');
   m.textContent = j.ok ? '✓ 已保存' : ('✗ ' + j.error);
   m.className = 'msg ' + (j.ok ? 'ok' : 'err');
+  if (j.ok) toast('✓ 设置已保存，立即生效', 'ok');
+  else toast('保存失败: ' + (j.error || '未知错误'), 'err');
 }
 
 /* ---------- crawl ---------- */
@@ -622,9 +647,15 @@ async function toggleDetail(code, tr) {
   if (next && next.classList.contains('detail')) { next.remove(); return; }
   const m = await (await fetch('/api/movies/' + encodeURIComponent(code))).json();
   const row = document.createElement('tr'); row.className = 'detail';
-  const mags = (m.magnets || []).map(x =>
-    `<div class="mag"><a href="${esc(x.link)}" target="_blank">${esc(x.name) || x.hash}</a>　<span style="color:var(--mut)">${esc(x.size)} · ${esc(x.date)}</span></div>`
-  ).join('') || '<div class="mag" style="color:var(--mut)">无磁力链接</div>';
+  const all = (m.magnets || []);
+  const ordered = m.best_magnet
+    ? [...all.filter(x => x.hash === m.best_magnet), ...all.filter(x => x.hash !== m.best_magnet)]
+    : all;
+  const mags = ordered.map(x => {
+    const best = x.hash === m.best_magnet;
+    const badge = best ? `<span style="color:var(--ok);font-weight:600">★ 推荐${m.best_kw ? `（命中: ${esc(m.best_kw)}）` : '（兜底）'}</span>　` : '';
+    return `<div class="mag">${badge}<a href="${esc(x.link)}" target="_blank">${esc(x.name) || x.hash}</a>　<span style="color:var(--mut)">${esc(x.size)} · ${esc(x.date)}</span></div>`;
+  }).join('') || '<div class="mag" style="color:var(--mut)">无磁力链接</div>';
   const samples = (m.samples || []).slice(0, 12).map(s =>
     `<a href="${esc(/^https?:/.test(s) ? s : SITE_BASE + s)}" target="_blank"><img src="${esc(/^https?:/.test(s) ? s : SITE_BASE + s)}" loading="lazy" style="width:96px;height:64px;object-fit:cover;border-radius:5px;border:1px solid var(--line);margin:2px"></a>`
   ).join('');
@@ -663,11 +694,15 @@ async function checkUpdate(manual) {
       $('about-changelog').textContent = j.latest.notes;
       $('about-changelog-card').style.display = '';
       $('about-upd').textContent = '有新版本 ' + j.latest.tag;
+      if (manual) toast('发现新版本 ' + j.latest.tag + '，可到仪表盘一键更新');
     } else {
       $('about-upd').textContent = manual ? '✓ 已是最新版本' : '';
+      if (manual) toast('✓ 已是最新版本（v' + j.current + '）', 'ok');
       if (!manual) { pill.style.display = ''; pill.textContent = '✓ v' + j.current + ' 最新'; }
     }
-  } catch (e) { if (manual) $('about-upd').textContent = '检查失败（离线？）'; }
+  } catch (e) {
+    if (manual) { $('about-upd').textContent = '检查失败（离线？）'; toast('检查更新失败（网络异常？）', 'err'); }
+  }
 }
 function toggleNotes() { const n = $('upd-notes'); n.style.display = n.style.display === 'none' ? 'block' : 'none'; }
 async function applyUpdate() {

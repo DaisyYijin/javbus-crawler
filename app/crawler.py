@@ -53,6 +53,24 @@ def compute_matched(tags: list[str], magnet_names: list[str], keywords: list[str
     return hits
 
 
+def pick_magnet(magnets: list[dict], keywords: list[str]) -> tuple[dict | None, str]:
+    """Pick the single magnet to use, honouring keyword priority.
+
+    `keywords` are tried left-to-right (first = highest priority); the first
+    magnet whose name contains the keyword wins.  When no keyword matches any
+    magnet name, fall back to the first magnet on the list (newest first).
+    Returns (magnet-or-None, matched-keyword-or-empty-string).
+    """
+    for kw in keywords:
+        k = kw.strip()
+        if not k:
+            continue
+        for m in magnets:
+            if k in (m.get("name") or ""):
+                return m, k
+    return (magnets[0] if magnets else None), ""
+
+
 def run_job(
     cfg: dict,
     pages: str = "1",

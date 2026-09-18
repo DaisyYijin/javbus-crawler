@@ -323,6 +323,10 @@ def create_app() -> Flask:
             conn.close()
         if not movie:
             return jsonify({"error": "not found"}), 404
+        keywords = [k for k in settings.load().get("TAG_FILTERS", "").split(",") if k.strip()]
+        best, kw = crawler.pick_magnet(movie.get("magnets") or [], keywords)
+        movie["best_magnet"] = best["hash"] if best else None
+        movie["best_kw"] = kw
         return jsonify(movie)
 
     @app.get("/api/export")
