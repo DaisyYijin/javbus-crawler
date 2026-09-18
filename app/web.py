@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import hmac
+import json
 import logging
 import os
 import secrets
@@ -22,8 +23,34 @@ log = logging.getLogger("seedmm.web")
 # ---- admin credentials (deployment-level, via environment) ----------------
 ADMIN_USER = os.getenv("ADMIN_USER", "admin")
 ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "")
-_tokens: set[str] = set()          # valid session tokens (memory; cleared on restart)
 _COOKIE = "jc_token"
+
+# Session tokens are persisted under /data so logins survive container
+# restarts and one-click self-updates.
+_SESSIONS_FILE = os.path.join(settings.DATADIR, "sessions.json")
+
+
+def _load_tokens() -> set[str]:
+    try:
+        with open(_SESSIONS_FILE, encoding="utf-8") as fh:
+            data = json.load(fh)
+        return set(data) if isinstance(data, list) else set()
+    except (OSError, ValueError):
+        return set()
+
+
+def _save_tokens() -> None:
+    try:
+        os.makedirs(settings.DATADIR, exist_ok=True)
+        tmp = _SESSIONS_FILE + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as fh:
+            json.dump(sorted(_tokens), fh)
+        os.replace(tmp, _SESSIONS_FILE)
+    except OSError as exc:
+        log.warning("保存会话失败: %s", exc)
+
+
+_tokens: set[str] = _load_tokens()
 
 
 def _admin_password() -> str:
@@ -111,6 +138,7 @@ def create_app() -> Flask:
             return jsonify({"ok": False, "error": "用户名或密码错误"}), 401
         token = secrets.token_urlsafe(32)
         _tokens.add(token)
+        _save_tokens()
         resp = jsonify({"ok": True, "user": ADMIN_USER})
         resp.set_cookie(_COOKIE, token, httponly=True, samesite="Strict",
                         max_age=7 * 24 * 3600, path="/")
@@ -121,6 +149,7 @@ def create_app() -> Flask:
     def logout():
         token = request.cookies.get(_COOKIE, "")
         _tokens.discard(token)
+        _save_tokens()
         resp = jsonify({"ok": True})
         resp.delete_cookie(_COOKIE, path="/")
         return resp

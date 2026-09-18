@@ -6,12 +6,13 @@
 <title>JavBus Crawler v{{ version }}</title>
 <style>
   :root {
-    --sb-w: 230px;
-    --bg: #f4f5f7; --card: #fff; --line: #e2e5ea;
-    --txt: #1c2333; --mut: #6b7280;
+    --sb-w: 220px;
+    --bg: #f6f7f9; --card: #fff; --line: #e4e7ec;
+    --txt: #20242c; --mut: #6b7280;
     --pri: #4f6ef7; --pri-2: #4f6ef7; --pri-grad: #4f6ef7;
+    --pri-soft: #edf1fe;
     --ok: #16a34a; --warn: #d97706; --err: #dc2626;
-    --sb-bg: #1f2433; --sb-txt: #a8afc4;
+    --sb-bg: #ffffff; --sb-txt: #4b5261;
     --radius: 8px; --shadow: none;
   }
   * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
@@ -22,40 +23,41 @@
   .layout { display: flex; min-height: 100vh; }
   main { flex: 1; min-width: 0; padding: 20px 22px 40px; margin-left: var(--sb-w); }
 
-  /* ---------- sidebar ---------- */
+  /* ---------- sidebar (light) ---------- */
   aside {
     position: fixed; inset: 0 auto 0 0; width: var(--sb-w); z-index: 50;
     background: var(--sb-bg); color: var(--sb-txt);
-    display: flex; flex-direction: column; padding: 18px 12px;
+    border-right: 1px solid var(--line);
+    display: flex; flex-direction: column; padding: 16px 12px;
     transition: transform .25s ease;
   }
-  .brand { display: flex; align-items: center; gap: 10px; padding: 6px 10px 18px; color: #fff; }
+  .brand { display: flex; align-items: center; gap: 10px; padding: 4px 10px 16px; color: var(--txt); }
   .brand .logo {
-    width: 34px; height: 34px; border-radius: 10px; background: var(--pri-grad);
-    display: flex; align-items: center; justify-content: center; font-size: 17px; flex: none;
+    width: 32px; height: 32px; border-radius: 8px; background: var(--pri);
+    display: flex; align-items: center; justify-content: center; font-size: 16px; flex: none;
   }
-  .brand b { font-size: 15px; letter-spacing: .3px; }
-  .brand small { display: block; font-weight: 400; color: var(--sb-txt); font-size: 11px; }
-  nav { display: flex; flex-direction: column; gap: 4px; }
+  .brand b { font-size: 15px; letter-spacing: .2px; }
+  .brand small { display: block; font-weight: 400; color: var(--mut); font-size: 11px; }
+  nav { display: flex; flex-direction: column; gap: 2px; }
   .nav-item {
-    display: flex; align-items: center; gap: 11px; padding: 11px 12px; border-radius: 10px;
+    display: flex; align-items: center; gap: 11px; padding: 10px 12px; border-radius: 8px;
     color: var(--sb-txt); text-decoration: none; font-size: 14px; cursor: pointer; border: none;
     background: none; width: 100%; text-align: left; font-family: inherit;
   }
   .nav-item .ico { width: 20px; text-align: center; font-size: 15px; }
-  .nav-item:hover { background: rgba(255,255,255,.07); color: #fff; }
-  .nav-item.active { background: var(--pri-grad); color: #fff; font-weight: 600; box-shadow: 0 4px 14px rgba(79,110,247,.4); }
+  .nav-item:hover { background: #f2f4f8; color: var(--txt); }
+  .nav-item.active { background: var(--pri-soft); color: var(--pri); font-weight: 600; }
   .side-foot { margin-top: auto; padding: 12px; font-size: 12px; color: var(--mut); line-height: 1.7; }
   .side-foot .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--ok); margin-right: 5px; }
   .side-foot .dot.run { background: var(--pri); animation: pulse 1.2s infinite; }
   @keyframes pulse { 50% { opacity: .35; } }
 
-  /* mobile top bar */
-  .topbar { display: none; position: sticky; top: 0; z-index: 40; background: var(--sb-bg); color: #fff; padding: 12px 16px; align-items: center; gap: 12px; }
-  .topbar .logo { width: 30px; height: 30px; border-radius: 9px; background: var(--pri-grad); display: flex; align-items: center; justify-content: center; }
+  /* mobile top bar (light) */
+  .topbar { display: none; position: sticky; top: 0; z-index: 40; background: #fff; color: var(--txt); border-bottom: 1px solid var(--line); padding: 12px 16px; align-items: center; gap: 12px; }
+  .topbar .logo { width: 28px; height: 28px; border-radius: 8px; background: var(--pri); display: flex; align-items: center; justify-content: center; font-size: 14px; }
   .topbar b { font-size: 15px; }
-  .burger { margin-left: auto; background: none; border: none; color: #fff; font-size: 20px; padding: 4px 8px; cursor: pointer; }
-  .backdrop { display: none; position: fixed; inset: 0; background: rgba(0,0,0,.45); z-index: 45; }
+  .burger { margin-left: auto; background: none; border: none; color: var(--txt); font-size: 20px; padding: 4px 8px; cursor: pointer; }
+  .backdrop { display: none; position: fixed; inset: 0; background: rgba(30,35,50,.35); z-index: 45; }
 
   /* ---------- common ---------- */
   .page { display: none; animation: fade .2s ease; max-width: 1100px; margin: 0 auto; }
@@ -90,14 +92,14 @@
   .stat { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow); padding: 14px 16px; }
   .stat .num { font-size: 26px; font-weight: 700; letter-spacing: -.5px; }
   .stat .lbl { font-size: 12px; color: var(--mut); margin-top: 2px; }
-  .stat.accent { background: var(--pri-grad); border: none; color: #fff; }
-  .stat.accent .lbl { color: rgba(255,255,255,.8); }
+  .stat.accent { background: var(--pri-soft); border: 1px solid #dbe4fd; color: var(--pri); }
+  .stat.accent .lbl { color: var(--pri); opacity: .75; }
   .pill { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; padding: 3px 11px; border-radius: 999px; background: #eef0f6; color: var(--mut); font-weight: 500; }
   .pill.run { background: #e3e9ff; color: var(--pri); }
   .pill.err { background: #fdeaea; color: var(--err); }
   pre#log {
-    background: #10142a; color: #ccd3f0; font-size: 12px; line-height: 1.6; padding: 14px;
-    border-radius: 10px; height: 260px; overflow: auto; white-space: pre-wrap; word-break: break-all;
+    background: #f6f7f9; color: #3a4150; font-size: 12px; line-height: 1.6; padding: 14px;
+    border: 1px solid var(--line); border-radius: 10px; height: 260px; overflow: auto; white-space: pre-wrap; word-break: break-all;
     font-family: "Cascadia Code", Consolas, monospace; margin: 0;
   }
 
@@ -139,8 +141,8 @@
 <body>
 
 <!-- login overlay -->
-<div id="login-overlay" style="display:none;position:fixed;inset:0;z-index:99;background:rgba(23,29,51,.62);backdrop-filter:blur(4px);align-items:center;justify-content:center;padding:20px">
-  <div style="width:100%;max-width:340px;background:var(--card);border-radius:14px;padding:28px 26px;box-shadow:0 20px 60px rgba(0,0,0,.35)">
+<div id="login-overlay" style="display:none;position:fixed;inset:0;z-index:99;background:rgba(240,243,250,.72);backdrop-filter:blur(3px);align-items:center;justify-content:center;padding:20px">
+  <div style="width:100%;max-width:340px;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:28px 26px;box-shadow:0 12px 40px rgba(30,40,70,.12)">
     <div style="display:flex;align-items:center;gap:11px;margin-bottom:14px">
       <div style="width:38px;height:38px;border-radius:11px;background:var(--pri-grad);display:flex;align-items:center;justify-content:center;font-size:19px;flex:none">🕷️</div>
       <div><b style="font-size:16px">JavBus Crawler</b><div style="font-size:12px;color:var(--mut);margin-top:1px">请使用管理员账号登录</div></div>
@@ -343,17 +345,27 @@ window.addEventListener('load', async () => {
   if (r.status === 401) showLogin();
 });
 
-/* ---------- menu / routing ---------- */
+/* ---------- menu / routing (with page persistence) ---------- */
+function activatePage(page) {
+  const btn = document.querySelector(`.nav-item[data-page="${page}"]`);
+  if (btn) btn.click();
+}
 document.querySelectorAll('.nav-item').forEach(btn => {
   btn.addEventListener('click', () => {
     document.querySelectorAll('.nav-item').forEach(b => b.classList.remove('active'));
     btn.classList.add('active');
     document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
     $('page-' + btn.dataset.page).classList.add('active');
+    try { localStorage.setItem('jc.page', btn.dataset.page); } catch (e) {}
     if (btn.dataset.page === 'data') loadMovies(curPage);
     if (window.innerWidth <= 860) toggleMenu(false);
     window.scrollTo(0, 0);
   });
+});
+window.addEventListener('load', () => {
+  let saved = null;
+  try { saved = localStorage.getItem('jc.page'); } catch (e) {}
+  if (saved && saved !== 'dashboard') activatePage(saved);
 });
 function toggleMenu(force) {
   const open = force !== undefined ? force : !$('sidebar').classList.contains('open');
@@ -437,6 +449,7 @@ window.addEventListener('load', () => { pollStatus(); setInterval(pollStatus, 50
 async function loadMovies(page) {
   curPage = Math.max(1, page || 1);
   const q = $('q').value.trim();
+  try { localStorage.setItem('jc.q', q); } catch (e) {}
   const r = await fetch(`/api/movies?q=${encodeURIComponent(q)}&page=${curPage}&size=20`);
   const j = await r.json();
   $('data-total').textContent = `共 ${j.total} 部`;
@@ -552,7 +565,13 @@ function waitForRebirth(newImage) {
 
 window.addEventListener('load', loadConfig);
 window.addEventListener('load', () => checkUpdate(false));
-window.addEventListener('load', () => loadMovies(1));
+window.addEventListener('load', () => {
+  try {
+    const savedQ = localStorage.getItem('jc.q');
+    if (savedQ) $('q').value = savedQ;
+  } catch (e) {}
+  loadMovies(1);
+});
 </script>
 </body>
 </html>
