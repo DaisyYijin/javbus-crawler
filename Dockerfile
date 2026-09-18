@@ -6,16 +6,19 @@ FROM ${PYTHON_IMAGE}
 WORKDIR /app
 
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends gosu \
+    && rm -rf /var/lib/apt/lists/*
 
 COPY app/ app/
-
-# Non-root user; /data is expected to be a mounted volume.
-RUN mkdir -p /data && chown -R nobody:nogroup /data /app
-USER nobody
+COPY entrypoint.sh /entrypoint.sh
+RUN mkdir -p /data && chown -R nobody:nogroup /data /app && chmod +x /entrypoint.sh
 
 EXPOSE 7878
 
+# Starts as root to fix /data ownership (bind mounts are often root-owned on
+# the host), then drops privileges to nobody via gosu. See entrypoint.sh.
 # Default command: web UI (serve). One-shot crawl: docker run ... crawl --pages 1-5
-ENTRYPOINT ["python", "-m", "app.main"]
+ENTRYPOINT ["/entrypoint.sh", "python", "-m", "app.main"]
 CMD []

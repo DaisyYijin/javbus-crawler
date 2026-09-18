@@ -99,3 +99,14 @@ docker compose run --rm crawler --check-update
 - 请遵守目标站点的服务条款与当地法律，控制采集频率，数据仅供个人学习研究。
 - 从 v0.3.0 升级的用户：若 `data/config.json` 中保存过 `WEB_PORT: 8000`，请在网页中改为 `7878`
   并更新 compose 的端口映射（或直接删除 `config.json` 重新生成）。
+
+## 故障排查
+
+**`sqlite3.OperationalError: unable to open database file` 或 `Permission denied: /data/...`**
+
+容器内以 `nobody` 用户运行，而宿主机挂载的 `./data` 目录属主不对（常见于 Linux 上由 root 自动创建）。
+v0.4.1 起容器启动会自动修正属主；旧版本请手动执行：
+
+```bash
+sudo chown -R 65534:65534 ./data && docker compose restart
+```
