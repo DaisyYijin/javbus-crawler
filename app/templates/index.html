@@ -45,6 +45,8 @@
   .nav-item:hover { background: #f2f4f8; color: var(--txt); }
   .nav-item.active { background: var(--pri-soft); color: var(--pri); font-weight: 600; }
   .side-foot { margin-top: auto; padding: 12px; font-size: 12px; color: var(--mut); line-height: 1.7; }
+  .side-btns { margin-top: 10px; display: flex; flex-direction: column; gap: 6px; }
+  .side-btns button { padding: 5px 10px; font-size: 12px; }
   .side-foot .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--ok); margin-right: 5px; }
   .side-foot .dot.run { background: var(--pri); animation: pulse 1.2s infinite; }
   @keyframes pulse { 50% { opacity: .35; } }
@@ -110,6 +112,11 @@
   .gbar { height: 12px; background: var(--pri-soft); border-radius: 4px; overflow: hidden; flex: 1; }
   .gbar i { display: block; height: 100%; background: var(--pri); }
   .gcount { width: 44px; color: var(--mut); }
+  .genre-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; margin-bottom: 12px; }
+  .genre-head h2 { margin: 0; }
+  .seg { display: inline-flex; background: #eef0f6; border-radius: 999px; padding: 3px; gap: 2px; }
+  .seg-btn { padding: 4px 12px; border: none; background: none; border-radius: 999px; font-size: 12px; cursor: pointer; color: var(--mut); font-family: inherit; }
+  .seg-btn.active { background: #fff; color: var(--pri); font-weight: 600; box-shadow: 0 1px 3px rgba(0,0,0,.08); }
 
   pre#log { background: #f6f7f9; color: #3a4150; font-size: 12.5px; line-height: 1.6; padding: 14px;
     border: 1px solid var(--line); border-radius: 10px; height: 60vh; overflow: auto;
@@ -180,7 +187,6 @@
   <div><b>JavBus Crawler</b> <small id="hd-ver">v{{ version }}</small></div>
   <div class="h-actions">
     <button class="h-btn" onclick="activatePage('logs')">运行日志</button>
-    <button class="h-btn" onclick="activatePage('about')">检查更新</button>
   </div>
 </header>
 <div class="backdrop" id="backdrop" onclick="toggleMenu()"></div>
@@ -195,13 +201,13 @@
       <button class="nav-item active" data-page="dashboard"><span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg></span>仪表盘</button>
       <button class="nav-item" data-page="data"><span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><circle cx="3.5" cy="6" r="0.5" fill="currentColor"/><circle cx="3.5" cy="12" r="0.5" fill="currentColor"/><circle cx="3.5" cy="18" r="0.5" fill="currentColor"/></svg></span>采集数据</button>
       <button class="nav-item" data-page="settings"><span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/></svg></span>采集设置</button>
-      <div style="border-top:1px solid var(--line);margin:10px 4px"></div>
-      <button class="nav-item" data-page="about" style="color:var(--mut);font-size:13px"><span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg></span>检查更新 · v{{ version }}</button>
     </nav>
     <div class="side-foot">
       <div><span class="dot" id="side-dot"></span><span id="side-state">空闲</span></div>
-      <div style="margin-top:6px">seedmm.bond 采集器</div>
-      <button class="ghost" onclick="doLogout()" style="margin-top:8px;padding:5px 10px;font-size:12px">退出登录</button>
+      <div class="side-btns">
+        <button class="ghost" onclick="doLogout()">退出登录</button>
+        <button class="ghost" onclick="activatePage('about')">检查更新 · v{{ version }}</button>
+      </div>
     </div>
   </aside>
 
@@ -226,7 +232,14 @@
       </div>
 
       <div class="card">
-        <h2>分类标签统计 <span id="genre-cat" style="font-weight:400;text-transform:none;letter-spacing:0">（全部频道）</span> · 点击标签可筛选</h2>
+        <div class="genre-head">
+          <h2>分类标签统计 · 点击标签可筛选</h2>
+          <div class="seg" id="genre-seg">
+            <button class="seg-btn active" onclick="setGenreCat('', this)">全部</button>
+            <button class="seg-btn" onclick="setGenreCat('censored', this)">有码</button>
+            <button class="seg-btn" onclick="setGenreCat('uncensored', this)">无码</button>
+          </div>
+        </div>
         <div id="genre-bars"></div>
       </div>
 
@@ -539,10 +552,16 @@ async function loadStats() {
 window.addEventListener('load', () => { pollStatus(); setInterval(pollStatus, 5000); loadStats(); });
 
 /* ---------- genre bars ---------- */
-let showAllGenres = false;
-function toggleAllGenres() { showAllGenres = !showAllGenres; loadGenres($('f-cat') ? $('f-cat').value : ''); }
+let showAllGenres = false, genreCat = '';
+function setGenreCat(cat, btn) {
+  genreCat = cat || '';
+  document.querySelectorAll('#genre-seg .seg-btn').forEach(b => b.classList.toggle('active', b === btn));
+  showAllGenres = false;
+  loadGenres(genreCat);
+}
+function toggleAllGenres() { showAllGenres = !showAllGenres; loadGenres(genreCat); }
 async function loadGenres(cat) {
-  cat = cat || '';
+  cat = cat || genreCat || '';
   try {
     const j = await (await fetch('/api/stats?category=' + cat)).json();
     const all = j.top_genres || [];
@@ -695,7 +714,7 @@ window.addEventListener('load', () => {
     const savedCat = localStorage.getItem('jc.cat');
     if (savedCat && $('f-cat')) $('f-cat').value = savedCat;
   } catch (e) {}
-  loadGenres($('f-cat') ? $('f-cat').value : '');
+  loadGenres('');
   loadMovies(1);
 });
 </script>
