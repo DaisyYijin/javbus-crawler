@@ -43,9 +43,20 @@ def _find_self(client):
     me = os.environ.get("HOSTNAME", "")
     if not me:
         raise RuntimeError("HOSTNAME 未设置，无法定位当前容器")
-    for c in client.containers.list(all=True):
+    # Case 1: HOSTNAME equals this container's own id prefix (docker default).
+    all_containers = client.containers.list(all=True)
+    for c in all_containers:
         if c.id.startswith(me):
             return c
+    # Case 2: this container was created by an older self-update which passed
+    # the *previous* container's id-prefix as an explicit hostname. Then
+    # HOSTNAME points at a deleted container id — match by hostname config
+    # instead (running containers win).
+    matches = [c for c in all_containers
+               if (c.attrs.get("Config", {}).get("Hostname") or "") == me]
+    running = [c for c in matches if c.status == "running"]
+    if running or matches:
+        return (running or matches)[0]
     raise RuntimeError("未找到当前容器（HOSTNAME=%s）" % me)
 
 
@@ -145,7 +156,9 @@ def perform_self_update() -> dict:
             environment=cfg.get("Env") or None,
             labels={k: v for k, v in (cfg.get("Labels") or {}).items()
                     if not k.startswith("com.docker.compose")},
-            hostname=cfg.get("Hostname") or None,
+            # NOTE: hostname intentionally NOT copied — the old value is the
+            # previous container's id-prefix; keep the docker default so
+            # HOSTNAME always matches the new container itself.
             ports=_convert_ports(host.get("PortBindings")),
             volumes=host.get("Binds") or None,
             restart_policy=host.get("RestartPolicy") or None,
