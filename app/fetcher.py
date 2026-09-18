@@ -27,6 +27,7 @@ class Fetcher:
         max_retries: int = 3,
         timeout: int = 30,
         user_agent: str = "",
+        proxy: str = "",
         stop_check=None,
     ):
         self.base_url = base_url.rstrip("/")
@@ -38,6 +39,9 @@ class Fetcher:
         self._lock = threading.Lock()
         self._next_allowed = 0.0
         self.session = requests.Session()
+        if proxy:
+            self.session.proxies = {"http": proxy, "https": proxy}
+            log.info("使用代理: %s", proxy)
         self.session.headers.update(
             {
                 "User-Agent": user_agent

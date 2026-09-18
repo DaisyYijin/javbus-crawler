@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>登录 - JavBus Crawler v{{ version }}</title>
+<style>
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  body { margin: 0; min-height: 100vh; display: flex; align-items: center; justify-content: center;
+         padding: 20px; font-family: -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif;
+         background: #f0f2f7; color: #1c2333; }
+  .card { width: 100%; max-width: 330px; background: #fff; border: 1px solid #e4e7ee;
+          border-radius: 10px; padding: 28px 26px; }
+  .brand { display: flex; align-items: center; gap: 10px; margin-bottom: 16px; }
+  .logo { width: 36px; height: 36px; border-radius: 9px; background: #4f6ef7; color: #fff;
+          display: flex; align-items: center; justify-content: center; font-size: 17px; }
+  .brand b { font-size: 15px; }
+  .brand small { display: block; color: #7a8299; font-size: 12px; font-weight: 400; }
+  label { display: block; font-size: 13px; margin: 10px 0 4px; }
+  input { width: 100%; padding: 9px 11px; border: 1px solid #e4e7ee; border-radius: 8px;
+          font-size: 14px; background: #fafbfd; }
+  input:focus { outline: none; border-color: #4f6ef7; background: #fff; }
+  button { width: 100%; margin-top: 16px; padding: 10px; border: none; border-radius: 8px;
+           background: #4f6ef7; color: #fff; font-size: 14px; cursor: pointer; }
+  button:active { opacity: .85; }
+  #msg { margin-top: 10px; font-size: 13px; color: #dc2626; text-align: center; min-height: 18px; }
+</style>
+</head>
+<body>
+  <div class="card">
+    <div class="brand">
+      <div class="logo">🕷️</div>
+      <div><b>JavBus Crawler</b><small>v{{ version }} · 请使用管理员账号登录</small></div>
+    </div>
+    <label>用户名</label>
+    <input id="user" type="text" autocomplete="username" placeholder="admin">
+    <label>密码</label>
+    <input id="pass" type="password" autocomplete="current-password" placeholder="••••••••"
+           onkeydown="if(event.key==='Enter')login()">
+    <button onclick="login()">登 录</button>
+    <div id="msg"></div>
+  </div>
+<script>
+async function login() {
+  const body = {user: document.getElementById('user').value.trim(),
+                password: document.getElementById('pass').value};
+  const r = await fetch('/api/login', {method:'POST', headers:{'Content-Type':'application/json'},
+                                        body: JSON.stringify(body)});
+  const j = await r.json();
+  if (j.ok) location.href = '/';
+  else document.getElementById('msg').textContent = j.error || '登录失败';
+}
+document.getElementById('user').focus();
+</script>
+</body>
+</html>

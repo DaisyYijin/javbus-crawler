@@ -7,12 +7,12 @@
 <style>
   :root {
     --sb-w: 230px;
-    --bg: #f0f2f7; --card: #fff; --line: #e4e7ee;
-    --txt: #1c2333; --mut: #7a8299;
-    --pri: #4f6ef7; --pri-2: #7c5cf0; --pri-grad: linear-gradient(135deg,#4f6ef7,#7c5cf0);
+    --bg: #f4f5f7; --card: #fff; --line: #e2e5ea;
+    --txt: #1c2333; --mut: #6b7280;
+    --pri: #4f6ef7; --pri-2: #4f6ef7; --pri-grad: #4f6ef7;
     --ok: #16a34a; --warn: #d97706; --err: #dc2626;
-    --sb-bg: #171d33; --sb-txt: #aab3d0;
-    --radius: 12px; --shadow: 0 1px 3px rgba(23,29,51,.08), 0 8px 24px rgba(23,29,51,.06);
+    --sb-bg: #1f2433; --sb-txt: #a8afc4;
+    --radius: 8px; --shadow: none;
   }
   * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
   html, body { margin: 0; height: 100%; }
@@ -226,10 +226,11 @@
           <input id="q" type="text" placeholder="🔍 搜索番号 / 标题 / 演员" style="max-width:300px"
                  onkeydown="if(event.key==='Enter')loadMovies(1)">
           <button class="primary" onclick="loadMovies(1)">搜索</button>
+          <button class="ghost" onclick="location.href='/api/export'">⬇ 导出全部 JSON</button>
         </div>
         <div class="table-wrap">
         <table>
-          <thead><tr><th>番号</th><th>标题</th><th>发行日期</th><th>磁力</th><th>入库时间</th></tr></thead>
+          <thead><tr><th>封面</th><th>番号</th><th>标题</th><th>发行日期</th><th>磁力</th><th>入库时间</th></tr></thead>
           <tbody id="movie-rows"></tbody>
         </table>
         </div>
@@ -245,15 +246,34 @@
     <section class="page" id="page-settings">
       <div class="page-head"><h1>采集设置</h1><span>保存后立即生效</span></div>
       <div class="card">
-        <h2>站点与抓取</h2>
+        <h2>站点与频道</h2>
         <div class="grid">
           <div><label>站点地址 <small>BASE_URL</small></label><input id="c_BASE_URL" type="text"></div>
+          <div><label>采集频道 <small>CATEGORY</small></label>
+            <select id="c_CATEGORY" style="width:100%;padding:9px 11px;border:1px solid var(--line);border-radius:9px;font-size:14px;background:#fafbfd">
+              <option value="censored">有码（默认）</option>
+              <option value="uncensored">无码</option>
+            </select></div>
+          <div><label>HTTP 代理 <small>PROXY · 留空不使用</small></label><input id="c_PROXY" type="text" placeholder="http://127.0.0.1:7890"></div>
+          <div><label>User-Agent <small>USER_AGENT</small></label><input id="c_USER_AGENT" type="text"></div>
+        </div>
+
+        <h2 style="margin-top:18px">抓取行为</h2>
+        <div class="grid">
           <div><label>请求间隔（秒） <small>DELAY_SECONDS</small></label><input id="c_DELAY_SECONDS" type="number" step="0.1" min="0"></div>
           <div><label>随机抖动（秒） <small>JITTER_SECONDS</small></label><input id="c_JITTER_SECONDS" type="number" step="0.1" min="0"></div>
           <div><label>重试次数 <small>MAX_RETRIES</small></label><input id="c_MAX_RETRIES" type="number" min="1" max="10"></div>
           <div><label>超时（秒） <small>TIMEOUT</small></label><input id="c_TIMEOUT" type="number" min="5" max="300"></div>
           <div><label>网页端口 <small>WEB_PORT · 重启容器生效</small></label><input id="c_WEB_PORT" type="number" min="1" max="65535"></div>
         </div>
+
+        <h2 style="margin-top:18px">定时自动采集 <small style="font-weight:400">（服务常驻期间生效）</small></h2>
+        <div class="grid">
+          <div><label style="margin-top:14px"><input type="checkbox" id="c_AUTO_CRAWL_ENABLED"> 启用自动采集</label></div>
+          <div><label>间隔（小时） <small>AUTO_CRAWL_INTERVAL_HOURS</small></label><input id="c_AUTO_CRAWL_INTERVAL_HOURS" type="number" step="0.5" min="0.5" max="720"></div>
+          <div><label>每次页码范围 <small>AUTO_CRAWL_PAGES</small></label><input id="c_AUTO_CRAWL_PAGES" type="text" placeholder="如 1-3"></div>
+        </div>
+
         <div class="row" style="margin-top:16px">
           <button class="primary" onclick="saveConfig()">保存配置</button>
           <span id="cfg-msg" class="msg"></span>
@@ -342,16 +362,23 @@ function toggleMenu(force) {
 }
 
 /* ---------- config ---------- */
+let SITE_BASE = '';
 async function loadConfig() {
   const r = await fetch('/api/config'); const j = await r.json();
+  SITE_BASE = (j.config.BASE_URL || '').replace(/\/+$/, '');
   for (const [k, v] of Object.entries(j.config)) {
-    const el = $('c_' + k); if (el) el.value = v;
+    const el = $('c_' + k); if (!el) continue;
+    if (el.type === 'checkbox') el.checked = !!v;
+    else el.value = v;
   }
 }
 async function saveConfig() {
   const body = {};
-  ['BASE_URL','DELAY_SECONDS','JITTER_SECONDS','MAX_RETRIES','TIMEOUT','WEB_PORT']
-    .forEach(k => body[k] = $('c_' + k).value);
+  ['BASE_URL','CATEGORY','PROXY','USER_AGENT','DELAY_SECONDS','JITTER_SECONDS',
+   'MAX_RETRIES','TIMEOUT','WEB_PORT','AUTO_CRAWL_INTERVAL_HOURS','AUTO_CRAWL_PAGES']
+    .forEach(k => { const el = $('c_' + k); if (el) body[k] = el.value; });
+  const cb = $('c_AUTO_CRAWL_ENABLED');
+  if (cb) body.AUTO_CRAWL_ENABLED = cb.checked;
   const r = await fetch('/api/config', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body)});
   const j = await r.json();
   const m = $('cfg-msg');
@@ -417,10 +444,19 @@ async function loadMovies(page) {
   $('pg-prev').disabled = j.page <= 1; $('pg-next').disabled = j.page * j.size >= j.total;
   $('movie-rows').innerHTML = (j.items || []).map(m => `
     <tr class="movie" onclick="toggleDetail('${m.code}', this)">
+      <td><img src="${coverUrl(m.cover)}" loading="lazy" alt="" style="width:54px;height:38px;object-fit:cover;border-radius:4px;border:1px solid var(--line)" onerror="this.style.visibility='hidden'"></td>
       <td><span class="code">${m.code}</span></td>
       <td>${esc(m.title)}</td><td>${m.release_date || ''}</td>
       <td>${m.magnet_count}</td><td style="color:var(--mut)">${(m.first_seen || '').replace('T',' ').slice(5,16)}</td>
-    </tr>`).join('') || '<tr><td colspan="5" style="color:var(--mut);text-align:center;padding:30px">暂无数据，去仪表盘运行一次采集吧</td></tr>';
+    </tr>`).join('') || '<tr><td colspan="6" style="color:var(--mut);text-align:center;padding:30px">暂无数据，去仪表盘运行一次采集吧</td></tr>';
+}
+function coverUrl(c) {
+  if (!c) return '';
+  return /^https?:/.test(c) ? c : SITE_BASE + c;
+}
+function searchTag(text) {
+  $('q').value = text;
+  loadMovies(1);
 }
 async function toggleDetail(code, tr) {
   const next = tr.nextElementSibling;
@@ -430,11 +466,16 @@ async function toggleDetail(code, tr) {
   const mags = (m.magnets || []).map(x =>
     `<div class="mag">🧲 <a href="${esc(x.link)}" target="_blank">${esc(x.name) || x.hash}</a>　<span style="color:var(--mut)">${esc(x.size)} · ${esc(x.date)}</span></div>`
   ).join('') || '<div class="mag" style="color:var(--mut)">无磁力链接</div>';
-  row.innerHTML = `<td colspan="5">
-    <div class="mag"><b>导演</b> ${esc(m.director)||'-'}　<b>片商</b> ${esc(m.studio)||'-'}　<b>发行</b> ${esc(m.label)||'-'}　<b>时长</b> ${esc(m.duration)||'-'}　<b>系列</b> ${esc(m.series)||'-'}</div>
-    <div class="mag" style="margin:4px 0"><b>演员</b> ${(m.actors||[]).map(a=>`<span class="tag">${esc(a)}</span>`).join('')||'-'}
+  const samples = (m.samples || []).slice(0, 12).map(s =>
+    `<a href="${esc(/^https?:/.test(s) ? s : SITE_BASE + s)}" target="_blank"><img src="${esc(/^https?:/.test(s) ? s : SITE_BASE + s)}" loading="lazy" style="width:96px;height:64px;object-fit:cover;border-radius:5px;border:1px solid var(--line);margin:2px"></a>`
+  ).join('');
+  row.innerHTML = `<td colspan="6">
+    <div class="mag"><b>导演</b> ${esc(m.director)||'-'}　<b>片商</b> <a href="javascript:void(0)" onclick="searchTag('${esc(m.studio)}')" style="color:inherit">${esc(m.studio)||'-'}</a>
+    　<b>发行</b> ${esc(m.label)||'-'}　<b>时长</b> ${esc(m.duration)||'-'}　<b>系列</b> ${esc(m.series)||'-'}</div>
+    <div class="mag" style="margin:4px 0"><b>演员</b> ${(m.actors||[]).map(a=>`<span class="tag" style="cursor:pointer" onclick="searchTag('${esc(a)}')">${esc(a)}</span>`).join('')||'-'}
     　<b>类别</b> ${(m.genres||[]).map(g=>`<span class="tag">${esc(g)}</span>`).join('')||'-'}</div>
     ${mags}
+    ${samples ? `<div class="mag" style="margin-top:6px"><b>样图</b></div><div style="display:flex;flex-wrap:wrap">${samples}</div>` : ''}
     <div class="mag"><a href="${esc(m.url)}" target="_blank">原页面 ↗</a></div></td>`;
   tr.after(row);
 }

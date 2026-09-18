@@ -56,19 +56,23 @@ def run_job(
         max_retries=cfg["MAX_RETRIES"],
         timeout=cfg["TIMEOUT"],
         user_agent=cfg["USER_AGENT"],
+        proxy=(cfg.get("PROXY") or "").strip(),
         stop_check=stop_check,
     )
+    category = cfg.get("CATEGORY", "censored")
+    section = "/uncensored" if category == "uncensored" else ""
     conn = db.connect(cfg["DB_PATH"])
     known = db.known_codes(conn)
-    log.info("开始采集: pages=%s base=%s 已入库=%d delay=%.1fs",
-             pages, fetcher.base_url, len(known), fetcher.delay)
+    log.info("开始采集: 频道=%s pages=%s base=%s 已入库=%d delay=%.1fs",
+             "无码" if section else "有码", pages, fetcher.base_url,
+             len(known), fetcher.delay)
 
     stats = {"pages": 0, "listed": 0, "new": 0, "updated": 0,
              "magnets": 0, "errors": 0, "stopped": False}
 
     try:
         for page in parse_pages(pages):
-            html = fetcher.get(f"/page/{page}")
+            html = fetcher.get(f"{section}/page/{page}")
             if not html:
                 log.error("第 %d 页抓取失败，跳过", page)
                 stats["errors"] += 1

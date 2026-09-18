@@ -128,6 +128,10 @@ def create_app() -> Flask:
     # ---------------- pages ----------------
     @app.get("/")
     def index():
+        # Not logged in -> standalone login page, the main UI stays hidden.
+        token = request.cookies.get(_COOKIE, "")
+        if not (token and token in _tokens):
+            return render_template("login.html", version=__version__)
         return render_template("index.html", version=__version__)
 
     # ---------------- config ----------------
@@ -217,6 +221,45 @@ def create_app() -> Flask:
             return jsonify({"error": "not found"}), 404
         return jsonify(movie)
 
+    @app.get("/api/export")
+    def export_data():
+        """Download all movies + magnets as a JSON file."""
+        import json as _json
+
+        conn = sqlite3.connect(settings.load()["DB_PATH"], timeout=30)
+        try:
+            rows = conn.execute(
+                "SELECT code, title, url, cover, release_date, duration, director, "
+                "studio, label, series, actors, genres, samples, magnet_count, "
+                "first_seen, last_seen FROM movies"
+            ).fetchall()
+            cols = ("code title url cover release_date duration director studio label "
+                    "series actors genres samples magnet_count first_seen last_seen").split()
+            out = []
+            for r in rows:
+                m = dict(zip(cols, r))
+                for k in ("actors", "genres", "samples"):
+                    try:
+                        m[k] = _json.loads(m[k])
+                    except (TypeError, ValueError):
+                        m[k] = []
+                m["magnets"] = [
+                    {"hash": x[0], "name": x[1], "size": x[2], "date": x[3], "link": x[4]}
+                    for x in conn.execute(
+                        "SELECT hash, name, size, date, link FROM magnets WHERE code = ?",
+                        (m["code"],),
+                    )
+                ]
+                out.append(m)
+        finally:
+            conn.close()
+        body = _json.dumps({"exported_at": _now(), "count": len(out), "movies": out},
+                           ensure_ascii=False, indent=2)
+        return body, 200, {
+            "Content-Type": "application/json; charset=utf-8",
+            "Content-Disposition": 'attachment; filename="javbus-crawler-export.json"',
+        }
+
     # ---------------- update ----------------
     @app.get("/api/update/check")
     def update_check():
@@ -276,6 +319,51 @@ def _startup_selfcheck() -> None:
                   "sudo chown -R 65534:65534 <挂载目录> 后重启容器", db_path, exc)
 
 
+def _auto_crawl_loop() -> None:
+    """Background scheduler: start a crawl every AUTO_CRAWL_INTERVAL_HOURS
+    (when enabled in the web settings)."""
+    next_run: float = 0.0  # 0 = not scheduled yet
+    while True:
+        time.sleep(30)
+        try:
+            cfg = settings.load()
+            if not cfg.get("AUTO_CRAWL_ENABLED"):
+                next_run = 0.0
+                continue
+            interval = float(cfg.get("AUTO_CRAWL_INTERVAL_HOURS") or 0)
+            if interval <= 0:
+                continue
+            now = time.time()
+            if next_run == 0.0:
+                next_run = now + interval * 3600
+                log.info("自动采集已启用: 每 %.1f 小时采集 %s 页（首次约 %s）",
+                         interval, cfg.get("AUTO_CRAWL_PAGES"),
+                         datetime.fromtimestamp(next_run, tz=timezone.utc)
+                         .strftime("%m-%d %H:%M UTC"))
+                continue
+            if now < next_run:
+                continue
+            next_run = now + interval * 3600
+            with _job_lock:
+                if _job["running"]:
+                    log.info("自动采集: 已有任务在运行，跳过本次")
+                    continue
+                pages = str(cfg.get("AUTO_CRAWL_PAGES") or "1")
+                _job.update(
+                    running=True, stop=False, stats={}, error=None,
+                    started_at=_now(), finished_at=None,
+                    params={"pages": pages, "magnets": True, "refresh": False,
+                            "auto": True},
+                )
+                _job["thread"] = threading.Thread(
+                    target=_crawl_thread, args=(_job["params"],), daemon=True
+                )
+                _job["thread"].start()
+            log.info("自动采集已启动: pages=%s", pages)
+        except Exception:
+            log.exception("自动采集调度异常")
+
+
 def run(host: str = "0.0.0.0", port: int | None = None) -> None:
     """Serve the web UI (waitress, production WSGI)."""
     from waitress import serve
@@ -288,5 +376,6 @@ def run(host: str = "0.0.0.0", port: int | None = None) -> None:
         port = int(settings.load()["WEB_PORT"])
     app = create_app()
     _startup_selfcheck()
+    threading.Thread(target=_auto_crawl_loop, daemon=True).start()
     log.info("Web 界面: http://%s:%d （配置文件 %s）", host, port, settings.CONFIG_PATH)
     serve(app, host=host, port=port, threads=8)

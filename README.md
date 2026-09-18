@@ -48,12 +48,17 @@ docker compose up -d
 | 键 | 默认值 | 说明 |
 |---|---|---|
 | `BASE_URL` | `https://www.seedmm.bond` | 站点根地址 |
+| `CATEGORY` | `censored` | 采集频道：有码 `censored` / 无码 `uncensored` |
+| `PROXY` | 空 | HTTP 代理（如 `http://127.0.0.1:7890`），留空不使用 |
 | `DELAY_SECONDS` | `2.0` | 请求间隔下限（秒） |
 | `JITTER_SECONDS` | `1.0` | 请求间隔随机抖动上限（秒） |
 | `MAX_RETRIES` | `3` | 单请求重试次数（指数退避） |
 | `TIMEOUT` | `30` | 请求超时（秒） |
-| `WEB_PORT` | `7878` | Web 端口（重启容器后生效） |
 | `USER_AGENT` | Chrome UA | 请求头 |
+| `AUTO_CRAWL_ENABLED` | `false` | 定时自动采集开关 |
+| `AUTO_CRAWL_INTERVAL_HOURS` | `24` | 自动采集间隔（小时） |
+| `AUTO_CRAWL_PAGES` | `1-3` | 每次自动采集的页码范围 |
+| `WEB_PORT` | `7878` | Web 端口（重启容器后生效） |
 
 ## CLI（可选）
 
