@@ -2,7 +2,8 @@
 #   启动:  docker compose up -d
 #   界面:  http://localhost:7878
 #   数据:  ./data/seedmm.db   配置: ./data/config.json
-#   更新:  docker compose pull && docker compose up -d
+#   更新:  网页「关于/更新」页一键更新（需挂载 docker.sock，见下）
+#          或命令行: docker compose pull && docker compose up -d
 services:
   crawler:
     image: ghcr.io/daisyyijin/javbus-crawler:latest
@@ -11,4 +12,8 @@ services:
       - "7878:7878"
     volumes:
       - ./data:/data
+      # 网页一键更新所需（等同容器控制本机 Docker）。
+      # 注意：挂载 docker.sock 等于授予容器宿主机 Docker 的完全控制权，
+      # 仅在可信环境使用；不需要一键更新可删除下面这行。
+      - /var/run/docker.sock:/var/run/docker.sock
     restart: unless-stopped

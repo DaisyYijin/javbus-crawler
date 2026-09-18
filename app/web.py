@@ -9,7 +9,7 @@ from datetime import datetime, timezone
 
 from flask import Flask, jsonify, render_template, request
 
-from . import crawler, db, settings, updater
+from . import crawler, db, selfupdate, settings, updater
 from .fetcher import StopRequested
 from .version import __version__
 
@@ -175,14 +175,24 @@ def create_app() -> Flask:
 
     @app.post("/api/update/apply")
     def update_apply():
-        # A container cannot rebuild its own image; return host commands.
+        # Preferred: replace ourselves via the Docker API (docker.sock mount).
+        if selfupdate.docker_available():
+            try:
+                result = selfupdate.perform_self_update()
+                return jsonify(result)
+            except RuntimeError as exc:
+                return jsonify({"ok": False, "error": str(exc)}), 500
+        # Fallback: no socket mounted -> return host commands.
         return jsonify({
-            "ok": True,
+            "ok": False,
+            "needs_socket": True,
             "commands": [
                 "docker pull ghcr.io/daisyyijin/javbus-crawler:latest",
                 "docker compose up -d",
             ],
-            "note": "容器无法自行更新镜像，请在宿主机执行上述命令后重启容器。",
+            "note": "未检测到 Docker API：请在 docker-compose.yml 挂载 "
+                    "/var/run/docker.sock:/var/run/docker.sock 以启用网页一键更新，"
+                    "或在宿主机执行上述命令。",
         })
 
     return app

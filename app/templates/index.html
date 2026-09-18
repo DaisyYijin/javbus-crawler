@@ -169,7 +169,7 @@
       <div id="update-banner" class="banner">
         🚀 <b>发现新版本 <span id="upd-tag"></span></b>（当前 v{{ version }}）
         <button class="ghost" onclick="toggleNotes()" style="margin:0 4px;padding:5px 12px">更新日志</button>
-        <button class="primary" onclick="applyUpdate()" style="padding:5px 12px">如何更新</button>
+        <button class="primary" onclick="applyUpdate()" style="padding:5px 12px">🚀 一键更新</button>
         <div id="upd-notes"></div>
       </div>
 
@@ -262,7 +262,7 @@
         <h2>更新日志</h2>
         <div class="mag" id="about-changelog" style="white-space:pre-wrap"></div>
         <div class="row" style="margin-top:12px">
-          <button class="primary" onclick="applyUpdate()">如何更新</button>
+          <button class="primary" onclick="applyUpdate()">🚀 一键更新</button>
         </div>
       </div>
     </section>
@@ -411,11 +411,52 @@ async function checkUpdate(manual) {
   } catch (e) { if (manual) $('about-upd').textContent = '检查失败（离线？）'; }
 }
 function toggleNotes() { const n = $('upd-notes'); n.style.display = n.style.display === 'none' ? 'block' : 'none'; }
+
 async function applyUpdate() {
-  const j = await (await fetch('/api/update/apply', {method:'POST'})).json();
-  $('about-changelog-card').style.display = '';
-  $('about-changelog').textContent = j.note + '\n\n' + j.commands.join('\n');
+  const card = $('about-changelog-card'), body = $('about-changelog');
+  card.style.display = ''; body.textContent = '⏳ 正在拉取最新镜像并重建容器…（约 30-60 秒，期间网页短暂无响应属正常）';
   document.querySelector('[data-page="about"]').click();
+  let j;
+  try {
+    j = await (await fetch('/api/update/apply', {method:'POST'})).json();
+  } catch (e) {
+    body.textContent = '✗ 请求失败: ' + e;
+    return;
+  }
+  if (j.ok && j.updated) {          // container replaced, wait for the new version
+    waitForRebirth(j.new_image || '');
+    return;
+  }
+  if (j.ok && !j.updated) {         // image already current
+    body.textContent = '✓ ' + j.message;
+    return;
+  }
+  // needs_socket or error -> show guidance
+  body.textContent = (j.error || j.note || '更新失败') + '\n\n' + (j.commands || []).join('\n');
+}
+
+function waitForRebirth(newImage) {
+  const body = $('about-changelog');
+  const before = '{{ version }}';   // version of this (old) page
+  let tries = 0;
+  const timer = setInterval(async () => {
+    tries++;
+    try {
+      const r = await fetch('/api/update/check', {cache:'no-store'});
+      if (r.ok) {
+        const j = await r.json();
+        // the old container keeps serving until the switch-over; only a
+        // changed version number proves the new container took over
+        if (j.current && j.current !== before) {
+          clearInterval(timer);
+          body.textContent = '✅ 更新完成：v' + j.current +
+            (newImage ? '（镜像 ' + newImage + '）' : '') + '，即将刷新页面…';
+          setTimeout(() => location.reload(true), 1500);
+        }
+      }
+    } catch (e) { /* still restarting */ }
+    if (tries > 45) { clearInterval(timer); body.textContent = '⏳ 切换耗时较长，请稍后手动刷新页面。'; }
+  }, 2000);
 }
 
 window.addEventListener('load', loadConfig);

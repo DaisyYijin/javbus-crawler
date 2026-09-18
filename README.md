@@ -100,6 +100,16 @@ docker compose run --rm crawler --check-update
 - 从 v0.3.0 升级的用户：若 `data/config.json` 中保存过 `WEB_PORT: 8000`，请在网页中改为 `7878`
   并更新 compose 的端口映射（或直接删除 `config.json` 重新生成）。
 
+## 网页一键更新（v0.5.0+）
+
+「关于 / 更新」页的 **🚀 一键更新** 可在网页内直接完成：拉取最新镜像 → 重建同名容器
+（端口/卷/重启策略全部保留）→ 新容器接管 → 自动清理旧容器 → 页面自动刷新。
+失败时自动回滚，旧容器继续运行。
+
+前提：`docker-compose.yml` 中挂载了 `/var/run/docker.sock`（默认已配置）。
+安全提示：挂载 docker.sock 等于授予容器宿主机 Docker 的完全控制权，仅在可信环境使用；
+不需要此功能可删除该挂载行，网页会退回显示手动更新命令。
+
 ## 故障排查
 
 **`sqlite3.OperationalError: unable to open database file` 或 `Permission denied: /data/...`**
