@@ -124,9 +124,9 @@
   .banner { display: none; padding: 13px 16px; border-radius: var(--radius); margin-bottom: 16px; font-size: 14px; background: #fff8e6; border: 1px solid #f0d48a; }
   #upd-notes { display: none; margin-top: 10px; white-space: pre-wrap; font-size: 13px; }
 
+  /* mobile drawer */
   @media (max-width: 860px) {
     main { margin-left: 0; padding: 14px 14px 80px; }
-    .topbar { display: flex; }
     aside { transform: translateX(-100%); width: 260px; }
     aside.open { transform: none; box-shadow: 0 0 40px rgba(0,0,0,.25); }
     .backdrop.show { display: block; }
@@ -134,21 +134,37 @@
     pre#log { height: 55vh; font-size: 11.5px; }
   }
   @media (max-width: 480px) { .grid { grid-template-columns: 1fr; } }
-  .corner-log { position: fixed; top: 12px; right: 20px; z-index: 46; background: var(--card);
-    border: 1px solid var(--line); border-radius: 999px; padding: 7px 15px; font-size: 13px;
-    color: var(--txt); cursor: pointer; }
-  .corner-log:hover { border-color: var(--pri); color: var(--pri); }
-  @media (max-width: 860px) { .corner-log { top: 11px; right: 64px; padding: 5px 12px; } }
+  /* mobile burger inside the app header */
+  .h-burger { display: none; background: none; border: none; color: var(--txt); font-size: 20px; padding: 4px 8px; cursor: pointer; }
+  @media (max-width: 860px) { .h-burger { display: block; } }
+</style>
+  /* ---------- app header (all screens) ---------- */
+  header.app {
+    position: sticky; top: 0; z-index: 40; background: #fff; border-bottom: 1px solid var(--line);
+    display: flex; align-items: center; gap: 14px; padding: 10px 22px;
+  }
+  header.app .logo { width: 30px; height: 30px; border-radius: 8px; background: var(--pri); color: #fff;
+    display: flex; align-items: center; justify-content: center; font-size: 14px; font-weight: 700; }
+  header.app b { font-size: 15px; }
+  header.app small { color: var(--mut); font-size: 11px; }
+  header.app .h-actions { margin-left: auto; display: flex; gap: 8px; align-items: center; }
+  .h-btn { background: none; border: 1px solid var(--line); border-radius: 999px; padding: 6px 14px;
+    font-size: 13px; color: var(--txt); cursor: pointer; font-family: inherit; }
+  .h-btn:hover { border-color: var(--pri); color: var(--pri); }
+  .h-btn.alert { border-color: #f0d48a; background: #fff8e6; color: var(--warn); font-weight: 600; }
 </style>
 </head>
 <body>
 
-<button class="corner-log" onclick="activatePage('logs')">运行日志</button>
-<div class="topbar">
-  <div class="logo">J</div><b>JavBus Crawler</b>
-  <button class="ghost" onclick="activatePage('logs')" style="margin-left:auto;padding:5px 10px;font-size:12px">日志</button>
-  <button class="burger" onclick="toggleMenu()" aria-label="菜单">≡</button>
-</div>
+<header class="app">
+  <button class="h-burger" onclick="toggleMenu()" aria-label="菜单">≡</button>
+  <div class="logo">J</div>
+  <div><b>JavBus Crawler</b> <small id="hd-ver">v{{ version }}</small></div>
+  <div class="h-actions">
+    <button class="h-btn" onclick="activatePage('logs')">运行日志</button>
+    <button class="h-btn" onclick="activatePage('about')">检查更新</button>
+  </div>
+</header>
 <div class="backdrop" id="backdrop" onclick="toggleMenu()"></div>
 
 <div class="layout">
