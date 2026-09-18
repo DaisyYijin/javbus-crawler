@@ -161,12 +161,12 @@
       <button class="nav-item active" data-page="dashboard"><span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg></span>仪表盘</button>
       <button class="nav-item" data-page="data"><span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><circle cx="3.5" cy="6" r="0.5" fill="currentColor"/><circle cx="3.5" cy="12" r="0.5" fill="currentColor"/><circle cx="3.5" cy="18" r="0.5" fill="currentColor"/></svg></span>采集数据</button>
       <button class="nav-item" data-page="settings"><span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/></svg></span>采集设置</button>
-      <button class="nav-item" data-page="about"><span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg></span>关于 / 更新</button>
+      <div style="border-top:1px solid var(--line);margin:10px 4px"></div>
+      <button class="nav-item" data-page="about" style="color:var(--mut);font-size:13px"><span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg></span>检查更新 · v{{ version }}</button>
     </nav>
     <div class="side-foot">
       <div><span class="dot" id="side-dot"></span><span id="side-state">空闲</span></div>
       <div style="margin-top:6px">seedmm.bond 采集器</div>
-      <div id="side-update" style="margin-top:6px;cursor:pointer" onclick="activatePage('about')">v{{ version }} · 检查更新</div>
       <button class="ghost" onclick="doLogout()" style="margin-top:8px;padding:5px 10px;font-size:12px">退出登录</button>
     </div>
   </aside>
@@ -285,6 +285,7 @@
             </select></div>
           <div><label>HTTP 代理 <small>PROXY · 留空不使用</small></label><input id="c_PROXY" type="text" placeholder="http://127.0.0.1:7890"></div>
           <div><label>User-Agent <small>USER_AGENT</small></label><input id="c_USER_AGENT" type="text"></div>
+          <div><label>Metatube 服务地址 <small>METATUBE_URL · 留空隐藏详情页按钮</small></label><input id="c_METATUBE_URL" type="text" placeholder="http://192.168.1.10:8080"></div>
         </div>
 
         <h2 style="margin-top:18px">抓取行为</h2>
@@ -385,20 +386,20 @@ window.addEventListener('load', async () => {
 
 /* ---------- menu / routing ---------- */
 function activatePage(page) {
+  // works even for pages without a menu item (e.g. logs)
+  document.querySelectorAll('.nav-item').forEach(b => b.classList.remove('active'));
   const btn = document.querySelector(`.nav-item[data-page="${page}"]`);
-  if (btn) btn.click();
+  if (btn) btn.classList.add('active');
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  const pg = $('page-' + page);
+  if (pg) pg.classList.add('active');
+  try { localStorage.setItem('jc.page', page); } catch (e) {}
+  if (page === 'data') loadMovies(curPage);
+  if (window.innerWidth <= 860) toggleMenu(false);
+  window.scrollTo(0, 0);
 }
 document.querySelectorAll('.nav-item').forEach(btn => {
-  btn.addEventListener('click', () => {
-    document.querySelectorAll('.nav-item').forEach(b => b.classList.remove('active'));
-    btn.classList.add('active');
-    document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
-    $('page-' + btn.dataset.page).classList.add('active');
-    try { localStorage.setItem('jc.page', btn.dataset.page); } catch (e) {}
-    if (btn.dataset.page === 'data') loadMovies(curPage);
-    if (window.innerWidth <= 860) toggleMenu(false);
-    window.scrollTo(0, 0);
-  });
+  btn.addEventListener('click', () => activatePage(btn.dataset.page));
 });
 window.addEventListener('load', () => {
   let saved = null;
@@ -416,6 +417,7 @@ let SITE_BASE = '';
 async function loadConfig() {
   const j = await (await fetch('/api/config')).json();
   SITE_BASE = (j.config.BASE_URL || '').replace(/\/+$/, '');
+  window.METATUBE_URL = (j.config.METATUBE_URL || '').replace(/\/+$/, '');
   for (const [k, v] of Object.entries(j.config)) {
     const el = $('c_' + k); if (!el) continue;
     if (el.type === 'checkbox') el.checked = !!v;
@@ -424,7 +426,7 @@ async function loadConfig() {
 }
 async function saveConfig() {
   const body = {};
-  ['BASE_URL','CATEGORY','PROXY','USER_AGENT','DELAY_SECONDS','JITTER_SECONDS',
+  ['BASE_URL','CATEGORY','PROXY','USER_AGENT','METATUBE_URL','DELAY_SECONDS','JITTER_SECONDS',
    'MAX_RETRIES','TIMEOUT','WEB_PORT','AUTO_CRAWL_INTERVAL_HOURS','AUTO_CRAWL_PAGES',
    'TAG_FILTERS','TAG_FILTER_MODE']
     .forEach(k => { const el = $('c_' + k); if (el) body[k] = el.value; });
@@ -574,7 +576,7 @@ async function toggleDetail(code, tr) {
     　<b>类别</b> ${(m.genres||[]).map(g=>`<span class="tag" onclick="searchTag('${esc(g)}')" style="cursor:pointer">${esc(g)}</span>`).join('')||'-'}</div>
     ${mags}
     ${samples ? `<div class="mag" style="margin-top:6px"><b>样图</b></div><div style="display:flex;flex-wrap:wrap">${samples}</div>` : ''}
-    <div class="mag"><a href="${esc(m.url)}" target="_blank">原页面 ↗</a></div></td>`;
+    <div class="mag"><a href="${esc(m.url)}" target="_blank">原页面 ↗</a>${SITE_BASE !== m.url.replace(/\/+$/,'') ? ` ｜ <a href="${esc(m.url.replace(/^https?:\/\/[^/]+/, SITE_BASE))}" target="_blank">本站镜像</a>` : ''} ｜ <a href="${esc((window.METATUBE_URL || '') + '/v1/movies/javbus/' + encodeURIComponent(m.code))}" target="_blank" style="${window.METATUBE_URL ? '' : 'display:none'}">Metatube 查询</a></div></td>`;
   tr.after(row);
 }
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));

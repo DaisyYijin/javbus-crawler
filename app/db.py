@@ -232,10 +232,14 @@ def library_stats(conn: sqlite3.Connection, category: str = "") -> dict:
     genre_rows = conn.execute(
         f"SELECT genres FROM movies {where}", params).fetchall()
     from collections import Counter
+
+    from . import taxonomy
+
     counter: Counter = Counter()
     for (g,) in genre_rows:
         try:
-            counter.update(json.loads(g or "[]"))
+            # aggregate by the normalized (standard) category name
+            counter.update(taxonomy.normalize_tags(json.loads(g or "[]")))
         except (TypeError, ValueError):
             pass
     top_genres = [{"tag": t, "count": n} for t, n in counter.most_common()]

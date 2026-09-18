@@ -32,6 +32,7 @@ DEFAULTS: dict = {
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
         "(KHTML, like Gecko) Chrome/126.0 Safari/537.36"
     ),
+    "METATUBE_URL": "",               # e.g. http://192.168.1.10:8080
 }
 
 # Types allowed per key, for validation on save.
@@ -51,6 +52,7 @@ _TYPES = {
     "TAG_FILTERS": str,
     "TAG_FILTER_MODE": str,
     "USER_AGENT": str,
+    "METATUBE_URL": str,
 }
 
 _lock = threading.Lock()
