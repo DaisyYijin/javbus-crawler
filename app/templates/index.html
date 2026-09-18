@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>seedmm-crawler v{{ version }}</title>
+<style>
+  :root { --bg:#f4f5f7; --card:#fff; --line:#e2e4e8; --txt:#24292f; --mut:#6a737d; --acc:#0969da; --ok:#1a7f37; --warn:#9a6700; --err:#cf222e; }
+  * { box-sizing:border-box; }
+  body { margin:0; font-family:-apple-system,"Segoe UI","Microsoft YaHei",sans-serif; background:var(--bg); color:var(--txt); }
+  .wrap { max-width:1080px; margin:0 auto; padding:16px; }
+  header { display:flex; align-items:center; gap:10px; padding:10px 0; }
+  header h1 { font-size:18px; margin:0; }
+  .badge { background:var(--acc); color:#fff; border-radius:10px; padding:1px 8px; font-size:12px; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:8px; padding:14px 16px; margin-bottom:14px; }
+  .card h2 { font-size:14px; margin:0 0 10px; color:var(--mut); text-transform:uppercase; letter-spacing:.5px; }
+  label { display:block; font-size:13px; margin:8px 0 3px; }
+  label small { color:var(--mut); }
+  input[type=text], input[type=number] { width:100%; padding:6px 8px; border:1px solid var(--line); border-radius:6px; font-size:14px; }
+  .grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(200px,1fr)); gap:10px; }
+  button { padding:6px 14px; border:none; border-radius:6px; font-size:14px; cursor:pointer; }
+  .primary { background:var(--acc); color:#fff; } .ok { background:var(--ok); color:#fff; }
+  .danger { background:var(--err); color:#fff; } .plain { background:#eaeef2; }
+  button:disabled { opacity:.5; cursor:not-allowed; }
+  .row { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+  .pill { font-size:12px; padding:2px 8px; border-radius:10px; background:#eaeef2; color:var(--mut); }
+  .pill.run { background:#ddf4ff; color:var(--acc); }
+  pre#log { background:#0d1117; color:#c9d1d9; font-size:12px; line-height:1.5; padding:10px; border-radius:6px; height:220px; overflow:auto; white-space:pre-wrap; }
+  table { width:100%; border-collapse:collapse; font-size:13px; }
+  th, td { text-align:left; padding:6px 8px; border-bottom:1px solid var(--line); }
+  th { color:var(--mut); font-weight:600; }
+  tr.movie { cursor:pointer; } tr.movie:hover { background:#f6f8fa; }
+  .mag { font-size:12px; word-break:break-all; }
+  .banner { display:none; padding:10px 14px; border-radius:8px; margin-bottom:14px; font-size:14px; }
+  .banner.up { display:block; background:#fff8c5; border:1px solid #d4a72c66; }
+  .banner code { background:#ffffffcc; padding:1px 5px; border-radius:4px; }
+  .msg { font-size:13px; margin-left:8px; } .msg.ok { color:var(--ok); } .msg.err { color:var(--err); }
+  .pager { display:flex; gap:8px; align-items:center; justify-content:flex-end; margin-top:8px; font-size:13px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>seedmm-crawler</h1><span class="badge">v{{ version }}</span>
+    <span id="upd-pill" class="pill" style="display:none">检查更新中…</span>
+  </header>
+
+  <div id="update-banner" class="banner up">
+    <b>发现新版本 <span id="upd-tag"></span></b>（当前 v{{ version }}）
+    <button class="plain" onclick="toggleNotes()" style="margin:0 6px">查看更新日志</button>
+    <button class="primary" onclick="applyUpdate()">如何更新</button>
+    <div id="upd-notes" style="display:none;margin-top:8px;white-space:pre-wrap;font-size:13px"></div>
+  </div>
+
+  <div class="card">
+    <h2>采集设置（保存后立即生效）</h2>
+    <div class="grid">
+      <div><label>站点地址 <small>SEEDMM_BASE</small></label><input id="c_BASE_URL" type="text"></div>
+      <div><label>请求间隔（秒） <small>DELAY_SECONDS</small></label><input id="c_DELAY_SECONDS" type="number" step="0.1" min="0"></div>
+      <div><label>随机抖动（秒） <small>JITTER_SECONDS</small></label><input id="c_JITTER_SECONDS" type="number" step="0.1" min="0"></div>
+      <div><label>重试次数 <small>MAX_RETRIES</small></label><input id="c_MAX_RETRIES" type="number" min="1" max="10"></div>
+      <div><label>超时（秒） <small>TIMEOUT</small></label><input id="c_TIMEOUT" type="number" min="5" max="300"></div>
+      <div><label>网页端口 <small>WEB_PORT，重启容器后生效</small></label><input id="c_WEB_PORT" type="number" min="1" max="65535"></div>
+    </div>
+    <div class="row" style="margin-top:10px">
+      <button class="primary" onclick="saveConfig()">保存配置</button>
+      <span id="cfg-msg" class="msg"></span>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>采集控制</h2>
+    <div class="row">
+      <label style="margin:0">页码</label>
+      <input id="pages" type="text" value="1" style="width:110px" placeholder="如 1 或 2-10">
+      <label style="margin:0"><input type="checkbox" id="opt-magnets" checked> 抓磁力</label>
+      <label style="margin:0"><input type="checkbox" id="opt-refresh"> 刷新已有</label>
+      <button class="ok" id="btn-start" onclick="startCrawl()">开始采集</button>
+      <button class="danger" id="btn-stop" onclick="stopCrawl()" disabled>停止</button>
+      <span id="crawl-state" class="pill">空闲</span>
+      <span id="crawl-stats" class="msg"></span>
+    </div>
+    <pre id="log" style="margin-top:10px"></pre>
+  </div>
+
+  <div class="card">
+    <h2>采集数据</h2>
+    <div class="row" style="margin-bottom:8px">
+      <input id="q" type="text" placeholder="搜索番号 / 标题 / 演员" style="width:260px">
+      <button class="primary" onclick="loadMovies(1)">搜索</button>
+      <span id="data-total" class="msg"></span>
+    </div>
+    <div style="overflow-x:auto">
+    <table>
+      <thead><tr><th>番号</th><th>标题</th><th>发行日期</th><th>磁力</th><th>入库时间</th></tr></thead>
+      <tbody id="movie-rows"></tbody>
+    </table>
+    </div>
+    <div class="pager">
+      <button class="plain" onclick="loadMovies(curPage-1)" id="pg-prev">上一页</button>
+      <span id="pg-info"></span>
+      <button class="plain" onclick="loadMovies(curPage+1)" id="pg-next">下一页</button>
+    </div>
+  </div>
+</div>
+
+<script>
+let curPage = 1, pollTimer = null;
+
+const $ = id => document.getElementById(id);
+
+// ---------- config ----------
+async function loadConfig() {
+  const r = await fetch('/api/config'); const j = await r.json();
+  for (const [k, v] of Object.entries(j.config)) {
+    const el = $('c_' + k); if (el) el.value = v;
+  }
+}
+async function saveConfig() {
+  const body = {};
+  ['BASE_URL','DELAY_SECONDS','JITTER_SECONDS','MAX_RETRIES','TIMEOUT','WEB_PORT']
+    .forEach(k => body[k] = $('c_' + k).value);
+  const r = await fetch('/api/config', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body)});
+  const j = await r.json();
+  const m = $('cfg-msg');
+  m.textContent = j.ok ? '已保存 ✓' : ('保存失败: ' + j.error);
+  m.className = 'msg ' + (j.ok ? 'ok' : 'err');
+}
+
+// ---------- crawl ----------
+async function startCrawl() {
+  const body = {pages: $('pages').value || '1', magnets: $('opt-magnets').checked, refresh: $('opt-refresh').checked};
+  const r = await fetch('/api/crawl/start', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body)});
+  const j = await r.json();
+  if (!j.ok) { $('crawl-stats').textContent = j.error; return; }
+  pollStatus();
+}
+async function stopCrawl() { await fetch('/api/crawl/stop', {method:'POST'}); }
+
+async function pollStatus() {
+  try {
+    const r = await fetch('/api/crawl/status'); const j = await r.json();
+    const st = $('crawl-state');
+    if (j.running) { st.textContent = '运行中'; st.className = 'pill run'; }
+    else { st.textContent = j.error ? '出错' : '空闲'; st.className = 'pill'; }
+    $('btn-start').disabled = j.running; $('btn-stop').disabled = !j.running;
+    const s = j.stats || {};
+    $('crawl-stats').textContent = j.running || Object.keys(s).length
+      ? `页 ${s.pages||0}｜新增 ${s.new||0}｜更新 ${s.updated||0}｜磁力 ${s.magnets||0}｜错误 ${s.errors||0}${s.stopped ? '｜已手动停止' : ''}` : '';
+    if (j.error) $('crawl-stats').textContent += '｜' + j.error;
+    const log = $('log'); const atBottom = log.scrollTop + log.clientHeight >= log.scrollHeight - 30;
+    log.textContent = (j.log_tail || []).join('\n') || '（暂无日志）';
+    if (atBottom) log.scrollTop = log.scrollHeight;
+    if (j.running && !pollTimer) pollTimer = setInterval(pollStatus, 2000);
+    if (!j.running && pollTimer && Object.keys(s).length) { clearInterval(pollTimer); pollTimer = null; loadMovies(curPage); }
+  } catch (e) {}
+}
+window.addEventListener('load', () => { pollStatus(); pollTimer = setInterval(pollStatus, 5000); });
+
+// ---------- data ----------
+async function loadMovies(page) {
+  curPage = Math.max(1, page || 1);
+  const q = $('q').value.trim();
+  const r = await fetch(`/api/movies?q=${encodeURIComponent(q)}&page=${curPage}&size=20`);
+  const j = await r.json();
+  $('data-total').textContent = `共 ${j.total} 部`;
+  $('pg-info').textContent = `第 ${j.page} / ${Math.max(1, Math.ceil(j.total / j.size))} 页`;
+  $('pg-prev').disabled = j.page <= 1; $('pg-next').disabled = j.page * j.size >= j.total;
+  $('movie-rows').innerHTML = (j.items || []).map(m => `
+    <tr class="movie" onclick="toggleDetail('${m.code}', this)">
+      <td><b>${m.code}</b></td><td>${esc(m.title)}</td><td>${m.release_date || ''}</td>
+      <td>${m.magnet_count}</td><td>${(m.first_seen || '').replace('T',' ')}</td>
+    </tr>`).join('') || '<tr><td colspan="5" style="color:#6a737d">暂无数据，先运行一次采集</td></tr>';
+}
+async function toggleDetail(code, tr) {
+  const next = tr.nextElementSibling;
+  if (next && next.className === 'detail') { next.remove(); return; }
+  const r = await fetch('/api/movies/' + encodeURIComponent(code)); const m = await r.json();
+  const row = document.createElement('tr'); row.className = 'detail';
+  const mags = (m.magnets || []).map(x =>
+    `<div class="mag">🔗 <a href="${esc(x.link)}" target="_blank">${esc(x.name) || x.hash}</a>　${esc(x.size)}　${esc(x.date)}</div>`).join('') || '<div class="mag">无磁力</div>';
+  row.innerHTML = `<td colspan="5">
+    <div class="mag"><b>导演</b> ${esc(m.director)||'-'}　<b>片商</b> ${esc(m.studio)||'-'}　<b>发行</b> ${esc(m.label)||'-'}　<b>时长</b> ${esc(m.duration)||'-'}　<b>系列</b> ${esc(m.series)||'-'}</div>
+    <div class="mag"><b>演员</b> ${(m.actors||[]).join('、')||'-'}　<b>类别</b> ${(m.genres||[]).join('、')||'-'}</div>
+    <div class="mag"><b>磁力链接</b></div>${mags}
+    <div class="mag"><a href="${esc(m.url)}" target="_blank">原页面 ↗</a></div></td>`;
+  tr.after(row);
+}
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+// ---------- update ----------
+async function checkUpdate() {
+  try {
+    const r = await fetch('/api/update/check'); const j = await r.json();
+    const pill = $('upd-pill');
+    if (j.latest) {
+      pill.style.display = ''; pill.textContent = '有新版本 ' + j.latest.tag;
+      pill.className = 'pill run'; pill.style.cursor = 'pointer';
+      pill.onclick = () => $('update-banner').scrollIntoView({behavior:'smooth'});
+      $('upd-tag').textContent = j.latest.tag;
+      $('upd-notes').textContent = j.latest.notes;
+      $('update-banner').style.display = 'block';
+    } else { pill.style.display = ''; pill.textContent = 'v' + j.current + ' 已是最新'; }
+  } catch (e) { $('upd-pill').style.display = 'none'; }
+}
+function toggleNotes() { const n = $('upd-notes'); n.style.display = n.style.display === 'none' ? 'block' : 'none'; }
+async function applyUpdate() {
+  const j = await (await fetch('/api/update/apply', {method:'POST'})).json();
+  $('upd-notes').style.display = 'block';
+  $('upd-notes').textContent = j.note + '\n\n' + j.commands.join('\n');
+}
+
+window.addEventListener('load', loadConfig);
+window.addEventListener('load', checkUpdate);
+window.addEventListener('load', () => loadMovies(1));
+</script>
+</body>
+</html>

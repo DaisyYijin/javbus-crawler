@@ -98,3 +98,50 @@ def insert_magnets(conn: sqlite3.Connection, magnets: list[Magnet], code: str) -
 
 def known_codes(conn: sqlite3.Connection) -> set[str]:
     return {row[0] for row in conn.execute("SELECT code FROM movies")}
+
+
+# ------------------------------------------------------------ web queries --
+_MOVIE_COLUMNS = "code, title, cover, release_date, duration, studio, label, series, magnet_count, first_seen"
+
+
+def list_movies(conn: sqlite3.Connection, q: str = "", page: int = 1, size: int = 20):
+    """Paged movie list with optional search; returns (total, rows-as-dicts)."""
+    size = max(1, min(size, 100))
+    where, params = "", []
+    if q:
+        where = "WHERE code LIKE ? OR title LIKE ? OR actors LIKE ?"
+        like = f"%{q}%"
+        params = [like, like, like]
+    total = conn.execute(f"SELECT COUNT(*) FROM movies {where}", params).fetchone()[0]
+    offset = (max(1, page) - 1) * size
+    rows = conn.execute(
+        f"SELECT {_MOVIE_COLUMNS} FROM movies {where} "
+        f"ORDER BY first_seen DESC, code DESC LIMIT ? OFFSET ?",
+        params + [size, offset],
+    ).fetchall()
+    cols = _MOVIE_COLUMNS.split(", ")
+    return total, [dict(zip(cols, r)) for r in rows]
+
+
+def get_movie(conn: sqlite3.Connection, code: str) -> dict | None:
+    row = conn.execute(
+        f"SELECT {_MOVIE_COLUMNS}, url, director, actors, genres, samples, last_seen "
+        "FROM movies WHERE code = ?", (code,)
+    ).fetchone()
+    if not row:
+        return None
+    cols = (_MOVIE_COLUMNS + ", url, director, actors, genres, samples, last_seen").split(", ")
+    movie = dict(zip(cols, row))
+    for key in ("actors", "genres", "samples"):
+        try:
+            movie[key] = json.loads(movie[key])
+        except (TypeError, ValueError):
+            movie[key] = []
+    movie["magnets"] = [
+        {"hash": r[0], "name": r[1], "size": r[2], "date": r[3], "link": r[4]}
+        for r in conn.execute(
+            "SELECT hash, name, size, date, link FROM magnets WHERE code = ? ORDER BY date DESC",
+            (code,),
+        )
+    ]
+    return movie

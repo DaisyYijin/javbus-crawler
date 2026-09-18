@@ -14,5 +14,8 @@ COPY app/ app/
 RUN mkdir -p /data && chown -R nobody:nogroup /data /app
 USER nobody
 
+EXPOSE 8000
+
+# Default command: web UI (serve). One-shot crawl: docker run ... crawl --pages 1-5
 ENTRYPOINT ["python", "-m", "app.main"]
-CMD ["--pages", "1"]
+CMD []

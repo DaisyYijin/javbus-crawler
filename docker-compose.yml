@@ -1,19 +1,14 @@
-# 直接拉取镜像运行（无需克隆仓库）：
-#   1. 把本文件保存为 docker-compose.yml
-#   2. docker compose run --rm crawler --pages 1   （data/ 目录会自动创建）
-# 更新镜像：docker compose pull
-# 源码构建：docker build -t ghcr.io/daisyyijin/javbus-crawler:latest .
+# 常驻 Web 服务：所有配置在网页里改，不再使用环境变量。
+#   启动:  docker compose up -d
+#   界面:  http://localhost:8000
+#   数据:  ./data/seedmm.db   配置: ./data/config.json
+#   更新:  docker compose pull && docker compose up -d
 services:
   crawler:
     image: ghcr.io/daisyyijin/javbus-crawler:latest
     container_name: seedmm-crawler
+    ports:
+      - "8000:8000"
     volumes:
       - ./data:/data
-    environment:
-      SEEDMM_BASE: https://www.seedmm.bond
-      DB_PATH: /data/seedmm.db
-      DELAY_SECONDS: "2.0"
-      JITTER_SECONDS: "1.0"
-      MAX_RETRIES: "3"
-      TIMEOUT: "30"
-    restart: "no"
+    restart: unless-stopped

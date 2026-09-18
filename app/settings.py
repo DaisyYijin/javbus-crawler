@@ -1,19 +1,88 @@
-"""Global configuration, overridable via environment variables."""
+"""Configuration: persisted in a JSON file, editable from the web UI.
+
+No environment variables. The config file lives next to the data
+(/data/config.json in the container, ./data/config.json when running
+from a source checkout without /data).
+"""
+from __future__ import annotations
+
+import json
 import os
+import threading
 
-BASE_URL = os.getenv("SEEDMM_BASE", "https://www.seedmm.bond").rstrip("/")
+DATADIR = "/data" if os.path.isdir("/data") else "data"
+CONFIG_PATH = os.path.join(DATADIR, "config.json")
 
-# SQLite database file path. Mount a volume at /data inside the container.
-DB_PATH = os.getenv("DB_PATH", "/data/seedmm.db")
+DEFAULTS: dict = {
+    "BASE_URL": "https://www.seedmm.bond",
+    "DB_PATH": os.path.join(DATADIR, "seedmm.db"),
+    "DELAY_SECONDS": 2.0,
+    "JITTER_SECONDS": 1.0,
+    "MAX_RETRIES": 3,
+    "TIMEOUT": 30,
+    "WEB_PORT": 8000,
+    "USER_AGENT": (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+        "(KHTML, like Gecko) Chrome/126.0 Safari/537.36"
+    ),
+}
 
-# Polite crawling defaults.
-DELAY_SECONDS = float(os.getenv("DELAY_SECONDS", "2.0"))
-JITTER_SECONDS = float(os.getenv("JITTER_SECONDS", "1.0"))
-MAX_RETRIES = int(os.getenv("MAX_RETRIES", "3"))
-TIMEOUT = int(os.getenv("TIMEOUT", "30"))
+# Types allowed per key, for validation on save.
+_TYPES = {
+    "BASE_URL": str,
+    "DB_PATH": str,
+    "DELAY_SECONDS": float,
+    "JITTER_SECONDS": float,
+    "MAX_RETRIES": int,
+    "TIMEOUT": int,
+    "WEB_PORT": int,
+    "USER_AGENT": str,
+}
 
-USER_AGENT = os.getenv(
-    "USER_AGENT",
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-    "(KHTML, like Gecko) Chrome/126.0 Safari/537.36",
-)
+_lock = threading.Lock()
+
+
+def load() -> dict:
+    """Load config merged over defaults; create the file on first run."""
+    cfg = dict(DEFAULTS)
+    os.makedirs(DATADIR, exist_ok=True)
+    if os.path.exists(CONFIG_PATH):
+        try:
+            with open(CONFIG_PATH, encoding="utf-8") as fh:
+                stored = json.load(fh)
+            if isinstance(stored, dict):
+                for key in DEFAULTS:
+                    if key in stored:
+                        cfg[key] = stored[key]
+        except (OSError, ValueError):
+            pass  # corrupted file -> fall back to defaults
+    return cfg
+
+
+def save(partial: dict) -> dict:
+    """Validate and persist the given keys, return the new config."""
+    if partial.get("DB_PATH") and partial["DB_PATH"] != load().get("DB_PATH"):
+        raise ValueError("DB_PATH 不能修改（数据库位置由挂载目录决定）")
+    clean = {}
+    for key, value in (partial or {}).items():
+        if key not in _TYPES or key == "DB_PATH":
+            continue
+        try:
+            clean[key] = _TYPES[key](value)
+        except (TypeError, ValueError):
+            raise ValueError(f"配置项 {key} 的值无效: {value!r}")
+    if clean.get("DELAY_SECONDS", 0) < 0:
+        raise ValueError("DELAY_SECONDS 不能为负")
+    if clean.get("JITTER_SECONDS", 0) < 0:
+        raise ValueError("JITTER_SECONDS 不能为负")
+    if "WEB_PORT" in clean and not (1 <= clean["WEB_PORT"] <= 65535):
+        raise ValueError("WEB_PORT 必须在 1-65535 之间")
+
+    with _lock:
+        cfg = load()
+        cfg.update(clean)
+        tmp = CONFIG_PATH + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as fh:
+            json.dump(cfg, fh, ensure_ascii=False, indent=2)
+        os.replace(tmp, CONFIG_PATH)
+    return cfg

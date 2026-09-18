@@ -1,20 +1,22 @@
-"""Entry point: crawl listing pages, fetch details + magnets, store in SQLite.
+"""Entry point.
 
-Also implements --check-update / --update online updates via GitHub Releases.
+Default (no args): start the web UI on 0.0.0.0:8000 (port from config).
+Subcommands:
+  crawl   one-shot CLI crawl (uses web-configured settings)
+  serve   start the web UI explicitly
+
+Update flags:
+  --check-update / --update  (see app.updater)
 """
 from __future__ import annotations
 
 import argparse
 import logging
-import random
-import re
 import sys
 import time
-from urllib.parse import urlencode
 
-from . import db, settings, updater
-from .fetcher import Fetcher
-from .parser import parse_detail, parse_list, parse_movie_script_vars, parse_magnets
+from . import crawler, settings, updater
+from .version import __version__
 
 logging.basicConfig(
     level=logging.INFO,
@@ -24,106 +26,58 @@ logging.basicConfig(
 log = logging.getLogger("seedmm")
 
 
-# JavBus-family sites fill #magnet-table via this AJAX endpoint
-# (relative to the site root; params come from the detail page's
-# inline "var gid/uc/img" script, see parser.parse_movie_script_vars).
-MAGNET_AJAX_PATH = "ajax/uncledatoolsbyajax.php"
-
-
-def magnet_ajax_path(vars_: dict[str, str]) -> str:
-    qs = urlencode({
-        "gid": vars_["gid"],
-        "lang": vars_.get("lang", "zh"),
-        "img": vars_.get("img", ""),
-        "uc": vars_.get("uc", "0"),
-        "floor": random.randint(1, 1000),
-    })
-    return f"{MAGNET_AJAX_PATH}?{qs}"
-
-
-def parse_pages(spec: str) -> list[int]:
-    """'3' -> [3]; '2-5' -> [2,3,4,5]."""
-    m = re.fullmatch(r"(\d+)(?:-(\d+))?", spec.strip())
-    if not m:
-        raise argparse.ArgumentTypeError(f"invalid pages spec: {spec!r} (use '3' or '2-5')")
-    start = int(m.group(1))
-    end = int(m.group(2) or start)
-    if start < 1 or end < start:
-        raise argparse.ArgumentTypeError(f"invalid pages range: {spec!r}")
-    return list(range(start, end + 1))
-
-
-def crawl(args: argparse.Namespace) -> int:
-    fetcher = Fetcher(args.base_url)
-    conn = db.connect(args.db)
-    known = db.known_codes(conn)
-    log.info("db=%s known=%d base=%s", args.db, len(known), fetcher.base_url)
-
-    stats = {"pages": 0, "listed": 0, "new": 0, "updated": 0, "magnets": 0, "errors": 0}
-
-    for page in parse_pages(args.pages):
-        html = fetcher.get(f"/page/{page}")
-        if not html:
-            log.error("page %d: fetch failed, aborting this page", page)
-            stats["errors"] += 1
-            continue
-        items = parse_list(html, fetcher.base_url)
-        if not items:
-            log.warning("page %d: no movie boxes found (end of listing?)", page)
-            continue
-        stats["pages"] += 1
-        stats["listed"] += len(items)
-        log.info("page %d: %d movies", page, len(items))
-
-        for item in items:
-            if not args.refresh and item.code in known:
-                continue
-            detail_html = fetcher.get(item.url)
-            if not detail_html:
-                stats["errors"] += 1
-                continue
-
-            movie = parse_detail(detail_html, item.code, item.url)
-            if args.magnets:
-                sv = parse_movie_script_vars(detail_html)
-                if sv.get("gid"):
-                    frag = fetcher.get(magnet_ajax_path(sv), referer=item.url)
-                    movie.magnets = parse_magnets(frag) if frag else []
-                else:
-                    log.warning("%s: no gid var found, magnets skipped", item.code)
-
-            is_new = item.code not in known
-            db.upsert_movie(conn, movie)
-            stats["magnets"] += db.insert_magnets(conn, movie.magnets, movie.code)
-            conn.commit()
-            known.add(item.code)
-            stats["new" if is_new else "updated"] += 1
-            log.info("%s %s magnets=%d %s",
-                     "NEW " if is_new else "UPD ", movie.code, len(movie.magnets), movie.title[:50])
-
-    log.info("done: %(pages)d pages, %(listed)d listed, %(new)d new, "
-             "%(updated)d updated, %(magnets)d magnets, %(errors)d errors", stats)
-    conn.close()
+def cmd_crawl(args: argparse.Namespace) -> int:
+    cfg = settings.load()
+    if args.delay is not None:
+        cfg["DELAY_SECONDS"] = args.delay
+    try:
+        stats = crawler.run_job(
+            cfg, pages=args.pages, magnets=args.magnets, refresh=args.refresh
+        )
+    except ValueError as exc:  # bad pages spec
+        log.error("%s", exc)
+        return 2
     return 1 if stats["errors"] and not stats["new"] else 0
 
 
-def main(argv: list[str] | None = None) -> int:
-    ap = argparse.ArgumentParser(description="Crawl seedmm.bond into SQLite")
-    ap.add_argument("--pages", default="1", help="page number or range, e.g. '3' or '2-5' (default: 1)")
-    ap.add_argument("--db", default=settings.DB_PATH, help=f"SQLite path (default: {settings.DB_PATH})")
-    ap.add_argument("--base-url", default=settings.BASE_URL, help="site base URL")
-    ap.add_argument("--delay", type=float, default=settings.DELAY_SECONDS,
-                    help="seconds between requests (default: %(default)s)")
-    ap.add_argument("--no-magnets", dest="magnets", action="store_false",
-                    help="skip magnet fetching")
-    ap.add_argument("--refresh", action="store_true",
-                    help="re-fetch movies already in the database")
+def cmd_serve(args: argparse.Namespace) -> int:
+    from . import web
+
+    web.run(host=args.host, port=args.port)
+    return 0
+
+
+def build_parser() -> argparse.ArgumentParser:
+    ap = argparse.ArgumentParser(
+        prog="app.main",
+        description="seedmm.bond 采集器（默认启动 Web 界面）",
+    )
     ap.add_argument("--check-update", action="store_true",
                     help="check GitHub for a newer release and show its changelog")
     ap.add_argument("--update", action="store_true",
                     help="show the changelog of the newest release and update (host only)")
-    ap.add_argument("--no-check-update", dest="startup_check", action="store_false",
-                    help="skip the update check at startup")
+    sub = ap.add_subparsers(dest="command")
+
+    p_crawl = sub.add_parser("crawl", help="一次性命令行采集（配置来自网页/配置文件）")
+    p_crawl.add_argument("--pages", default="1", help="页码或范围, 如 '3' 或 '2-5' (默认 1)")
+    p_crawl.add_argument("--no-magnets", dest="magnets", action="store_false",
+                         help="跳过磁力抓取")
+    p_crawl.add_argument("--refresh", action="store_true",
+                         help="重新抓取已入库的番号")
+    p_crawl.add_argument("--delay", type=float, default=None,
+                         help="临时覆盖请求间隔（秒）")
+    p_crawl.set_defaults(func=cmd_crawl)
+
+    p_serve = sub.add_parser("serve", help="启动 Web 界面")
+    p_serve.add_argument("--host", default="0.0.0.0")
+    p_serve.add_argument("--port", type=int, default=None,
+                         help="覆盖配置文件中的 WEB_PORT")
+    p_serve.set_defaults(func=cmd_serve)
+    return ap
+
+
+def main(argv: list[str] | None = None) -> int:
+    ap = build_parser()
     args = ap.parse_args(argv)
 
     if args.update:
@@ -133,25 +87,24 @@ def main(argv: list[str] | None = None) -> int:
         if rel:
             updater.print_changelog(rel)
         else:
-            print(f"已是最新版本 v{updater.__version__}")
+            print(f"已是最新版本 v{__version__}")
         return 0
-    if args.startup_check:
-        try:
-            rel = updater.check_for_update()
-            if rel:
-                updater.print_update_notice(rel)
-        except Exception:  # never let the check block crawling
-            pass
 
-    settings.DELAY_SECONDS = args.delay
+    if args.command is None:
+        # default mode: web UI
+        args.command = "serve"
+        args.host, args.port = "0.0.0.0", None
+        args.func = cmd_serve
+
     t0 = time.monotonic()
     try:
-        return crawl(args)
+        return args.func(args)
     except KeyboardInterrupt:
         log.warning("interrupted")
         return 130
     finally:
-        log.info("elapsed %.1fs", time.monotonic() - t0)
+        if args.command == "crawl":
+            log.info("elapsed %.1fs", time.monotonic() - t0)
 
 
 if __name__ == "__main__":
