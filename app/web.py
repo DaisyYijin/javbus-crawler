@@ -1,10 +1,13 @@
 """Web UI: edit config, trigger/stop crawls, watch logs, browse results."""
 from __future__ import annotations
 
+import hmac
 import logging
 import os
+import secrets
 import sqlite3
 import threading
+import time
 from collections import deque
 from datetime import datetime, timezone
 
@@ -15,6 +18,22 @@ from .fetcher import StopRequested
 from .version import __version__
 
 log = logging.getLogger("seedmm.web")
+
+# ---- admin credentials (deployment-level, via environment) ----------------
+ADMIN_USER = os.getenv("ADMIN_USER", "admin")
+ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "")
+_tokens: set[str] = set()          # valid session tokens (memory; cleared on restart)
+_COOKIE = "jc_token"
+
+
+def _admin_password() -> str:
+    global ADMIN_PASSWORD
+    if not ADMIN_PASSWORD:
+        ADMIN_PASSWORD = secrets.token_urlsafe(10)
+        log.warning("★ 未设置 ADMIN_PASSWORD，本次随机生成: %s "
+                    "（在 docker-compose.yml 的 environment 中固定它）", ADMIN_PASSWORD)
+    return ADMIN_PASSWORD
+
 
 _logs: deque[str] = deque(maxlen=1000)
 
@@ -67,6 +86,44 @@ def _crawl_thread(params: dict) -> None:
 def create_app() -> Flask:
     app = Flask(__name__)
     app.json.ensure_ascii = False
+
+    # ---------------- auth ----------------
+    _public = {"/", "/api/login"}
+
+    @app.before_request
+    def _require_auth():
+        if request.path in _public or request.path.startswith("/static"):
+            return None
+        token = request.cookies.get(_COOKIE, "")
+        if token and token in _tokens:
+            return None
+        return jsonify({"ok": False, "error": "未登录或会话已过期"}), 401
+
+    @app.post("/api/login")
+    def login():
+        body = request.get_json(silent=True) or {}
+        user = str(body.get("user", ""))
+        password = str(body.get("password", ""))
+        ok = (hmac.compare_digest(user, ADMIN_USER)
+              and hmac.compare_digest(password, _admin_password()))
+        if not ok:
+            time.sleep(0.8)  # crude brute-force delay
+            return jsonify({"ok": False, "error": "用户名或密码错误"}), 401
+        token = secrets.token_urlsafe(32)
+        _tokens.add(token)
+        resp = jsonify({"ok": True, "user": ADMIN_USER})
+        resp.set_cookie(_COOKIE, token, httponly=True, samesite="Strict",
+                        max_age=7 * 24 * 3600, path="/")
+        log.info("管理员 %s 已登录", ADMIN_USER)
+        return resp
+
+    @app.post("/api/logout")
+    def logout():
+        token = request.cookies.get(_COOKIE, "")
+        _tokens.discard(token)
+        resp = jsonify({"ok": True})
+        resp.delete_cookie(_COOKIE, path="/")
+        return resp
 
     # ---------------- pages ----------------
     @app.get("/")

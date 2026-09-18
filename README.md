@@ -12,14 +12,16 @@ Docker 化的 [seedmm.bond](https://seedmm.bond)（JavBus 系 AV 磁力站）采
 docker compose up -d
 ```
 
-打开 **http://localhost:7878** 即可使用：
+打开 **http://localhost:7878**，**使用 compose 里设置的管理员账号登录**（`ADMIN_USER` / `ADMIN_PASSWORD`，见 compose 注释）：
 
+- **登录保护**：所有页面与 API 均需登录；会话 7 天有效；失败有防爆破延迟；
+  不设置 `ADMIN_PASSWORD` 时每次启动生成随机密码（`docker logs javbus-crawler` 查看）
 - **采集设置**：站点地址、请求间隔、随机抖动、重试次数、超时、端口——全部在网页表单里改，
-  保存即生效（持久化在 `./data/config.json`，不再使用环境变量）
+  保存即生效（持久化在 `./data/config.json`，业务配置不使用环境变量）
 - **采集控制**：填页码（如 `1` 或 `2-10`）、勾选“抓磁力 / 刷新已有”，点“开始采集”，
   实时滚动日志与统计（新增/更新/磁力/错误），随时可停止
 - **采集数据**：分页 + 搜索（番号/标题/演员），点击行展开详情与全部磁力链接
-- **在线更新**：自动检测 GitHub 新版本，网页内查看更新日志与更新方法
+- **在线更新**：自动检测 GitHub 新版本，网页内一键更新
 
 ## 项目结构
 

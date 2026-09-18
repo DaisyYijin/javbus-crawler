@@ -1,6 +1,6 @@
-# 常驻 Web 服务：所有配置在网页里改，不再使用环境变量。
+# 常驻 Web 服务：业务配置在网页里改；账号密码属于部署层，用环境变量传入。
 #   启动:  docker compose up -d
-#   界面:  http://localhost:7878
+#   界面:  http://localhost:7878  （需登录）
 #   数据:  ./data/seedmm.db   配置: ./data/config.json
 #   更新:  网页「关于/更新」页一键更新（需挂载 docker.sock，见下）
 #          或命令行: docker compose pull && docker compose up -d
@@ -10,6 +10,12 @@ services:
     container_name: javbus-crawler
     ports:
       - "7878:7878"
+    environment:
+      # 管理员账号（登录网页用）——改成你自己的！
+      ADMIN_USER: admin
+      ADMIN_PASSWORD: change-me-to-a-strong-password
+      # 若不设置 ADMIN_PASSWORD，每次启动会生成随机密码并打印在容器日志里：
+      #   docker logs javbus-crawler | grep 密码
     volumes:
       - ./data:/data
       # 网页一键更新所需（等同容器控制本机 Docker）。

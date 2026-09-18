@@ -138,6 +138,23 @@
 </head>
 <body>
 
+<!-- login overlay -->
+<div id="login-overlay" style="display:none;position:fixed;inset:0;z-index:99;background:rgba(23,29,51,.55);backdrop-filter:blur(4px)">
+  <div style="max-width:340px;margin:14vh auto 0;background:var(--card);border-radius:14px;padding:26px;box-shadow:0 20px 60px rgba(0,0,0,.35)">
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px">
+      <div style="width:36px;height:36px;border-radius:10px;background:var(--pri-grad);display:flex;align-items:center;justify-content:center;font-size:18px">🕷️</div>
+      <div><b style="font-size:15px">JavBus Crawler</b><div style="font-size:12px;color:var(--mut)">请登录后使用</div></div>
+    </div>
+    <label>用户名</label>
+    <input id="login-user" type="text" autocomplete="username" style="margin-bottom:4px">
+    <label>密码</label>
+    <input id="login-pass" type="password" autocomplete="current-password"
+           onkeydown="if(event.key==='Enter')doLogin()">
+    <button class="primary" onclick="doLogin()" style="width:100%;margin-top:14px">登 录</button>
+    <div id="login-msg" class="msg err" style="margin-top:8px;text-align:center"></div>
+  </div>
+</div>
+
 <!-- mobile top bar -->
 <div class="topbar">
   <div class="logo">🕷️</div><b>JavBus Crawler</b>
@@ -160,6 +177,7 @@
     <div class="side-foot">
       <div><span class="dot" id="side-dot"></span><span id="side-state">空闲</span></div>
       <div style="margin-top:6px">seedmm.bond 采集器</div>
+      <button class="ghost" onclick="doLogout()" style="margin-top:8px;padding:5px 10px;font-size:12px">🚪 退出登录</button>
     </div>
   </aside>
 
@@ -272,6 +290,38 @@
 <script>
 let curPage = 1, pollTimer = null;
 const $ = id => document.getElementById(id);
+
+/* ---------- auth ---------- */
+const _rawFetch = window.fetch.bind(window);
+window.fetch = (url, opts) => _rawFetch(url, opts).then(r => {
+  if (r.status === 401 && String(url).includes('/api/') && !String(url).includes('/api/login')) {
+    showLogin('会话已过期，请重新登录');
+  }
+  return r;
+});
+function showLogin(msg) {
+  $('login-overlay').style.display = 'block';
+  $('login-msg').textContent = msg || '';
+  setTimeout(() => $('login-user').focus(), 50);
+}
+function hideLogin() { $('login-overlay').style.display = 'none'; }
+async function doLogin() {
+  $('login-msg').textContent = '';
+  const body = {user: $('login-user').value.trim(), password: $('login-pass').value};
+  const r = await _rawFetch('/api/login', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body)});
+  const j = await r.json();
+  if (j.ok) { hideLogin(); location.reload(); }
+  else { $('login-msg').textContent = j.error || '登录失败'; }
+}
+async function doLogout() {
+  await _rawFetch('/api/logout', {method:'POST'});
+  showLogin('已退出');
+  $('login-pass').value = '';
+}
+window.addEventListener('load', async () => {
+  const r = await _rawFetch('/api/config');
+  if (r.status === 401) showLogin();
+});
 
 /* ---------- menu / routing ---------- */
 document.querySelectorAll('.nav-item').forEach(btn => {
