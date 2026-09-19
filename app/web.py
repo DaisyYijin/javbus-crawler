@@ -223,7 +223,7 @@ def create_app() -> Flask:
         old_filters = settings.load().get("TAG_FILTERS", "")
         try:
             cfg = settings.save(body)
-            log.info("配置已更新: %s", {k: v for k, v in body.items() if k != "USER_AGENT"})
+            log.info("配置已更新: %s", body)
         except ValueError as exc:
             return jsonify({"ok": False, "error": str(exc)}), 400
         if "TAG_FILTERS" in body and body["TAG_FILTERS"] != old_filters:

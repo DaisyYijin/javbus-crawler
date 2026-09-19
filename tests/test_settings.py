@@ -9,6 +9,7 @@ def test_load_defaults():
     assert cfg["CATEGORY"] in ("censored", "uncensored", "censored,uncensored")
     assert cfg["TAG_FILTER_MODE"] in ("mark", "only")
     assert cfg["DELAY_SECONDS"] >= 0
+    assert "USER_AGENT" not in cfg  # removed in v0.9.16; UA lives in fetcher now
 
 
 def test_category_multi_select():

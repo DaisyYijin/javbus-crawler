@@ -11,6 +11,11 @@ import requests
 
 log = logging.getLogger(__name__)
 
+# Browser-like UA is required: the site's anti-bot treats python-requests'
+# default identity differently. Maintained per release, not user-configurable.
+BROWSER_UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+              "(KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36")
+
 
 class StopRequested(Exception):
     """Raised by fetchers when a cooperative stop was requested."""
@@ -26,7 +31,6 @@ class Fetcher:
         jitter: float = 1.0,
         max_retries: int = 3,
         timeout: int = 30,
-        user_agent: str = "",
         proxy: str = "",
         stop_check=None,
     ):
@@ -44,9 +48,7 @@ class Fetcher:
             log.info("使用代理: %s", proxy)
         self.session.headers.update(
             {
-                "User-Agent": user_agent
-                or ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-                    "(KHTML, like Gecko) Chrome/126.0 Safari/537.36"),
+                "User-Agent": BROWSER_UA,
                 "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
                 "Accept-Language": "zh-TW,zh;q=0.9,ja;q=0.8,en;q=0.7",
                 "Referer": self.base_url + "/",

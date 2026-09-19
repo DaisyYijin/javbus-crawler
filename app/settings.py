@@ -28,10 +28,6 @@ DEFAULTS: dict = {
     "AUTO_CRAWL_PAGES": "1-3",
     "TAG_FILTERS": "",                # comma-separated keywords, e.g. "4K,高畫質,中文字幕"
     "TAG_FILTER_MODE": "mark",        # all | only | mark
-    "USER_AGENT": (
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-        "(KHTML, like Gecko) Chrome/126.0 Safari/537.36"
-    ),
     "METATUBE_URL": "",               # e.g. http://192.168.1.10:8080
     "METATUBE_TOKEN": "",             # optional bearer token for metatube server
 }
@@ -52,7 +48,6 @@ _TYPES = {
     "AUTO_CRAWL_PAGES": str,
     "TAG_FILTERS": str,
     "TAG_FILTER_MODE": str,
-    "USER_AGENT": str,
     "METATUBE_URL": str,
     "METATUBE_TOKEN": str,
 }

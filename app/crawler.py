@@ -106,7 +106,6 @@ def run_job(
         jitter=cfg["JITTER_SECONDS"],
         max_retries=cfg["MAX_RETRIES"],
         timeout=cfg["TIMEOUT"],
-        user_agent=cfg["USER_AGENT"],
         proxy=(cfg.get("PROXY") or "").strip(),
         stop_check=stop_check,
     )
@@ -242,7 +241,6 @@ def crawl_code(cfg: dict, code: str, magnets: bool = True, stop_check=None) -> d
         jitter=cfg["JITTER_SECONDS"],
         max_retries=cfg["MAX_RETRIES"],
         timeout=cfg["TIMEOUT"],
-        user_agent=cfg["USER_AGENT"],
         proxy=(cfg.get("PROXY") or "").strip(),
         stop_check=stop_check,
     )

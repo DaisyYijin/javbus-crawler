@@ -391,8 +391,6 @@
           <div class="field w3"><label>Metatube 服务 <small>METATUBE_URL / METATUBE_TOKEN · 地址留空隐藏详情页按钮</small></label>
             <div style="display:flex;gap:8px"><input id="c_METATUBE_URL" type="text" placeholder="http://192.168.1.10:8080" style="flex:1;min-width:0"><button class="ghost" type="button" id="mt-test-btn" onclick="testMetatube()" style="white-space:nowrap">测试连接</button></div>
             <input id="c_METATUBE_TOKEN" type="password" placeholder="Token（服务开启鉴权才需要填）" style="margin-top:8px"></div>
-          <div class="field w6"><label>User-Agent <small>USER_AGENT · 模拟浏览器身份</small></label><input id="c_USER_AGENT" type="text">
-            <div class="hint">网站靠它识别访问者身份；填常见浏览器标识可避免被反爬拦截。留空使用程序内置默认值，一般无需修改。</div></div>
         </div>
       </div>
 
@@ -550,7 +548,7 @@ async function loadConfig() {
 }
 async function saveConfig() {
   const body = {};
-  ['BASE_URL','USER_AGENT','METATUBE_URL','METATUBE_TOKEN','DELAY_SECONDS','JITTER_SECONDS',
+  ['BASE_URL','METATUBE_URL','METATUBE_TOKEN','DELAY_SECONDS','JITTER_SECONDS',
    'MAX_RETRIES','TIMEOUT','WEB_PORT','AUTO_CRAWL_INTERVAL_HOURS','AUTO_CRAWL_PAGES',
    'TAG_FILTERS','TAG_FILTER_MODE']
     .forEach(k => { const el = $('c_' + k); if (el) body[k] = el.value; });

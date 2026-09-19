@@ -62,7 +62,6 @@ docker compose up -d
 | `JITTER_SECONDS` | `1.0` | 请求间隔随机抖动上限（秒） |
 | `MAX_RETRIES` | `3` | 单请求重试次数（指数退避） |
 | `TIMEOUT` | `30` | 请求超时（秒） |
-| `USER_AGENT` | Chrome UA | 请求头 |
 | `TAG_FILTERS` | 空 | 筛选关键词（逗号分隔，顺序即优先级，大小写不敏感） |
 | `TAG_FILTER_MODE` | `mark` | `mark` 全部入库并标记 / `only` 只收命中的 |
 | `METATUBE_URL` / `METATUBE_TOKEN` | 空 | MetaTube 服务地址与 Token（详情页跳转用） |
