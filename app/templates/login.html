@@ -51,6 +51,15 @@ async function login() {
   else document.getElementById('msg').textContent = j.error || '登录失败';
 }
 document.getElementById('user').focus();
+try {
+  const m = sessionStorage.getItem('loginMsg');
+  if (m) {
+    const el = document.getElementById('msg');
+    el.textContent = m;
+    el.style.color = (m.indexOf('过期') >= 0) ? '#dc2626' : '#16a34a';
+    sessionStorage.removeItem('loginMsg');
+  }
+} catch (e) {}
 </script>
 </body>
 </html>

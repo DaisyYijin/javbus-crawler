@@ -95,7 +95,7 @@
   .row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
   .msg { font-size: 13px; } .msg.ok { color: var(--ok); } .msg.err { color: var(--err); }
   #toasts { position: fixed; top: 14px; left: 50%; transform: translateX(-50%); z-index: 999; display: flex; flex-direction: column; align-items: center; gap: 8px; pointer-events: none; }
-  .toast { pointer-events: auto; display: flex; align-items: center; background: #fff; border: 1px solid var(--line); border-left: 4px solid var(--pri);
+  .toast { pointer-events: auto; display: flex; align-items: center; background: #fff; color: var(--txt); border: 1px solid var(--line); border-left: 4px solid var(--pri);
     border-radius: 10px; box-shadow: 0 6px 24px rgba(20,25,40,.14); padding: 11px 16px; font-size: 13.5px;
     max-width: min(520px, 86vw); animation: toast-in .3s cubic-bezier(.21,1.02,.73,1) both; }
   .toast.ok { border-left-color: var(--ok); }
@@ -442,17 +442,8 @@ window.fetch = (url, opts) => _rawFetch(url, opts).then(r => {
   return r;
 });
 function showLogin(msg) {
-  $('login-overlay').style.display = 'flex';
-  $('login-msg').textContent = msg || '';
-  setTimeout(() => $('login-user').focus(), 50);
-}
-function hideLogin() { $('login-overlay').style.display = 'none'; }
-async function doLogin() {
-  const body = {user: $('login-user').value.trim(), password: $('login-pass').value};
-  const r = await _rawFetch('/api/login', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body)});
-  const j = await r.json();
-  if (j.ok) { hideLogin(); location.reload(); }
-  else { $('login-msg').textContent = j.error || '登录失败'; }
+  if (msg) { try { sessionStorage.setItem('loginMsg', msg); } catch (e) {} }
+  location.href = '/';
 }
 async function doLogout() {
   await _rawFetch('/api/logout', {method:'POST'});
@@ -699,7 +690,7 @@ async function checkUpdate(manual) {
       $('about-upd').textContent = '有新版本 ' + j.latest.tag;
       if (manual) toast('发现新版本 ' + j.latest.tag + '，可到仪表盘一键更新');
     } else {
-      $('about-upd').textContent = manual ? '✓ 已是最新版本' : '';
+      $('about-upd').textContent = '';
       if (manual) toast('✓ 已是最新版本（v' + j.current + '）', 'ok');
       if (!manual) { pill.style.display = ''; pill.textContent = '✓ v' + j.current + ' 最新'; }
     }
