@@ -129,6 +129,10 @@
   .seg { display: inline-flex; background: #eef0f6; border-radius: 999px; padding: 3px; gap: 2px; }
   .seg-btn { padding: 4px 12px; border: none; background: none; border-radius: 999px; font-size: 12px; cursor: pointer; color: var(--mut); font-family: inherit; }
   .seg-btn.active { background: #fff; color: var(--pri); font-weight: 600; box-shadow: 0 1px 3px rgba(0,0,0,.08); }
+  .tabbar { display: flex; gap: 2px; border-bottom: 1px solid var(--line); margin-bottom: 16px; overflow-x: auto; }
+  .tab-btn { padding: 9px 16px; border: none; background: none; border-radius: 0; border-bottom: 2px solid transparent;
+    font-size: 14px; color: var(--mut); cursor: pointer; font-family: inherit; white-space: nowrap; }
+  .tab-btn.active { color: var(--pri); border-bottom-color: var(--pri); font-weight: 600; }
 
   pre#log { background: #f6f7f9; color: #3a4150; font-size: 12.5px; line-height: 1.6; padding: 14px;
     border: 1px solid var(--line); border-radius: 10px; height: 60vh; overflow: auto;
@@ -212,6 +216,7 @@
     <nav>
       <button class="nav-item active" data-page="dashboard"><span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg></span>仪表盘</button>
       <button class="nav-item" data-page="settings"><span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/></svg></span>采集设置</button>
+      <button class="nav-item" data-page="schedule"><span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15.5 14"/></svg></span>定时任务</button>
       <button class="nav-item" data-page="data"><span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><circle cx="3.5" cy="6" r="0.5" fill="currentColor"/><circle cx="3.5" cy="12" r="0.5" fill="currentColor"/><circle cx="3.5" cy="18" r="0.5" fill="currentColor"/></svg></span>采集数据</button>
       <button class="nav-item" data-page="browse"><span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="9" cy="8" r="3.5"/><path d="M3.5 19c.8-3 3-4.5 5.5-4.5s4.7 1.5 5.5 4.5"/><circle cx="17" cy="9" r="2.5"/><path d="M15.5 13.6c2 .2 3.9 1.5 5 4.4"/></svg></span>维度浏览</button>
     </nav>
@@ -327,11 +332,11 @@
             <option value="director">按导演</option>
             <option value="genre">按标签</option>
           </select>
-          <input id="f-value" type="text" placeholder="维度精确值（点击演员 / 标签自动填入）" style="max-width:260px"
+          <input id="f-value" type="text" placeholder="维度值（点标签自动填入）" style="max-width:200px"
                  onkeydown="if(event.key==='Enter')loadMovies(1)">
-          <input id="f-from" type="date" title="发行日期（起）" onchange="loadMovies(1)">
-          <span style="color:var(--mut)">～</span>
-          <input id="f-to" type="date" title="发行日期（止）" onchange="loadMovies(1)">
+          <input id="f-from" type="date" title="发行日期（起）" onchange="loadMovies(1)" style="width:128px;flex:none;padding:8px 6px">
+          <span style="color:var(--mut);flex:none">～</span>
+          <input id="f-to" type="date" title="发行日期（止）" onchange="loadMovies(1)" style="width:128px;flex:none;padding:8px 6px">
           <button class="ghost" onclick="clearAdv()">清除筛选</button>
           <div style="flex:1"></div>
           <input id="by-code" type="text" placeholder="补采番号 如 BANK-248" style="max-width:180px"
@@ -379,6 +384,12 @@
     <!-- ============ settings ============ -->
     <section class="page" id="page-settings">
       <div class="page-head"><h1>采集设置</h1><span>保存后立即生效</span></div>
+      <div class="tabbar" id="settings-tabs">
+        <button type="button" class="tab-btn active" data-tab="site" onclick="switchSettingsTab(this)">站点与频道</button>
+        <button type="button" class="tab-btn" data-tab="behavior" onclick="switchSettingsTab(this)">抓取行为</button>
+        <button type="button" class="tab-btn" data-tab="filter" onclick="switchSettingsTab(this)">精准筛选</button>
+      </div>
+      <div class="tabpane" id="tab-site">
       <div class="card">
         <h2>站点与频道</h2>
         <div class="form-grid">
@@ -394,6 +405,9 @@
         </div>
       </div>
 
+      </div>
+
+      <div class="tabpane" id="tab-behavior" hidden>
       <div class="card">
         <h2>抓取行为</h2>
         <div class="form-grid">
@@ -405,6 +419,9 @@
         </div>
       </div>
 
+      </div>
+
+      <div class="tabpane" id="tab-filter" hidden>
       <div class="card">
         <h2>精准筛选 <small>（匹配影片标签或磁力名称）</small></h2>
         <div class="form-grid">
@@ -420,6 +437,17 @@
         </div>
       </div>
 
+      </div>
+
+      <div class="row save-row">
+        <button class="primary" onclick="saveConfig()">保存配置</button>
+        <span class="msg cfg-msg"></span>
+      </div>
+    </section>
+
+    <!-- ============ schedule ============ -->
+    <section class="page" id="page-schedule">
+      <div class="page-head"><h1>定时任务</h1><span>保存后立即生效 · 使用「追新」模式与采集设置中的频道</span></div>
       <div class="card">
         <h2>定时自动采集</h2>
         <div class="form-grid">
@@ -427,11 +455,11 @@
           <div class="field w3"><label>间隔（小时） <small>AUTO_CRAWL_INTERVAL_HOURS · 0.5–720</small></label><input id="c_AUTO_CRAWL_INTERVAL_HOURS" type="number" step="0.5" min="0.5" max="720"></div>
           <div class="field w3"><label>每次检查页数 <small>AUTO_CRAWL_PAGES · 如 1-3</small></label><input id="c_AUTO_CRAWL_PAGES" type="text" placeholder="如 1-3"></div>
         </div>
+        <div class="hint">启用后每 30 秒检查一次到期任务；已有采集任务在运行时自动跳过本次；页码配置无效会在运行日志中提示。</div>
       </div>
-
       <div class="row save-row">
         <button class="primary" onclick="saveConfig()">保存配置</button>
-        <span id="cfg-msg" class="msg"></span>
+        <span class="msg cfg-msg"></span>
       </div>
     </section>
 
@@ -528,6 +556,10 @@ function toggleMenu(force) {
   $('sidebar').classList.toggle('open', open);
   $('backdrop').classList.toggle('show', open);
 }
+function switchSettingsTab(btn) {
+  document.querySelectorAll('#settings-tabs .tab-btn').forEach(b => b.classList.toggle('active', b === btn));
+  document.querySelectorAll('#page-settings .tabpane').forEach(p => { p.hidden = p.id !== 'tab-' + btn.dataset.tab; });
+}
 
 /* ---------- config ---------- */
 let SITE_BASE = '';
@@ -556,9 +588,10 @@ async function saveConfig() {
   const cb = $('c_AUTO_CRAWL_ENABLED');
   if (cb) body.AUTO_CRAWL_ENABLED = cb.checked;
   const j = await (await fetch('/api/config', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body)})).json();
-  const m = $('cfg-msg');
-  m.textContent = j.ok ? '✓ 已保存' : ('✗ ' + j.error);
-  m.className = 'msg ' + (j.ok ? 'ok' : 'err');
+  document.querySelectorAll('.cfg-msg').forEach(m => {
+    m.textContent = j.ok ? '✓ 已保存' : ('✗ ' + j.error);
+    m.className = 'msg cfg-msg ' + (j.ok ? 'ok' : 'err');
+  });
   if (j.ok) toast('✓ 设置已保存，立即生效', 'ok');
   else toast('保存失败: ' + (j.error || '未知错误'), 'err');
 }
