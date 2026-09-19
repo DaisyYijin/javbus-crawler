@@ -241,6 +241,27 @@ def browse_counts(conn: sqlite3.Connection, kind: str, q: str = "", limit: int =
     return [{"name": n, "count": c} for n, c in pairs[:limit]]
 
 
+# Known quality markers for the keyword quick-add chips. Counts come from the
+# actual magnet names in the library, so the chips always reflect what the
+# site really uses (SQLite LIKE is ASCII case-insensitive already).
+_FILTER_MARKERS = ("字幕", "中字", "高清", "无码", "破解",
+                   "4K", "8K", "1080p", "720p", "60fps", "VR", "HD",
+                   "-U", "-UC", "-C", "AI")
+
+
+def filter_chips(conn: sqlite3.Connection) -> list[dict]:
+    """Count library magnets whose name contains each known marker."""
+    out = []
+    for marker in _FILTER_MARKERS:
+        n = conn.execute(
+            "SELECT COUNT(*) FROM magnets WHERE name LIKE ?", (f"%{marker}%",)
+        ).fetchone()[0]
+        if n:
+            out.append({"kw": marker, "count": n})
+    out.sort(key=lambda x: (-x["count"], x["kw"]))
+    return out
+
+
 def recompute_matched(conn: sqlite3.Connection, keywords: list[str]) -> int:
     """Recompute matched_tags/matched_count for every movie. Returns updated count."""
     from .crawler import compute_matched

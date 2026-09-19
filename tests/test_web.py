@@ -32,6 +32,7 @@ def client(tmp_path, monkeypatch):
     monkeypatch.setattr(web, "ADMIN_USER", "admin", raising=False)
     monkeypatch.setattr(web, "ADMIN_PASSWORD", "test-pass", raising=False)
     web._stats_cache["ts"] = 0.0  # never serve a previous test's cache
+    web._chips_cache["ts"] = 0.0
 
     app = web.create_app()
     app.config["TESTING"] = True
@@ -98,6 +99,11 @@ def test_metatube_test_validation(client):
 def test_site_test_validation(client):
     # invalid scheme is rejected before any network access
     assert client.post("/api/site/test", json={"url": "ftp://x"}).get_json()["ok"] is False
+
+
+def test_filter_chips_endpoint(client):
+    j = client.get("/api/filter/chips").get_json()
+    assert {"kw": "4K", "count": 1} in j["items"]  # seeded magnet "4k rip"
 
 
 # ---------- crawl control ----------

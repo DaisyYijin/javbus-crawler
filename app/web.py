@@ -94,6 +94,14 @@ _logs: deque[str] = deque(maxlen=1000)
 # movies table). Invalidated when a crawl finishes or data is cleared/deleted.
 _stats_cache: dict = {"key": None, "ts": 0.0, "data": None}
 _STATS_TTL = 30.0
+_chips_cache: dict = {"ts": 0.0, "data": None}
+_CHIPS_TTL = 60.0
+
+
+def _invalidate_stats_cache() -> None:
+    """Drop the stats + filter-chips caches (library contents changed)."""
+    _stats_cache["ts"] = 0.0
+    _chips_cache["ts"] = 0.0
 
 
 class _WebLogHandler(logging.Handler):
@@ -153,7 +161,7 @@ def _crawl_thread(params: dict) -> None:
     finally:
         _job["running"] = False
         _job["finished_at"] = _now()
-        _stats_cache["ts"] = 0.0
+        _invalidate_stats_cache()
 
 
 def create_app() -> Flask:
@@ -382,6 +390,20 @@ def create_app() -> Flask:
         _stats_cache.update(key=category, ts=now, data=data)
         return jsonify(data)
 
+    @app.get("/api/filter/chips")
+    def filter_chips():
+        """Quick-add keyword chips derived from real magnet names in the library."""
+        now = time.monotonic()
+        if now - _chips_cache["ts"] < _CHIPS_TTL:
+            return jsonify({"items": _chips_cache["data"]})
+        conn = sqlite3.connect(settings.load()["DB_PATH"], timeout=15)
+        try:
+            items = db.filter_chips(conn)
+        finally:
+            conn.close()
+        _chips_cache.update(ts=now, data=items)
+        return jsonify({"items": items})
+
     @app.get("/api/movies/<code>")
     def movie_detail(code: str):
         conn = sqlite3.connect(settings.load()["DB_PATH"], timeout=10)
@@ -407,7 +429,7 @@ def create_app() -> Flask:
         if not deleted:
             return jsonify({"ok": False, "error": "not found"}), 404
         log.info("已删除影片 %s", code)
-        _stats_cache["ts"] = 0.0
+        _invalidate_stats_cache()
         return jsonify({"ok": True})
 
     @app.get("/api/browse")
@@ -440,7 +462,7 @@ def create_app() -> Flask:
                                         magnets=bool(body.get("magnets", True)))
         except ValueError as exc:
             return jsonify({"ok": False, "error": str(exc)}), 400
-        _stats_cache["ts"] = 0.0
+        _invalidate_stats_cache()
         return jsonify({"ok": True, **result})
 
     @app.get("/api/export")
@@ -516,7 +538,7 @@ def create_app() -> Flask:
         finally:
             conn.close()
         log.warning("已清空全部采集数据（%d 部影片）并重置采集深度", deleted)
-        _stats_cache["ts"] = 0.0
+        _invalidate_stats_cache()
         return jsonify({"ok": True, "deleted": deleted})
 
     # ---------------- update ----------------

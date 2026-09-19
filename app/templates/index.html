@@ -437,22 +437,16 @@
         <div class="form-grid">
           <div class="field w6"><label>筛选关键词（逗号分隔，顺序即优先级） <small>TAG_FILTERS</small></label>
             <input id="c_TAG_FILTERS" type="text" placeholder="如: 字幕,高清,4K">
-            <div class="row" style="gap:6px;margin-top:8px">
+            <div class="row" style="gap:6px;margin-top:8px;flex-wrap:wrap">
               <span class="kv">快速添加：</span>
-              <span class="tag" style="cursor:pointer" onclick="addKeyword('字幕')">字幕</span>
-              <span class="tag" style="cursor:pointer" onclick="addKeyword('高清')">高清</span>
-              <span class="tag" style="cursor:pointer" onclick="addKeyword('4K')">4K</span>
-              <span class="tag" style="cursor:pointer" onclick="addKeyword('1080p')">1080p</span>
-              <span class="tag" style="cursor:pointer" onclick="addKeyword('-U')">-U 无码流出</span>
-              <span class="tag" style="cursor:pointer" onclick="addKeyword('-UC')">-UC 无码中字</span>
-              <span class="tag" style="cursor:pointer" onclick="addKeyword('AI')">AI 字幕</span>
+              <span id="kw-chips" style="display:inline-flex;gap:6px;flex-wrap:wrap"></span>
             </div>
-            <div class="hint">从左到右依次匹配磁力名称，命中即选中该磁力（★ 推荐）；全部未命中时选第一条磁力兜底。点击标签可添加 / 移除关键词。站点磁力常见标记：高清 ｜ 字幕（含 ch、-C）｜ -U（无码流出，会同时命中 -UC）｜ -UC（无码+中字）｜ AI（机翻字幕）。</div></div>
+            <div class="hint">从左到右依次匹配磁力名称，命中即选中该磁力（★ 推荐）；全部未命中时选第一条磁力兜底。点击标签可添加 / 移除关键词。标签按库内磁力真实命中数动态生成（采集后自动更新）。常见标记：字幕（含 ch、-C）｜ -U（无码流出，会同时命中 -UC）｜ -UC（无码+中字）｜ AI（机翻字幕）。</div></div>
           <div class="field w3"><label>筛选模式 <small>TAG_FILTER_MODE · 没命中关键词的影片要不要入库</small></label>
-            <select id="c_TAG_FILTER_MODE">
-              <option value="mark">全部入库：没命中的也收，只是不标记</option>
-              <option value="only">只收命中的：没命中的直接跳过</option>
-            </select>
+            <div class="seg" id="mode-seg">
+              <button type="button" class="seg-btn active" data-mode="mark" onclick="setFilterMode(this)">全部入库</button>
+              <button type="button" class="seg-btn" data-mode="only" onclick="setFilterMode(this)">只收命中的</button>
+            </div>
             <div class="hint">「命中」= 影片标签或磁力名称包含上面任意一个关键词。不填关键词时两种模式效果相同。</div></div>
         </div>
       </div>
@@ -603,14 +597,18 @@ async function loadConfig() {
   document.querySelectorAll('#cat-seg .seg-btn').forEach(b => b.classList.toggle('active', cats.includes(b.dataset.cat)));
   if (!document.querySelector('#cat-seg .seg-btn.active'))
     document.querySelector('#cat-seg [data-cat="censored"]').classList.add('active');
+  const mode = String(j.config.TAG_FILTER_MODE || 'mark');
+  document.querySelectorAll('#mode-seg .seg-btn').forEach(b => b.classList.toggle('active', b.dataset.mode === mode));
 }
 async function saveConfig() {
   const body = {};
   ['BASE_URL','METATUBE_URL','METATUBE_TOKEN','DELAY_SECONDS','JITTER_SECONDS',
    'MAX_RETRIES','TIMEOUT','WEB_PORT','AUTO_CRAWL_INTERVAL_HOURS','AUTO_CRAWL_PAGES',
-   'TAG_FILTERS','TAG_FILTER_MODE']
+   'TAG_FILTERS']
     .forEach(k => { const el = $('c_' + k); if (el) body[k] = el.value; });
   body.CATEGORY = [...document.querySelectorAll('#cat-seg .seg-btn.active')].map(b => b.dataset.cat).join(',');
+  const mb = document.querySelector('#mode-seg .seg-btn.active');
+  if (mb) body.TAG_FILTER_MODE = mb.dataset.mode;
   const cb = $('c_AUTO_CRAWL_ENABLED');
   if (cb) body.AUTO_CRAWL_ENABLED = cb.checked;
   const j = await (await fetch('/api/config', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body)})).json();
@@ -628,6 +626,24 @@ function addKeyword(kw) {
   el.value = kws.join(',');
   el.focus();
 }
+function setFilterMode(btn) {
+  document.querySelectorAll('#mode-seg .seg-btn').forEach(b => b.classList.toggle('active', b === btn));
+}
+const KW_LABELS = { '-U': '-U 无码流出', '-UC': '-UC 无码中字', '-C': '-C 中字', 'AI': 'AI 字幕' };
+async function loadFilterChips() {
+  try {
+    let items = [];
+    const r = await fetch('/api/filter/chips');
+    if (r.ok) items = (await r.json()).items || [];
+    if (!items.length) items = ['字幕','高清','4K','1080p','-U','-UC','AI'].map(kw => ({kw, count: 0}));
+    $('kw-chips').innerHTML = items.map(x =>
+      `<span class="tag" style="cursor:pointer" data-kw="${esc(x.kw)}" title="库内磁力命中 ${x.count} 条；点击添加 / 移除">${esc(KW_LABELS[x.kw] || x.kw)}${x.count ? ' · ' + x.count : ''}</span>`).join('');
+  } catch (e) {}
+}
+$('kw-chips').addEventListener('click', e => {
+  const t = e.target.closest('[data-kw]');
+  if (t) addKeyword(t.dataset.kw);
+});
 async function testTabConnection() {
   const btn = $('tab-test-btn');
   const isSite = !$('tab-site').hidden;
@@ -661,7 +677,7 @@ async function startCrawl() {
 }
 async function stopCrawl() { await fetch('/api/crawl/stop', {method:'POST'}); }
 
-let lastDepths = {};
+let lastDepths = {}, wasRunning = false;
 async function pollStatus() {
   try {
     const j = await (await fetch('/api/crawl/status')).json();
@@ -673,6 +689,8 @@ async function pollStatus() {
       st.textContent = j.error ? '出错' : '空闲'; st.className = 'pill' + (j.error ? ' err' : '');
       dot.className = 'dot'; ss.textContent = j.error ? '出错' : '空闲';
     }
+    if (wasRunning && !j.running) loadFilterChips();  // refresh quick-add chips after a crawl
+    wasRunning = j.running;
     $('btn-start').disabled = j.running; $('btn-stop').disabled = !j.running;
     const d = j.depths || {};
     lastDepths = d;
@@ -972,6 +990,7 @@ function waitForRebirth(newImage) {
 }
 
 window.addEventListener('load', loadConfig);
+window.addEventListener('load', loadFilterChips);
 window.addEventListener('load', () => checkUpdate(false));
 window.addEventListener('load', () => {
   try {

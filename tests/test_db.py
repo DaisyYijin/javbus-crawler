@@ -120,6 +120,14 @@ def test_delete_movie(tmp_path):
     conn.close()
 
 
+def test_filter_chips(tmp_path):
+    conn = make_conn(tmp_path)
+    seed(conn)
+    # seed magnet "4k rip" -> only the 4K marker hits (LIKE is case-insensitive)
+    assert db.filter_chips(conn) == [{"kw": "4K", "count": 1}]
+    conn.close()
+
+
 def test_get_movie_and_recompute(tmp_path):
     conn = make_conn(tmp_path)
     seed(conn)
