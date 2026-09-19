@@ -13,3 +13,6 @@ __pycache__/
 .env
 *.log
 tmp/
+
+# ide artifacts
+.reasonix/
