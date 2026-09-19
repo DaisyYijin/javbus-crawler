@@ -25,7 +25,7 @@ docker compose up -d
   精确过滤 + 发行日期区间），点击行展开详情与全部磁力链接，可删除单片
 - **维度浏览**：按演员 / 片商 / 发行商 / 系列 / 导演聚合排行，点击名称直接筛选影片
 - **精准筛选**：关键词（顺序即优先级、大小写不敏感）匹配标签或磁力名，推荐磁力或只收命中的影片
-- **MetaTube 联动**：配置服务地址 + Token（可测试连接），详情页一键跳转查询
+- **MetaTube 联动**：配置服务地址 + Token，详情页一键跳转查询
 - **导出 / 清空**：全库 JSON 流式导出；一键清空数据（任务运行时拒绝）
 - **在线更新**：自动检测 GitHub 新版本，网页内一键更新
 
@@ -97,7 +97,6 @@ docker compose run --rm crawler --check-update
 | GET | `/api/stats` | 库存统计与热门标签（30s 缓存） |
 | GET | `/api/export` | 全库 JSON 流式导出 |
 | POST | `/api/data/clear` | 清空数据（采集运行中返回 409） |
-| POST | `/api/metatube/test` | 测试 MetaTube 服务连通性 |
 | POST | `/api/site/test` | 测试站点地址连通性（返回耗时 / 拦截提示） |
 | GET | `/api/update/check` · POST `/api/update/apply` | 检查 / 一键更新 |
 
