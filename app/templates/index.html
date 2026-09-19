@@ -409,10 +409,10 @@
       <div class="card">
         <h2>MetaTube 服务 <small>（可选 · 影片详情页的「Metatube 查询」跳转）</small></h2>
         <div class="form-grid">
-          <div class="field w6"><label>服务地址与 Token <small>METATUBE_URL / METATUBE_TOKEN</small></label>
-            <div style="display:flex;gap:8px"><input id="c_METATUBE_URL" type="text" placeholder="http://192.168.1.10:8080" style="flex:1;min-width:0"><button class="ghost" type="button" id="mt-test-btn" onclick="testMetatube()" style="white-space:nowrap">测试连接</button></div>
+          <div class="field w3"><label>服务地址与 Token <small>METATUBE_URL / METATUBE_TOKEN</small></label>
+            <input id="c_METATUBE_URL" type="text" placeholder="http://192.168.1.10:8080">
             <input id="c_METATUBE_TOKEN" type="password" placeholder="Token（服务开启鉴权才需要填）" style="margin-top:8px">
-            <div class="hint">填写后影片详情会出现「Metatube 查询」按钮，点击跳转到你的 MetaTube WebUI；地址留空则隐藏。Token 仅在服务开启鉴权时需要。</div></div>
+            <div class="hint">填写后影片详情出现「Metatube 查询」按钮；留空隐藏。Token 仅服务开鉴权时需要。</div></div>
         </div>
       </div>
       </div>
@@ -451,6 +451,7 @@
 
       <div class="row save-row">
         <button class="primary" onclick="saveConfig()">保存配置</button>
+        <button class="ghost" type="button" id="mt-test-btn" onclick="testMetatube()">测试 MetaTube 连接</button>
         <span class="msg cfg-msg"></span>
       </div>
     </section>
