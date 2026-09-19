@@ -386,6 +386,7 @@
       <div class="page-head"><h1>采集设置</h1><span>保存后立即生效</span></div>
       <div class="tabbar" id="settings-tabs">
         <button type="button" class="tab-btn active" data-tab="site" onclick="switchSettingsTab(this)">站点与频道</button>
+        <button type="button" class="tab-btn" data-tab="metatube" onclick="switchSettingsTab(this)">MetaTube</button>
         <button type="button" class="tab-btn" data-tab="behavior" onclick="switchSettingsTab(this)">抓取行为</button>
         <button type="button" class="tab-btn" data-tab="filter" onclick="switchSettingsTab(this)">精准筛选</button>
       </div>
@@ -399,12 +400,21 @@
               <button type="button" class="seg-btn active" data-cat="censored" onclick="toggleCat(this)">有码</button>
               <button type="button" class="seg-btn" data-cat="uncensored" onclick="toggleCat(this)">无码</button>
             </div></div>
-          <div class="field w3"><label>Metatube 服务 <small>METATUBE_URL / METATUBE_TOKEN · 地址留空隐藏详情页按钮</small></label>
-            <div style="display:flex;gap:8px"><input id="c_METATUBE_URL" type="text" placeholder="http://192.168.1.10:8080" style="flex:1;min-width:0"><button class="ghost" type="button" id="mt-test-btn" onclick="testMetatube()" style="white-space:nowrap">测试连接</button></div>
-            <input id="c_METATUBE_TOKEN" type="password" placeholder="Token（服务开启鉴权才需要填）" style="margin-top:8px"></div>
         </div>
       </div>
 
+      </div>
+
+      <div class="tabpane" id="tab-metatube" hidden>
+      <div class="card">
+        <h2>MetaTube 服务 <small>（可选 · 影片详情页的「Metatube 查询」跳转）</small></h2>
+        <div class="form-grid">
+          <div class="field w6"><label>服务地址与 Token <small>METATUBE_URL / METATUBE_TOKEN</small></label>
+            <div style="display:flex;gap:8px"><input id="c_METATUBE_URL" type="text" placeholder="http://192.168.1.10:8080" style="flex:1;min-width:0"><button class="ghost" type="button" id="mt-test-btn" onclick="testMetatube()" style="white-space:nowrap">测试连接</button></div>
+            <input id="c_METATUBE_TOKEN" type="password" placeholder="Token（服务开启鉴权才需要填）" style="margin-top:8px">
+            <div class="hint">填写后影片详情会出现「Metatube 查询」按钮，点击跳转到你的 MetaTube WebUI；地址留空则隐藏。Token 仅在服务开启鉴权时需要。</div></div>
+        </div>
+      </div>
       </div>
 
       <div class="tabpane" id="tab-behavior" hidden>
