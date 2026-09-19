@@ -5,6 +5,7 @@ import hmac
 import json
 import logging
 import os
+import requests
 import secrets
 import sqlite3
 import threading
@@ -215,6 +216,28 @@ def create_app() -> Flask:
             keywords = [k for k in cfg["TAG_FILTERS"].split(",") if k.strip()]
             threading.Thread(target=_recompute_thread, args=(keywords,), daemon=True).start()
         return jsonify({"ok": True, "config": cfg})
+
+    @app.post("/api/metatube/test")
+    def metatube_test():
+        body = request.get_json(silent=True) or {}
+        cfg = settings.load()
+        base = str(body.get("url") or cfg.get("METATUBE_URL") or "").strip().rstrip("/")
+        token = str(body.get("token") or cfg.get("METATUBE_TOKEN") or "").strip()
+        if not base:
+            return jsonify({"ok": False, "error": "请先填写 MetaTube 服务地址"})
+        if not base.startswith(("http://", "https://")):
+            return jsonify({"ok": False, "error": "地址需以 http:// 或 https:// 开头"})
+        headers = {"Authorization": f"Bearer {token}"} if token else {}
+        try:
+            r = requests.get(f"{base}/v1/movies/javbus/TEST-001", headers=headers, timeout=8)
+        except requests.RequestException as exc:
+            return jsonify({"ok": False, "error": f"无法连接: {exc}"})
+        # 200: reachable and authorized; 404: reachable, probe id simply not found
+        if r.status_code in (200, 404):
+            return jsonify({"ok": True, "message": f"连接成功（HTTP {r.status_code}）"})
+        if r.status_code == 401:
+            return jsonify({"ok": False, "error": "服务需要 Token 或 Token 无效（HTTP 401）"})
+        return jsonify({"ok": False, "error": f"服务返回 HTTP {r.status_code}"})
 
     # ---------------- crawl control ----------------
     @app.post("/api/crawl/start")

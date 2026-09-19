@@ -342,7 +342,9 @@
               <option value="censored">有码（默认）</option>
               <option value="uncensored">无码</option>
             </select></div>
-          <div class="field w3"><label>Metatube 服务地址 <small>METATUBE_URL · 留空隐藏详情页按钮</small></label><input id="c_METATUBE_URL" type="text" placeholder="http://192.168.1.10:8080"></div>
+          <div class="field w3"><label>Metatube 服务地址 <small>METATUBE_URL · 留空隐藏详情页按钮</small></label>
+            <div style="display:flex;gap:8px"><input id="c_METATUBE_URL" type="text" placeholder="http://192.168.1.10:8080" style="flex:1;min-width:0"><button class="ghost" type="button" id="mt-test-btn" onclick="testMetatube()" style="white-space:nowrap">测试连接</button></div></div>
+          <div class="field w3"><label>Metatube Token <small>METATUBE_TOKEN · 服务开启鉴权时填写</small></label><input id="c_METATUBE_TOKEN" type="password" placeholder="留空表示无需鉴权"></div>
           <div class="field w6"><label>User-Agent <small>USER_AGENT · 模拟浏览器身份</small></label><input id="c_USER_AGENT" type="text">
             <div class="hint">网站靠它识别访问者身份；填常见浏览器标识可避免被反爬拦截。留空使用程序内置默认值，一般无需修改。</div></div>
         </div>
@@ -496,7 +498,7 @@ async function loadConfig() {
 }
 async function saveConfig() {
   const body = {};
-  ['BASE_URL','CATEGORY','USER_AGENT','METATUBE_URL','DELAY_SECONDS','JITTER_SECONDS',
+  ['BASE_URL','CATEGORY','USER_AGENT','METATUBE_URL','METATUBE_TOKEN','DELAY_SECONDS','JITTER_SECONDS',
    'MAX_RETRIES','TIMEOUT','WEB_PORT','AUTO_CRAWL_INTERVAL_HOURS','AUTO_CRAWL_PAGES',
    'TAG_FILTERS','TAG_FILTER_MODE']
     .forEach(k => { const el = $('c_' + k); if (el) body[k] = el.value; });
@@ -508,6 +510,19 @@ async function saveConfig() {
   m.className = 'msg ' + (j.ok ? 'ok' : 'err');
   if (j.ok) toast('✓ 设置已保存，立即生效', 'ok');
   else toast('保存失败: ' + (j.error || '未知错误'), 'err');
+}
+async function testMetatube() {
+  const btn = $('mt-test-btn');
+  const url = $('c_METATUBE_URL').value.trim();
+  if (!url) { toast('请先填写 MetaTube 服务地址', 'err'); return; }
+  btn.disabled = true; btn.textContent = '测试中…';
+  try {
+    const j = await (await fetch('/api/metatube/test', {method:'POST', headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({url, token: $('c_METATUBE_TOKEN').value.trim()})})).json();
+    if (j.ok) toast('✓ ' + (j.message || '连接成功'), 'ok');
+    else toast('✗ ' + (j.error || '连接失败'), 'err');
+  } catch (e) { toast('✗ 请求失败: ' + e.message, 'err'); }
+  finally { btn.disabled = false; btn.textContent = '测试连接'; }
 }
 
 /* ---------- crawl ---------- */
@@ -660,7 +675,7 @@ async function toggleDetail(code, tr) {
     　<b>类别</b> ${(m.genres||[]).map(g=>`<span class="tag" onclick="searchTag('${esc(g)}')" style="cursor:pointer">${esc(g)}</span>`).join('')||'-'}</div>
     ${mags}
     ${samples ? `<div class="mag" style="margin-top:6px"><b>样图</b></div><div style="display:flex;flex-wrap:wrap">${samples}</div>` : ''}
-    <div class="mag"><a href="${esc(m.url)}" target="_blank">原页面 ↗</a>${SITE_BASE !== m.url.replace(/\/+$/,'') ? ` ｜ <a href="${esc(m.url.replace(/^https?:\/\/[^/]+/, SITE_BASE))}" target="_blank">本站镜像</a>` : ''} ｜ <a href="${esc((window.METATUBE_URL || '') + '/v1/movies/javbus/' + encodeURIComponent(m.code))}" target="_blank" style="${window.METATUBE_URL ? '' : 'display:none'}">Metatube 查询</a></div></td>`;
+    <div class="mag"><a href="${esc(m.url)}" target="_blank">原页面 ↗</a>${SITE_BASE !== m.url.replace(/\/+$/,'') ? ` ｜ <a href="${esc(m.url.replace(/^https?:\/\/[^/]+/, SITE_BASE))}" target="_blank">本站镜像</a>` : ''} ｜ <a href="${esc((window.METATUBE_URL || '') + '/#/movie/javbus/' + encodeURIComponent(m.code))}" target="_blank" style="${window.METATUBE_URL ? '' : 'display:none'}">Metatube 查询</a></div></td>`;
   tr.after(row);
 }
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
