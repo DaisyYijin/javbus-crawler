@@ -31,8 +31,8 @@ def client(tmp_path, monkeypatch):
 
     monkeypatch.setattr(web, "ADMIN_USER", "admin", raising=False)
     monkeypatch.setattr(web, "ADMIN_PASSWORD", "test-pass", raising=False)
-    web._stats_cache["ts"] = 0.0  # never serve a previous test's cache
-    web._chips_cache["ts"] = 0.0
+    web._stats_cache["ts"] = None  # never serve a previous test's cache
+    web._chips_cache["ts"] = None
 
     app = web.create_app()
     app.config["TESTING"] = True

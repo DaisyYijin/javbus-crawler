@@ -92,16 +92,16 @@ _logs: deque[str] = deque(maxlen=1000)
 
 # Cheap TTL cache for /api/stats (its top_genres aggregation scans the whole
 # movies table). Invalidated when a crawl finishes or data is cleared/deleted.
-_stats_cache: dict = {"key": None, "ts": 0.0, "data": None}
+_stats_cache: dict = {"key": None, "ts": None, "data": None}
 _STATS_TTL = 30.0
-_chips_cache: dict = {"ts": 0.0, "data": None}
+_chips_cache: dict = {"ts": None, "data": None}
 _CHIPS_TTL = 60.0
 
 
 def _invalidate_stats_cache() -> None:
     """Drop the stats + filter-chips caches (library contents changed)."""
-    _stats_cache["ts"] = 0.0
-    _chips_cache["ts"] = 0.0
+    _stats_cache["ts"] = None
+    _chips_cache["ts"] = None
 
 
 class _WebLogHandler(logging.Handler):
@@ -380,7 +380,8 @@ def create_app() -> Flask:
     def stats():
         category = request.args.get("category", "")
         now = time.monotonic()
-        if _stats_cache["key"] == category and now - _stats_cache["ts"] < _STATS_TTL:
+        if (_stats_cache["key"] == category and _stats_cache["ts"] is not None
+                and now - _stats_cache["ts"] < _STATS_TTL):
             return jsonify(_stats_cache["data"])
         conn = sqlite3.connect(settings.load()["DB_PATH"], timeout=15)
         try:
@@ -394,7 +395,7 @@ def create_app() -> Flask:
     def filter_chips():
         """Quick-add keyword chips derived from real magnet names in the library."""
         now = time.monotonic()
-        if now - _chips_cache["ts"] < _CHIPS_TTL:
+        if _chips_cache["ts"] is not None and now - _chips_cache["ts"] < _CHIPS_TTL:
             return jsonify({"items": _chips_cache["data"]})
         conn = sqlite3.connect(settings.load()["DB_PATH"], timeout=15)
         try:
