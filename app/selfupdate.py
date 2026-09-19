@@ -39,25 +39,47 @@ def docker_available() -> bool:
 
 
 def _find_self(client):
-    """Locate this container via its HOSTNAME (short container id)."""
+    """Locate this container via its HOSTNAME (short container id).
+
+    Self must be a RUNNING container: a stale inherited HOSTNAME env var can
+    point at an older, already-stopped container — never match those.
+    """
     me = os.environ.get("HOSTNAME", "")
     if not me:
         raise RuntimeError("HOSTNAME 未设置，无法定位当前容器")
     # Case 1: HOSTNAME equals this container's own id prefix (docker default).
     all_containers = client.containers.list(all=True)
-    for c in all_containers:
+    running = [c for c in all_containers if c.status == "running"]
+    for c in running:
         if c.id.startswith(me):
             return c
     # Case 2: this container was created by an older self-update which passed
     # the *previous* container's id-prefix as an explicit hostname. Then
     # HOSTNAME points at a deleted container id — match by hostname config
-    # instead (running containers win).
-    matches = [c for c in all_containers
-               if (c.attrs.get("Config", {}).get("Hostname") or "") == me]
-    running = [c for c in matches if c.status == "running"]
-    if running or matches:
-        return (running or matches)[0]
+    # instead.
+    for c in running:
+        if (c.attrs.get("Config", {}).get("Hostname") or "") == me:
+            return c
     raise RuntimeError("未找到当前容器（HOSTNAME=%s）" % me)
+
+
+def _reap_stale(client, self_c, name: str) -> list:
+    """Remove stopped leftover containers from previous self-updates."""
+    removed = []
+    for c in client.containers.list(all=True):
+        if c.id == self_c.id or c.status == "running":
+            continue
+        n = c.name
+        if n.startswith(f"{name}-old-") or (
+                n.startswith(name) and n.endswith("-switch")):
+            try:
+                c.remove(force=True)
+                removed.append(n)
+            except Exception as exc:
+                log.warning("清理残留容器 %s 失败: %s", n, exc)
+    if removed:
+        log.info("已清理历史更新残留: %s", ", ".join(removed))
+    return removed
 
 
 def _convert_ports(port_bindings: dict | None):
@@ -96,9 +118,15 @@ except Exception as exc:
     except Exception:
         pass
     sys.exit(1)
-old_c.remove(force=True)    # reap the old container
+try:
+    old_c.remove(force=True)    # reap the old container
+except Exception as exc:
+    print("old container remove failed:", exc, flush=True)
 print("switch-over complete", flush=True)
-client.containers.get(sys.argv[3]).remove(force=True)  # remove the helper itself
+try:
+    client.containers.get(sys.argv[3]).remove(force=True)  # remove the helper itself
+except Exception:
+    pass
 """
 
 
@@ -115,6 +143,7 @@ def perform_self_update() -> dict:
         )
 
     self_c = _find_self(client)
+    _reap_stale(client, self_c, self_c.name)
     current_image_id = self_c.attrs["Image"]  # sha256:...
 
     log.info("拉取镜像 %s …", IMAGE)
@@ -153,12 +182,14 @@ def perform_self_update() -> dict:
             image=IMAGE,
             name=name,
             detach=True,
-            environment=cfg.get("Env") or None,
             labels={k: v for k, v in (cfg.get("Labels") or {}).items()
                     if not k.startswith("com.docker.compose")},
-            # NOTE: hostname intentionally NOT copied — the old value is the
-            # previous container's id-prefix; keep the docker default so
-            # HOSTNAME always matches the new container itself.
+            # NOTE: hostname intentionally NOT copied — neither as the
+            # container hostname nor via the inherited HOSTNAME env var
+            # (docker injects HOSTNAME into Env; a stale value makes the
+            # next update's _find_self match a stopped old container).
+            environment=[e for e in (cfg.get("Env") or [])
+                         if not e.startswith("HOSTNAME=")] or None,
             ports=_convert_ports(host.get("PortBindings")),
             volumes=host.get("Binds") or None,
             restart_policy=host.get("RestartPolicy") or None,
