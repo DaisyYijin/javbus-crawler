@@ -436,8 +436,18 @@
         <h2>精准筛选 <small>（匹配影片标签或磁力名称）</small></h2>
         <div class="form-grid">
           <div class="field w6"><label>筛选关键词（逗号分隔，顺序即优先级） <small>TAG_FILTERS</small></label>
-            <input id="c_TAG_FILTERS" type="text" placeholder="如: 4K,高畫質,中文字幕">
-            <div class="hint">从左到右依次匹配磁力名称，命中即选中该磁力（★ 推荐）；全部未命中时选第一条磁力兜底。常用：4K / 高畫質 / 1080p / 60fps / VR専用 / 中文字幕。</div></div>
+            <input id="c_TAG_FILTERS" type="text" placeholder="如: 字幕,高清,4K">
+            <div class="row" style="gap:6px;margin-top:8px">
+              <span class="kv">快速添加：</span>
+              <span class="tag" style="cursor:pointer" onclick="addKeyword('字幕')">字幕</span>
+              <span class="tag" style="cursor:pointer" onclick="addKeyword('高清')">高清</span>
+              <span class="tag" style="cursor:pointer" onclick="addKeyword('4K')">4K</span>
+              <span class="tag" style="cursor:pointer" onclick="addKeyword('1080p')">1080p</span>
+              <span class="tag" style="cursor:pointer" onclick="addKeyword('-U')">-U 无码流出</span>
+              <span class="tag" style="cursor:pointer" onclick="addKeyword('-UC')">-UC 无码中字</span>
+              <span class="tag" style="cursor:pointer" onclick="addKeyword('AI')">AI 字幕</span>
+            </div>
+            <div class="hint">从左到右依次匹配磁力名称，命中即选中该磁力（★ 推荐）；全部未命中时选第一条磁力兜底。点击标签可添加 / 移除关键词。站点磁力常见标记：高清 ｜ 字幕（含 ch、-C）｜ -U（无码流出，会同时命中 -UC）｜ -UC（无码+中字）｜ AI（机翻字幕）。</div></div>
           <div class="field w3"><label>筛选模式 <small>TAG_FILTER_MODE · 没命中关键词的影片要不要入库</small></label>
             <select id="c_TAG_FILTER_MODE">
               <option value="mark">全部入库：没命中的也收，只是不标记</option>
@@ -610,6 +620,14 @@ async function saveConfig() {
   });
   if (j.ok) toast('✓ 设置已保存，立即生效', 'ok');
   else toast('保存失败: ' + (j.error || '未知错误'), 'err');
+}
+function addKeyword(kw) {
+  const el = $('c_TAG_FILTERS');
+  const kws = el.value.split(',').map(s => s.trim()).filter(Boolean);
+  const i = kws.indexOf(kw);
+  if (i >= 0) kws.splice(i, 1); else kws.push(kw);
+  el.value = kws.join(',');
+  el.focus();
 }
 async function testTabConnection() {
   const btn = $('tab-test-btn');

@@ -52,3 +52,29 @@ def test_pick_magnet_fallback_and_empty():
     best, kw = crawler.pick_magnet([{"name": "x", "hash": "a"}], [])
     assert best["hash"] == "a" and kw == ""
     assert crawler.pick_magnet([], ["4K"]) == (None, "")
+
+
+def test_compute_matched_site_markers():
+    """Real magnet names from seedmm.bond (FNS-248, 2026-09)."""
+    names = [
+        "第一會所新片@SIS001@FNS-248 高清",
+        "第一會所新片@SIS001@FNS-248-U",
+        "FNS-248-UC",
+        "FNS-248-AI 高清",
+        "fns-248ch 高清 字幕",
+        "FNS-248-U",
+        "FNS-248 高清",
+    ]
+    assert crawler.compute_matched([], names, ["字幕"]) == ["字幕"]
+    assert crawler.compute_matched([], names, ["高清"]) == ["高清"]
+    assert crawler.compute_matched([], names, ["-UC"]) == ["-UC"]      # only UC rows
+    assert crawler.compute_matched([], names, ["AI"]) == ["AI"]        # only the AI row
+    # -U is a substring of -UC: both uncensored leak variants hit
+    assert crawler.compute_matched([], names, ["-U"]) == ["-U"]
+
+
+def test_pick_magnet_prefers_priority_over_position():
+    mags = [{"name": "FNS-248-U", "hash": "u"},
+            {"name": "fns-248ch 高清 字幕", "hash": "ch"}]
+    best, kw = crawler.pick_magnet(mags, ["字幕", "-U"])
+    assert best["hash"] == "ch" and kw == "字幕"
