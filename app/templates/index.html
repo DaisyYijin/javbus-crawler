@@ -451,7 +451,7 @@
 
       <div class="row save-row">
         <button class="primary" onclick="saveConfig()">保存配置</button>
-        <button class="ghost" type="button" id="site-test-btn" onclick="testSite()">测试站点连接</button>
+        <button class="ghost" type="button" id="tab-test-btn" onclick="testTabConnection()">测试站点连接</button>
         <span class="msg cfg-msg"></span>
       </div>
     </section>
@@ -570,6 +570,11 @@ function toggleMenu(force) {
 function switchSettingsTab(btn) {
   document.querySelectorAll('#settings-tabs .tab-btn').forEach(b => b.classList.toggle('active', b === btn));
   document.querySelectorAll('#page-settings .tabpane').forEach(p => { p.hidden = p.id !== 'tab-' + btn.dataset.tab; });
+  // the test button tests whatever the active tab configures
+  const tb = $('tab-test-btn'), tab = btn.dataset.tab;
+  if (tab === 'site') { tb.style.display = ''; tb.textContent = '测试站点连接'; }
+  else if (tab === 'metatube') { tb.style.display = ''; tb.textContent = '测试 MetaTube 连接'; }
+  else { tb.style.display = 'none'; }
 }
 
 /* ---------- config ---------- */
@@ -606,18 +611,21 @@ async function saveConfig() {
   if (j.ok) toast('✓ 设置已保存，立即生效', 'ok');
   else toast('保存失败: ' + (j.error || '未知错误'), 'err');
 }
-async function testSite() {
-  const btn = $('site-test-btn');
-  const url = $('c_BASE_URL').value.trim();
-  if (!url) { toast('请先填写站点地址', 'err'); return; }
+async function testTabConnection() {
+  const btn = $('tab-test-btn');
+  const isSite = !$('tab-site').hidden;
+  const url = (isSite ? $('c_BASE_URL') : $('c_METATUBE_URL')).value.trim();
+  const label = isSite ? '测试站点连接' : '测试 MetaTube 连接';
+  if (!url) { toast(isSite ? '请先填写站点地址' : '请先填写 MetaTube 服务地址', 'err'); return; }
   btn.disabled = true; btn.textContent = '测试中…';
   try {
-    const j = await (await fetch('/api/site/test', {method:'POST', headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({url})})).json();
+    const body = isSite ? {url} : {url, token: $('c_METATUBE_TOKEN').value.trim()};
+    const ep = isSite ? '/api/site/test' : '/api/metatube/test';
+    const j = await (await fetch(ep, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body)})).json();
     if (j.ok) toast('✓ ' + (j.message || '连接成功'), 'ok');
     else toast('✗ ' + (j.error || '连接失败'), 'err');
   } catch (e) { toast('✗ 请求失败: ' + e.message, 'err'); }
-  finally { btn.disabled = false; btn.textContent = '测试站点连接'; }
+  finally { btn.disabled = false; btn.textContent = label; }
 }
 
 /* ---------- crawl ---------- */
