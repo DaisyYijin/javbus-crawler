@@ -97,11 +97,16 @@ def run_job(
         proxy=(cfg.get("PROXY") or "").strip(),
         stop_check=stop_check,
     )
-    category = cfg.get("CATEGORY", "censored")
-    section = "/uncensored" if category == "uncensored" else ""
+    sections = {"censored": "", "uncensored": "/uncensored"}
+    cats = [c.strip() for c in str(cfg.get("CATEGORY", "censored")).split(",")
+            if c.strip() in sections] or ["censored"]
+
+    def cat_label(c: str) -> str:
+        return "无码" if c == "uncensored" else "有码"
+
     conn = db.connect(cfg["DB_PATH"])
     known = db.known_codes(conn)
-    depth = int(db.get_meta(conn, f"max_page:{category}", "0") or 0)
+    depths = {c: int(db.get_meta(conn, f"max_page:{c}", "0") or 0) for c in cats}
 
     if mode == "backfill":
         try:
@@ -109,80 +114,89 @@ def run_job(
         except ValueError:
             count = len(parse_pages(pages))  # e.g. "2-5" -> 4 pages
         count = max(1, min(count, 500))
-        if depth <= 0:
+        plans = []
+        for c in cats:
+            if depths[c] <= 0:
+                log.warning("补历史跳过 %s 频道：尚无采集深度记录，请先用「追新」采集第 1 页",
+                            cat_label(c))
+                continue
+            plans.append((c, list(range(depths[c] + 1, depths[c] + 1 + count))))
+            log.info("补历史 %s: 从第 %d 页继续，本次 %d 页（当前深度 %d）",
+                     cat_label(c), depths[c] + 1, count, depths[c])
+        if not plans:
             raise ValueError("尚无采集深度记录：请先用「追新」模式采集第 1 页")
-        page_list = list(range(depth + 1, depth + 1 + count))
-        log.info("补历史: 从第 %d 页继续，本次 %d 页（当前深度 %d）",
-                 depth + 1, count, depth)
     else:
         page_list = parse_pages(pages)
         mode = "new"
+        plans = [(c, page_list) for c in cats]
     log.info("开始采集: 模式=%s 频道=%s pages=%s base=%s 已入库=%d delay=%.1fs",
              "补历史" if mode == "backfill" else "追新",
-             "无码" if section else "有码", pages, fetcher.base_url,
+             "/".join(cat_label(c) for c in cats), pages, fetcher.base_url,
              len(known), fetcher.delay)
 
     stats = {"pages": 0, "listed": 0, "new": 0, "updated": 0,
              "magnets": 0, "errors": 0, "stopped": False}
 
     try:
-        for page in page_list:
-            html = fetcher.get(f"{section}/page/{page}")
-            if not html:
-                log.error("第 %d 页抓取失败，跳过", page)
-                stats["errors"] += 1
-                continue
-            items = parse_list(html, fetcher.base_url)
-            if not items:
-                log.warning("第 %d 页没有条目，已到站点尽头，停止补历史", page)
-                break
-            if page > depth:
-                depth = page
-                db.set_meta(conn, f"max_page:{category}", depth)
-                conn.commit()
-            stats["pages"] += 1
-            stats["listed"] += len(items)
-            log.info("第 %d 页: %d 部影片", page, len(items))
-
-            for item in items:
-                if not refresh and item.code in known:
-                    continue
-                detail_html = fetcher.get(item.url)
-                if not detail_html:
+        for cat, page_list in plans:
+            section = sections[cat]
+            for page in page_list:
+                html = fetcher.get(f"{section}/page/{page}")
+                if not html:
+                    log.error("第 %d 页抓取失败，跳过", page)
                     stats["errors"] += 1
                     continue
+                items = parse_list(html, fetcher.base_url)
+                if not items:
+                    log.warning("第 %d 页没有条目，已到站点尽头，停止补历史", page)
+                    break
+                if page > depths[cat]:
+                    depths[cat] = page
+                    db.set_meta(conn, f"max_page:{cat}", depths[cat])
+                    conn.commit()
+                stats["pages"] += 1
+                stats["listed"] += len(items)
+                log.info("[%s] 第 %d 页: %d 部影片", cat_label(cat), page, len(items))
 
-                movie = parse_detail(detail_html, item.code, item.url)
-                movie.category = category
-                if magnets:
-                    sv = parse_movie_script_vars(detail_html)
-                    if sv.get("gid"):
-                        frag = fetcher.get(magnet_ajax_path(sv), referer=item.url)
-                        movie.magnets = parse_magnets(frag) if frag else []
-                    else:
-                        log.warning("%s: 未找到 gid 参数，跳过磁力", item.code)
-
-                # tag filtering: match genres + magnet names against keywords
-                keywords = [k for k in str(cfg.get("TAG_FILTERS") or "").split(",") if k.strip()]
-                filter_mode = cfg.get("TAG_FILTER_MODE", "all")
-                if keywords:
-                    movie.matched_tags = compute_matched(
-                        movie.genres, [m.name for m in movie.magnets], keywords)
-                    if filter_mode == "only" and not movie.matched_tags:
-                        stats.setdefault("skipped", 0)
-                        stats["skipped"] += 1
-                        log.info("跳过 %s（不匹配筛选: %s）", item.code, ",".join(keywords))
+                for item in items:
+                    if not refresh and item.code in known:
+                        continue
+                    detail_html = fetcher.get(item.url)
+                    if not detail_html:
+                        stats["errors"] += 1
                         continue
 
-                is_new = item.code not in known
-                db.upsert_movie(conn, movie)
-                stats["magnets"] += db.insert_magnets(conn, movie.magnets, movie.code)
-                conn.commit()
-                known.add(item.code)
-                stats["new" if is_new else "updated"] += 1
-                log.info("%s %s 磁力=%d %s",
-                         "新增" if is_new else "更新", movie.code,
-                         len(movie.magnets), movie.title[:40])
+                    movie = parse_detail(detail_html, item.code, item.url)
+                    movie.category = cat
+                    if magnets:
+                        sv = parse_movie_script_vars(detail_html)
+                        if sv.get("gid"):
+                            frag = fetcher.get(magnet_ajax_path(sv), referer=item.url)
+                            movie.magnets = parse_magnets(frag) if frag else []
+                        else:
+                            log.warning("%s: 未找到 gid 参数，跳过磁力", item.code)
+
+                    # tag filtering: match genres + magnet names against keywords
+                    keywords = [k for k in str(cfg.get("TAG_FILTERS") or "").split(",") if k.strip()]
+                    filter_mode = cfg.get("TAG_FILTER_MODE", "mark")
+                    if keywords:
+                        movie.matched_tags = compute_matched(
+                            movie.genres, [m.name for m in movie.magnets], keywords)
+                        if filter_mode == "only" and not movie.matched_tags:
+                            stats.setdefault("skipped", 0)
+                            stats["skipped"] += 1
+                            log.info("跳过 %s（不匹配筛选: %s）", item.code, ",".join(keywords))
+                            continue
+
+                    is_new = item.code not in known
+                    db.upsert_movie(conn, movie)
+                    stats["magnets"] += db.insert_magnets(conn, movie.magnets, movie.code)
+                    conn.commit()
+                    known.add(item.code)
+                    stats["new" if is_new else "updated"] += 1
+                    log.info("%s %s 磁力=%d %s",
+                             "新增" if is_new else "更新", movie.code,
+                             len(movie.magnets), movie.title[:40])
     except StopRequested:
         stats["stopped"] = True
         log.warning("采集已被用户停止")

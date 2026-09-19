@@ -310,8 +310,6 @@ def create_app() -> Flask:
         if sort not in ("new", "match", "magnets"):
             sort = "new"
         category = request.args.get("category", "")
-        if category not in ("censored", "uncensored"):
-            category = ""
         try:
             page = max(1, int(request.args.get("page", 1)))
             size = max(1, min(int(request.args.get("size", 20)), 100))
@@ -328,8 +326,6 @@ def create_app() -> Flask:
     @app.get("/api/stats")
     def stats():
         category = request.args.get("category", "")
-        if category not in ("censored", "uncensored"):
-            category = ""
         conn = sqlite3.connect(settings.load()["DB_PATH"], timeout=15)
         try:
             data = db.library_stats(conn, category=category)

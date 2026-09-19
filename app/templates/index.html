@@ -217,8 +217,8 @@
     <div class="side-foot">
       <div><span class="dot" id="side-dot"></span><span id="side-state">空闲</span></div>
       <div class="side-btns">
-        <button class="ghost" onclick="doLogout()">退出登录</button>
         <button class="ghost" onclick="activatePage('about')">检查更新 · v{{ version }}</button>
+        <button class="ghost" onclick="doLogout()">退出登录</button>
       </div>
     </div>
   </aside>
@@ -247,9 +247,9 @@
         <div class="genre-head">
           <h2>分类标签统计 · 点击标签可筛选</h2>
           <div class="seg" id="genre-seg">
-            <button class="seg-btn active" onclick="setGenreCat('', this)">全部</button>
-            <button class="seg-btn" onclick="setGenreCat('censored', this)">有码</button>
-            <button class="seg-btn" onclick="setGenreCat('uncensored', this)">无码</button>
+            <button class="seg-btn active" data-cat="" onclick="toggleGenreCat(this)">全部</button>
+            <button class="seg-btn" data-cat="censored" onclick="toggleGenreCat(this)">有码</button>
+            <button class="seg-btn" data-cat="uncensored" onclick="toggleGenreCat(this)">无码</button>
           </div>
         </div>
         <div id="genre-bars"></div>
@@ -301,11 +301,11 @@
         <div class="row" style="margin-bottom:12px">
           <input id="q" type="text" placeholder="搜索番号 / 标题 / 演员" style="max-width:240px"
                  onkeydown="if(event.key==='Enter')loadMovies(1)">
-          <select id="f-cat" onchange="loadMovies(1)">
-            <option value="">全部频道</option>
-            <option value="censored">有码</option>
-            <option value="uncensored">无码</option>
-          </select>
+          <div class="seg" id="cat-filter-seg">
+            <button class="seg-btn active" data-cat="" onclick="toggleFilterCat(this)">全部</button>
+            <button class="seg-btn" data-cat="censored" onclick="toggleFilterCat(this)">有码</button>
+            <button class="seg-btn" data-cat="uncensored" onclick="toggleFilterCat(this)">无码</button>
+          </div>
           <select id="sort" onchange="loadMovies(1)">
             <option value="new">最新入库</option>
             <option value="match">匹配优先</option>
@@ -337,14 +337,14 @@
         <h2>站点与频道</h2>
         <div class="form-grid">
           <div class="field w4"><label>站点地址 <small>BASE_URL</small></label><input id="c_BASE_URL" type="text"></div>
-          <div class="field"><label>采集频道 <small>CATEGORY · 自动采集使用</small></label>
-            <select id="c_CATEGORY">
-              <option value="censored">有码（默认）</option>
-              <option value="uncensored">无码</option>
-            </select></div>
-          <div class="field w3"><label>Metatube 服务地址 <small>METATUBE_URL · 留空隐藏详情页按钮</small></label>
-            <div style="display:flex;gap:8px"><input id="c_METATUBE_URL" type="text" placeholder="http://192.168.1.10:8080" style="flex:1;min-width:0"><button class="ghost" type="button" id="mt-test-btn" onclick="testMetatube()" style="white-space:nowrap">测试连接</button></div></div>
-          <div class="field w3"><label>Metatube Token <small>METATUBE_TOKEN · 服务开启鉴权时填写</small></label><input id="c_METATUBE_TOKEN" type="password" placeholder="留空表示无需鉴权"></div>
+          <div class="field"><label>采集频道 <small>CATEGORY · 可多选，两种都会采</small></label>
+            <div class="seg" id="cat-seg">
+              <button type="button" class="seg-btn active" data-cat="censored" onclick="toggleCat(this)">有码</button>
+              <button type="button" class="seg-btn" data-cat="uncensored" onclick="toggleCat(this)">无码</button>
+            </div></div>
+          <div class="field w3"><label>Metatube 服务 <small>METATUBE_URL / METATUBE_TOKEN · 地址留空隐藏详情页按钮</small></label>
+            <div style="display:flex;gap:8px"><input id="c_METATUBE_URL" type="text" placeholder="http://192.168.1.10:8080" style="flex:1;min-width:0"><button class="ghost" type="button" id="mt-test-btn" onclick="testMetatube()" style="white-space:nowrap">测试连接</button></div>
+            <input id="c_METATUBE_TOKEN" type="password" placeholder="Token（服务开启鉴权才需要填）" style="margin-top:8px"></div>
           <div class="field w6"><label>User-Agent <small>USER_AGENT · 模拟浏览器身份</small></label><input id="c_USER_AGENT" type="text">
             <div class="hint">网站靠它识别访问者身份；填常见浏览器标识可避免被反爬拦截。留空使用程序内置默认值，一般无需修改。</div></div>
         </div>
@@ -367,12 +367,12 @@
           <div class="field w6"><label>筛选关键词（逗号分隔，顺序即优先级） <small>TAG_FILTERS</small></label>
             <input id="c_TAG_FILTERS" type="text" placeholder="如: 4K,高畫質,中文字幕">
             <div class="hint">从左到右依次匹配磁力名称，命中即选中该磁力（★ 推荐）；全部未命中时选第一条磁力兜底。常用：4K / 高畫質 / 1080p / 60fps / VR専用 / 中文字幕。</div></div>
-          <div class="field w3"><label>筛选模式 <small>TAG_FILTER_MODE</small></label>
+          <div class="field w3"><label>筛选模式 <small>TAG_FILTER_MODE · 没命中关键词的影片要不要入库</small></label>
             <select id="c_TAG_FILTER_MODE">
-              <option value="mark">全部采集，标记匹配</option>
-              <option value="only">仅采集匹配的影片</option>
-              <option value="all">不筛选</option>
-            </select></div>
+              <option value="mark">全部入库：没命中的也收，只是不标记</option>
+              <option value="only">只收命中的：没命中的直接跳过</option>
+            </select>
+            <div class="hint">「命中」= 影片标签或磁力名称包含上面任意一个关键词。不填关键词时两种模式效果相同。</div></div>
         </div>
       </div>
 
@@ -493,15 +493,21 @@ async function loadConfig() {
   for (const [k, v] of Object.entries(j.config)) {
     const el = $('c_' + k); if (!el) continue;
     if (el.type === 'checkbox') el.checked = !!v;
+    else if (el.tagName === 'SELECT') { if ([...el.options].some(o => o.value === String(v))) el.value = v; }
     else el.value = v;
   }
+  const cats = String(j.config.CATEGORY || 'censored').split(',');
+  document.querySelectorAll('#cat-seg .seg-btn').forEach(b => b.classList.toggle('active', cats.includes(b.dataset.cat)));
+  if (!document.querySelector('#cat-seg .seg-btn.active'))
+    document.querySelector('#cat-seg [data-cat="censored"]').classList.add('active');
 }
 async function saveConfig() {
   const body = {};
-  ['BASE_URL','CATEGORY','USER_AGENT','METATUBE_URL','METATUBE_TOKEN','DELAY_SECONDS','JITTER_SECONDS',
+  ['BASE_URL','USER_AGENT','METATUBE_URL','METATUBE_TOKEN','DELAY_SECONDS','JITTER_SECONDS',
    'MAX_RETRIES','TIMEOUT','WEB_PORT','AUTO_CRAWL_INTERVAL_HOURS','AUTO_CRAWL_PAGES',
    'TAG_FILTERS','TAG_FILTER_MODE']
     .forEach(k => { const el = $('c_' + k); if (el) body[k] = el.value; });
+  body.CATEGORY = [...document.querySelectorAll('#cat-seg .seg-btn.active')].map(b => b.dataset.cat).join(',');
   const cb = $('c_AUTO_CRAWL_ENABLED');
   if (cb) body.AUTO_CRAWL_ENABLED = cb.checked;
   const j = await (await fetch('/api/config', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body)})).json();
@@ -586,18 +592,46 @@ async function loadStats() {
 window.addEventListener('load', () => { pollStatus(); setInterval(pollStatus, 5000); loadStats(); });
 
 /* ---------- genre bars ---------- */
-let showAllGenres = false, genreCat = '';
-function setGenreCat(cat, btn) {
-  genreCat = cat || '';
-  document.querySelectorAll('#genre-seg .seg-btn').forEach(b => b.classList.toggle('active', b === btn));
-  showAllGenres = false;
-  loadGenres(genreCat);
+let showAllGenres = false;
+function activeGenreCats() {
+  return [...document.querySelectorAll('#genre-seg .seg-btn.active')]
+    .map(b => b.dataset.cat).filter(Boolean);
 }
-function toggleAllGenres() { showAllGenres = !showAllGenres; loadGenres(genreCat); }
-async function loadGenres(cat) {
-  cat = cat || genreCat || '';
+function toggleGenreCat(btn) {
+  if (!btn.dataset.cat) {
+    document.querySelectorAll('#genre-seg .seg-btn').forEach(b => b.classList.toggle('active', b === btn));
+  } else {
+    btn.classList.toggle('active');
+    document.querySelector('#genre-seg [data-cat=""]').classList.remove('active');
+    if (!activeGenreCats().length)
+      document.querySelector('#genre-seg [data-cat=""]').classList.add('active');
+  }
+  showAllGenres = false;
+  loadGenres();
+}
+function toggleAllGenres() { showAllGenres = !showAllGenres; loadGenres(); }
+function toggleCat(btn) {
+  btn.classList.toggle('active');
+  if (!document.querySelector('#cat-seg .seg-btn.active')) btn.classList.add('active');
+}
+function activeFilterCats() {
+  return [...document.querySelectorAll('#cat-filter-seg .seg-btn.active')]
+    .map(b => b.dataset.cat).filter(Boolean);
+}
+function toggleFilterCat(btn) {
+  if (!btn.dataset.cat) {
+    document.querySelectorAll('#cat-filter-seg .seg-btn').forEach(b => b.classList.toggle('active', b === btn));
+  } else {
+    btn.classList.toggle('active');
+    document.querySelector('#cat-filter-seg [data-cat=""]').classList.remove('active');
+    if (!activeFilterCats().length)
+      document.querySelector('#cat-filter-seg [data-cat=""]').classList.add('active');
+  }
+  loadMovies(1);
+}
+async function loadGenres() {
   try {
-    const j = await (await fetch('/api/stats?category=' + cat)).json();
+    const j = await (await fetch('/api/stats?category=' + encodeURIComponent(activeGenreCats().join(',')))).json();
     const all = j.top_genres || [];
     const list = showAllGenres ? all : all.slice(0, 25);
     const max = list.length ? list[0].count : 1;
@@ -619,7 +653,7 @@ async function loadMovies(page) {
   curPage = Math.max(1, page || 1);
   const q = $('q').value.trim();
   curSort = $('sort') ? $('sort').value : 'new';
-  curCat = $('f-cat') ? $('f-cat').value : '';
+  curCat = activeFilterCats().join(',');
   try { localStorage.setItem('jc.q', q); localStorage.setItem('jc.sort', curSort); localStorage.setItem('jc.cat', curCat); } catch (e) {}
   const r = await fetch(`/api/movies?q=${encodeURIComponent(q)}&page=${curPage}&size=20&sort=${curSort}&category=${curCat}`);
   const j = await r.json();
@@ -636,7 +670,7 @@ async function loadMovies(page) {
       <td><span class="code">${m.code}</span></td>
       <td>${esc(m.title)}</td>
       <td><span class="cat ${m.category||'unknown'}">${catName}</span></td>
-      <td>${matched.length ? matched.map(t=>`<span class="tag hit" onclick="event.stopPropagation();searchTag('${esc(t)}')">${esc(t)}</span>`).join('') : '<span style="color:var(--line)">—</span>'}</td>
+      <td>${matched.length ? `<span class="tag hit" title="${esc(matched.join(', '))}" onclick="event.stopPropagation();searchTag('${esc(matched[0])}')">${esc(matched[0])}</span>` : '<span style="color:var(--line)">—</span>'}</td>
       <td>${m.release_date || ''}</td>
       <td>${m.magnet_count}</td><td style="color:var(--mut)">${(m.first_seen || '').replace('T',' ').slice(5,16)}</td>
     </tr>`;
@@ -756,7 +790,13 @@ window.addEventListener('load', () => {
     const savedSort = localStorage.getItem('jc.sort');
     if (savedSort && $('sort')) $('sort').value = savedSort;
     const savedCat = localStorage.getItem('jc.cat');
-    if (savedCat && $('f-cat')) $('f-cat').value = savedCat;
+    if (savedCat !== null) {
+      const want = savedCat ? savedCat.split(',') : [];
+      document.querySelectorAll('#cat-filter-seg .seg-btn').forEach(b =>
+        b.classList.toggle('active', want.includes(b.dataset.cat)));
+      if (!document.querySelector('#cat-filter-seg .seg-btn.active'))
+        document.querySelector('#cat-filter-seg [data-cat=""]').classList.add('active');
+    }
   } catch (e) {}
   loadGenres('');
   loadMovies(1);

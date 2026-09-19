@@ -98,10 +98,16 @@ def save(partial: dict) -> dict:
         raise ValueError("JITTER_SECONDS 不能为负")
     if "WEB_PORT" in clean and not (1 <= clean["WEB_PORT"] <= 65535):
         raise ValueError("WEB_PORT 必须在 1-65535 之间")
-    if "CATEGORY" in clean and clean["CATEGORY"] not in ("censored", "uncensored"):
-        raise ValueError("CATEGORY 只支持 censored / uncensored")
-    if "TAG_FILTER_MODE" in clean and clean["TAG_FILTER_MODE"] not in ("all", "only", "mark"):
-        raise ValueError("TAG_FILTER_MODE 只支持 all / only / mark")
+    if "CATEGORY" in clean:
+        cats = [c.strip() for c in str(clean["CATEGORY"]).split(",") if c.strip()]
+        if not cats or any(c not in ("censored", "uncensored") for c in cats):
+            raise ValueError("CATEGORY 只支持 censored / uncensored（可逗号分隔多选）")
+        clean["CATEGORY"] = ",".join(cats)
+    if "TAG_FILTER_MODE" in clean:
+        mode = str(clean["TAG_FILTER_MODE"])
+        if mode not in ("mark", "only", "all"):
+            raise ValueError("TAG_FILTER_MODE 只支持 mark / only")
+        clean["TAG_FILTER_MODE"] = "mark" if mode == "all" else mode
     if "AUTO_CRAWL_INTERVAL_HOURS" in clean and clean["AUTO_CRAWL_INTERVAL_HOURS"] <= 0:
         raise ValueError("自动采集间隔必须大于 0")
     if clean.get("AUTO_CRAWL_INTERVAL_HOURS", 0) > 24 * 30:

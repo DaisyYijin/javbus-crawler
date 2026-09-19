@@ -147,9 +147,10 @@ def list_movies(conn: sqlite3.Connection, q: str = "", page: int = 1, size: int 
         like = f"%{q}%"
         clauses.append("(code LIKE ? OR title LIKE ? OR actors LIKE ?)")
         params += [like, like, like]
-    if category in ("censored", "uncensored"):
-        clauses.append("category = ?")
-        params.append(category)
+    cats = [c for c in str(category or "").split(",") if c in ("censored", "uncensored")]
+    if cats:
+        clauses.append("category IN (%s)" % ",".join("?" * len(cats)))
+        params.extend(cats)
     where = ("WHERE " + " AND ".join(clauses)) if clauses else ""
     total = conn.execute(f"SELECT COUNT(*) FROM movies {where}", params).fetchone()[0]
     offset = (max(1, page) - 1) * size
@@ -214,10 +215,11 @@ def get_movie(conn: sqlite3.Connection, code: str) -> dict | None:
 
 def library_stats(conn: sqlite3.Connection, category: str = "") -> dict:
     """Counts per category + top genre tags for the given channel ('' = all)."""
+    cats = [c for c in str(category or "").split(",") if c in ("censored", "uncensored")]
     where, params = "", []
-    if category in ("censored", "uncensored"):
-        where = "WHERE category = ?"
-        params = [category]
+    if cats:
+        where = "WHERE category IN (%s)" % ",".join("?" * len(cats))
+        params = cats
 
     by_cat = {"censored": 0, "uncensored": 0}
     for cat, n in conn.execute(
