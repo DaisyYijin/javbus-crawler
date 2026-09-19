@@ -1,0 +1,49 @@
+"""Settings validation tests (writes go to the isolated JC_DATADIR)."""
+import pytest
+
+from app import settings
+
+
+def test_load_defaults():
+    cfg = settings.load()
+    assert cfg["CATEGORY"] in ("censored", "uncensored", "censored,uncensored")
+    assert cfg["TAG_FILTER_MODE"] in ("mark", "only")
+    assert cfg["DELAY_SECONDS"] >= 0
+
+
+def test_category_multi_select():
+    assert settings.save({"CATEGORY": "censored,uncensored"})["CATEGORY"] == "censored,uncensored"
+    assert settings.save({"CATEGORY": "censored, uncensored"})["CATEGORY"] == "censored,uncensored"
+
+
+def test_category_invalid_rejected():
+    with pytest.raises(ValueError):
+        settings.save({"CATEGORY": "bogus"})
+    with pytest.raises(ValueError):
+        settings.save({"CATEGORY": ""})
+
+
+def test_tag_filter_mode_legacy_migration():
+    assert settings.save({"TAG_FILTER_MODE": "all"})["TAG_FILTER_MODE"] == "mark"
+    assert settings.save({"TAG_FILTER_MODE": "only"})["TAG_FILTER_MODE"] == "only"
+    with pytest.raises(ValueError):
+        settings.save({"TAG_FILTER_MODE": "weird"})
+
+
+@pytest.mark.parametrize("key,value", [
+    ("DELAY_SECONDS", -1),
+    ("JITTER_SECONDS", -0.5),
+    ("WEB_PORT", 99999),
+    ("WEB_PORT", 0),
+    ("AUTO_CRAWL_INTERVAL_HOURS", 0),
+    ("AUTO_CRAWL_INTERVAL_HOURS", 9999),
+])
+def test_bounds_rejected(key, value):
+    with pytest.raises(ValueError):
+        settings.save({key: value})
+
+
+def test_db_path_locked_and_unknown_keys_ignored():
+    with pytest.raises(ValueError):
+        settings.save({"DB_PATH": "/etc/passwd"})
+    assert "HACK" not in settings.save({"HACK": "x"})

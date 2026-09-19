@@ -16,11 +16,17 @@ docker compose up -d
 
 - **登录保护**：所有页面与 API 均需登录；会话 7 天有效；失败有防爆破延迟；
   不设置 `ADMIN_PASSWORD` 时每次启动生成随机密码（`docker logs javbus-crawler` 查看）
-- **采集设置**：站点地址、请求间隔、随机抖动、重试次数、超时、端口——全部在网页表单里改，
-  保存即生效（持久化在 `./data/config.json`，业务配置不使用环境变量）
-- **采集控制**：填页码（如 `1` 或 `2-10`）、勾选“抓磁力 / 刷新已有”，点“开始采集”，
-  实时滚动日志与统计（新增/更新/磁力/错误），随时可停止
-- **采集数据**：分页 + 搜索（番号/标题/演员），点击行展开详情与全部磁力链接
+- **采集设置**：站点地址、有码/无码多选、请求间隔、随机抖动、重试次数、超时、端口——
+  全部在网页表单里改，保存即生效（持久化在 `./data/config.json`）
+- **采集控制**：追新 / 补历史两种模式、页码范围（单次上限 500 页）、抓磁力、刷新已有，
+  实时滚动日志与统计，随时可停止；支持定时自动采集
+- **补采番号**：数据页输入番号（如 `BANK-248`）单独抓取一部影片，漏采补录
+- **采集数据**：分页 + 搜索（番号/标题/演员）+ 高级筛选（按演员/片商/发行商/系列/导演/标签
+  精确过滤 + 发行日期区间），点击行展开详情与全部磁力链接，可删除单片
+- **维度浏览**：按演员 / 片商 / 发行商 / 系列 / 导演聚合排行，点击名称直接筛选影片
+- **精准筛选**：关键词（顺序即优先级、大小写不敏感）匹配标签或磁力名，推荐磁力或只收命中的影片
+- **MetaTube 联动**：配置服务地址 + Token（可测试连接），详情页一键跳转查询
+- **导出 / 清空**：全库 JSON 流式导出；一键清空数据（任务运行时拒绝）
 - **在线更新**：自动检测 GitHub 新版本，网页内一键更新
 
 ## 项目结构
@@ -31,14 +37,16 @@ docker compose up -d
 ├── app/
 │   ├── main.py             # 入口：默认启动 Web（serve）；crawl 子命令保留 CLI 采集
 │   ├── web.py              # Flask API：配置/采集控制/状态日志/数据查询/更新检查
-│   ├── crawler.py          # 采集引擎（CLI 与 Web 共用，支持协作式停止）
+│   ├── crawler.py          # 采集引擎（CLI 与 Web 共用，支持协作式停止、单番号补采）
 │   ├── fetcher.py          # HTTP 层：限速、抖动、重试退避
 │   ├── parser.py           # 列表页/详情页/磁力解析
-│   ├── db.py               # SQLite schema、upsert、查询
+│   ├── db.py               # SQLite schema、索引、upsert、多维查询
 │   ├── settings.py         # JSON 配置文件（/data/config.json）
+│   ├── taxonomy.py         # 标签归一化（统计页标准分类）
 │   ├── updater.py          # GitHub Releases 在线更新
-│   └── templates/index.html# 单页前端
-└── data/                   # 挂载卷：seedmm.db（数据）+ config.json（配置）
+│   ├── selfupdate.py       # docker.sock 容器自更新
+│   └── templates/          # 单页前端（index.html / login.html）
+└── tests/                  # pytest 测试套件（CI 自动运行）
 ```
 
 ## 配置
@@ -48,13 +56,16 @@ docker compose up -d
 | 键 | 默认值 | 说明 |
 |---|---|---|
 | `BASE_URL` | `https://www.seedmm.bond` | 站点根地址 |
-| `CATEGORY` | `censored` | 采集频道：有码 `censored` / 无码 `uncensored` |
+| `CATEGORY` | `censored` | 采集频道：有码 `censored` / 无码 `uncensored`，可逗号分隔同时采 |
 | `PROXY` | 空 | HTTP 代理（如 `http://127.0.0.1:7890`），留空不使用 |
 | `DELAY_SECONDS` | `2.0` | 请求间隔下限（秒） |
 | `JITTER_SECONDS` | `1.0` | 请求间隔随机抖动上限（秒） |
 | `MAX_RETRIES` | `3` | 单请求重试次数（指数退避） |
 | `TIMEOUT` | `30` | 请求超时（秒） |
 | `USER_AGENT` | Chrome UA | 请求头 |
+| `TAG_FILTERS` | 空 | 筛选关键词（逗号分隔，顺序即优先级，大小写不敏感） |
+| `TAG_FILTER_MODE` | `mark` | `mark` 全部入库并标记 / `only` 只收命中的 |
+| `METATUBE_URL` / `METATUBE_TOKEN` | 空 | MetaTube 服务地址与 Token（详情页跳转用） |
 | `AUTO_CRAWL_ENABLED` | `false` | 定时自动采集开关 |
 | `AUTO_CRAWL_INTERVAL_HOURS` | `24` | 自动采集间隔（小时） |
 | `AUTO_CRAWL_PAGES` | `1-3` | 每次自动采集的页码范围 |
@@ -76,13 +87,19 @@ docker compose run --rm crawler --check-update
 | 方法 | 路径 | 说明 |
 |---|---|---|
 | GET/POST | `/api/config` | 读取 / 保存配置 |
-| POST | `/api/crawl/start` | `{"pages":"1-5","magnets":true,"refresh":false}` 启动采集 |
+| POST | `/api/crawl/start` | `{"pages":"1-5","mode":"new|backfill",...}` 启动采集（单次 ≤500 页） |
 | POST | `/api/crawl/stop` | 停止当前采集 |
 | GET | `/api/crawl/status` | 运行状态、统计、日志尾部 |
-| GET | `/api/movies?q=&page=&size=` | 已采集影片分页/搜索 |
-| GET | `/api/movies/<番号>` | 影片详情 + 磁力列表 |
-| GET | `/api/update/check` | 检查新版本 |
-| POST | `/api/update/apply` | 返回容器场景的更新命令 |
+| POST | `/api/crawl/code` | `{"code":"BANK-248"}` 补采单个番号 |
+| GET | `/api/movies` | 影片分页/搜索；支持 `actor/studio/label/series/director/genre` 精确筛选与 `date_from/date_to` |
+| GET | `/api/movies/<番号>` | 影片详情 + 磁力列表 + 推荐磁力 |
+| DELETE | `/api/movies/<番号>` | 删除单片及其磁力 |
+| GET | `/api/browse?type=actor|studio|label|series|director` | 维度聚合排行 |
+| GET | `/api/stats` | 库存统计与热门标签（30s 缓存） |
+| GET | `/api/export` | 全库 JSON 流式导出 |
+| POST | `/api/data/clear` | 清空数据（采集运行中返回 409） |
+| POST | `/api/metatube/test` | 测试 MetaTube 服务连通性 |
+| GET | `/api/update/check` · POST `/api/update/apply` | 检查 / 一键更新 |
 
 ## 数据表
 
@@ -96,10 +113,20 @@ docker compose run --rm crawler --check-update
   `GET /ajax/uncledatoolsbyajax.php?gid=<gid>&lang=zh&img=<img>&uc=<uc>&floor=<rand>`
   动态填充 `#magnet-table`；`gid/uc/img` 从详情页内联脚本提取。
 - 限速默认 2-3 秒/请求，礼貌抓取；404 跳过，网络错误指数退避重试。
-- 断点续采：按番号幂等 upsert，重复运行不产生重复行。
+- 断点续采：按番号幂等 upsert，重复运行不产生重复行；补历史按频道独立记录深度。
+- movies 表建有 category / first_seen / magnet_count / matched_count / release_date 索引。
 - 发版流程：改 `app/version.py` → push → `gh release create vX.Y.Z`，
   Actions 自动构建并推送 `ghcr.io/daisyyijin/javbus-crawler:{latest,vX.Y.Z}`，
   旧版本网页自动提示更新。
+
+## 测试
+
+```bash
+pip install -r requirements.txt pytest
+pytest -q          # 63 项离线测试（不需要网络与数据库）
+```
+
+CI（`.github/workflows/tests.yml`）在每次 push / PR 时自动运行。
 
 ## 注意
 

@@ -66,7 +66,7 @@
   .card h2 small { font-weight: 400; text-transform: none; letter-spacing: 0; }
   label { display: block; font-size: 13px; margin: 10px 0 4px; font-weight: 500; }
   label small { color: var(--mut); font-weight: 400; }
-  input[type=text], input[type=number], input[type=password], select {
+  input[type=text], input[type=number], input[type=password], input[type=date], select {
     width: 100%; padding: 9px 11px; border: 1px solid var(--line); border-radius: 9px;
     font-size: 14px; background: #fafbfd; font-family: inherit;
   }
@@ -213,6 +213,7 @@
       <button class="nav-item active" data-page="dashboard"><span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg></span>仪表盘</button>
       <button class="nav-item" data-page="settings"><span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/></svg></span>采集设置</button>
       <button class="nav-item" data-page="data"><span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><circle cx="3.5" cy="6" r="0.5" fill="currentColor"/><circle cx="3.5" cy="12" r="0.5" fill="currentColor"/><circle cx="3.5" cy="18" r="0.5" fill="currentColor"/></svg></span>采集数据</button>
+      <button class="nav-item" data-page="browse"><span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="9" cy="8" r="3.5"/><path d="M3.5 19c.8-3 3-4.5 5.5-4.5s4.7 1.5 5.5 4.5"/><circle cx="17" cy="9" r="2.5"/><path d="M15.5 13.6c2 .2 3.9 1.5 5 4.4"/></svg></span>维度浏览</button>
     </nav>
     <div class="side-foot">
       <div><span class="dot" id="side-dot"></span><span id="side-state">空闲</span></div>
@@ -316,6 +317,27 @@
           <button class="ghost" onclick="location.href='/api/export'">导出 JSON</button>
           <button class="danger" onclick="clearData()">清空数据</button>
         </div>
+        <div class="row" style="margin-bottom:12px">
+          <select id="f-type" style="max-width:130px" onchange="loadMovies(1)">
+            <option value="">全部分类</option>
+            <option value="actor">按演员</option>
+            <option value="studio">按片商</option>
+            <option value="label">按发行商</option>
+            <option value="series">按系列</option>
+            <option value="director">按导演</option>
+            <option value="genre">按标签</option>
+          </select>
+          <input id="f-value" type="text" placeholder="维度精确值（点击演员 / 标签自动填入）" style="max-width:260px"
+                 onkeydown="if(event.key==='Enter')loadMovies(1)">
+          <input id="f-from" type="date" title="发行日期（起）" onchange="loadMovies(1)">
+          <span style="color:var(--mut)">～</span>
+          <input id="f-to" type="date" title="发行日期（止）" onchange="loadMovies(1)">
+          <button class="ghost" onclick="clearAdv()">清除筛选</button>
+          <div style="flex:1"></div>
+          <input id="by-code" type="text" placeholder="补采番号 如 BANK-248" style="max-width:180px"
+                 onkeydown="if(event.key==='Enter')crawlByCode()">
+          <button class="ghost" onclick="crawlByCode()">补采</button>
+        </div>
         <div class="table-wrap">
         <table>
           <thead><tr><th>封面</th><th>番号</th><th>标题</th><th>频道</th><th>匹配</th><th>发行日期</th><th>磁力</th><th>入库时间</th></tr></thead>
@@ -326,6 +348,30 @@
           <button class="ghost" onclick="loadMovies(curPage-1)" id="pg-prev">← 上一页</button>
           <span id="pg-info"></span>
           <button class="ghost" onclick="loadMovies(curPage+1)" id="pg-next">下一页 →</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ browse ============ -->
+    <section class="page" id="page-browse">
+      <div class="page-head"><h1>维度浏览</h1><span>按演员 / 片商 / 系列等汇总 · 点击名称查看对应影片</span></div>
+      <div class="card">
+        <div class="row" style="margin-bottom:12px">
+          <div class="seg" id="browse-seg">
+            <button class="seg-btn active" data-kind="actor" onclick="setBrowseKind(this)">演员</button>
+            <button class="seg-btn" data-kind="studio" onclick="setBrowseKind(this)">片商</button>
+            <button class="seg-btn" data-kind="label" onclick="setBrowseKind(this)">发行商</button>
+            <button class="seg-btn" data-kind="series" onclick="setBrowseKind(this)">系列</button>
+            <button class="seg-btn" data-kind="director" onclick="setBrowseKind(this)">导演</button>
+          </div>
+          <input id="b-q" type="text" placeholder="按名称过滤…" style="max-width:200px"
+                 onkeydown="if(event.key==='Enter')loadBrowse()">
+        </div>
+        <div class="table-wrap">
+        <table>
+          <thead><tr><th style="width:50px">#</th><th>名称</th><th style="width:120px">影片数</th></tr></thead>
+          <tbody id="browse-rows"></tbody>
+        </table>
         </div>
       </div>
     </section>
@@ -467,6 +513,7 @@ function activatePage(page) {
   if (pg) pg.classList.add('active');
   try { localStorage.setItem('jc.page', page); } catch (e) {}
   if (page === 'data') loadMovies(curPage);
+  if (page === 'browse') loadBrowse();
   if (window.innerWidth <= 860) toggleMenu(false);
   window.scrollTo(0, 0);
 }
@@ -648,14 +695,43 @@ async function loadGenres() {
   } catch (e) {}
 }
 
+/* ---------- browse ---------- */
+let browseKind = 'actor';
+function setBrowseKind(btn) {
+  browseKind = btn.dataset.kind;
+  document.querySelectorAll('#browse-seg .seg-btn').forEach(b => b.classList.toggle('active', b === btn));
+  loadBrowse();
+}
+async function loadBrowse() {
+  try {
+    const j = await (await fetch(`/api/browse?type=${browseKind}&q=${encodeURIComponent($('b-q').value.trim())}&size=200`)).json();
+    $('browse-rows').innerHTML = (j.items || []).map((x, i) => `
+      <tr class="movie" data-search="${esc(x.name)}" data-search-type="${browseKind}">
+        <td style="color:var(--mut)">${i + 1}</td><td>${esc(x.name)}</td><td>${x.count}</td></tr>`).join('')
+      || '<tr><td colspan="3" style="color:var(--mut);text-align:center;padding:30px">暂无数据</td></tr>';
+  } catch (e) {}
+}
+
 /* ---------- data ---------- */
+let loadSeq = 0;
 async function loadMovies(page) {
+  const seq = ++loadSeq;
   curPage = Math.max(1, page || 1);
   const q = $('q').value.trim();
   curSort = $('sort') ? $('sort').value : 'new';
   curCat = activeFilterCats().join(',');
-  try { localStorage.setItem('jc.q', q); localStorage.setItem('jc.sort', curSort); localStorage.setItem('jc.cat', curCat); } catch (e) {}
-  const r = await fetch(`/api/movies?q=${encodeURIComponent(q)}&page=${curPage}&size=20&sort=${curSort}&category=${curCat}`);
+  const ft = $('f-type') ? $('f-type').value : '';
+  const fv = $('f-value') ? $('f-value').value.trim() : '';
+  const fdfrom = $('f-from') ? $('f-from').value : '';
+  const fdto = $('f-to') ? $('f-to').value : '';
+  try { localStorage.setItem('jc.q', q); localStorage.setItem('jc.sort', curSort); localStorage.setItem('jc.cat', curCat);
+        localStorage.setItem('jc.adv', JSON.stringify({t: ft, v: fv, from: fdfrom, to: fdto})); } catch (e) {}
+  const p = new URLSearchParams({q, page: curPage, size: 20, sort: curSort, category: curCat});
+  if (ft) p.set(ft, fv);
+  if (fdfrom) p.set('date_from', fdfrom);
+  if (fdto) p.set('date_to', fdto);
+  const r = await fetch('/api/movies?' + p.toString());
+  if (seq !== loadSeq) return;  // superseded by a newer request
   const j = await r.json();
   $('data-total').textContent = `共 ${j.total} 部`;
   $('pg-info').textContent = `第 ${j.page} / ${Math.max(1, Math.ceil(j.total / j.size))} 页`;
@@ -680,22 +756,57 @@ function coverUrl(c) {
   if (!c) return '';
   return /^https?:/.test(c) ? c : SITE_BASE + c;
 }
-function searchTag(text) {
+function searchTag(text, type = 'q') {
   activatePage('data');
-  $('q').value = text;
+  const sel = $('f-type');
+  if (type !== 'q' && sel && [...sel.options].some(o => o.value === type)) {
+    sel.value = type;
+    $('f-value').value = text;
+  } else {
+    $('q').value = text;
+  }
   loadMovies(1);
+}
+function clearAdv() {
+  $('f-type').value = ''; $('f-value').value = ''; $('f-from').value = ''; $('f-to').value = '';
+  loadMovies(1);
+}
+async function deleteMovie(code) {
+  if (!confirm(`确定删除 ${code}？该影片及其磁力记录将被移除。`)) return;
+  try {
+    const r = await fetch('/api/movies/' + encodeURIComponent(code), {method: 'DELETE'});
+    const j = await r.json();
+    if (j.ok) { toast('✓ 已删除 ' + code, 'ok'); loadMovies(curPage); loadStats(); loadGenres(); }
+    else toast('删除失败: ' + (j.error || '未知错误'), 'err');
+  } catch (e) { toast('删除失败: ' + e.message, 'err'); }
+}
+async function crawlByCode() {
+  const code = $('by-code').value.trim();
+  if (!code) { toast('请输入番号，如 BANK-248', 'err'); return; }
+  toast('正在抓取 ' + code + ' …');
+  try {
+    const j = await (await fetch('/api/crawl/code', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({code})})).json();
+    if (j.ok) { toast(`✓ ${j.new ? '新增' : '更新'} ${j.code} · 磁力 ${j.magnets}`, 'ok'); $('by-code').value = ''; loadMovies(1); loadStats(); loadGenres(); }
+    else toast('✗ ' + (j.error || '抓取失败'), 'err');
+  } catch (e) { toast('✗ 请求失败: ' + e.message, 'err'); }
 }
 // event delegation: user-content lives in data-* attributes (HTML-escaped),
 // never inside inline JS strings — closes the attribute-context XSS hole
 $('genre-bars').addEventListener('click', e => {
   const t = e.target.closest('[data-search]');
-  if (t) searchTag(t.dataset.search);
+  if (t) searchTag(t.dataset.search, t.dataset.searchType || 'genre');
 });
 $('movie-rows').addEventListener('click', e => {
+  const d = e.target.closest('[data-del]');
+  if (d) { deleteMovie(d.dataset.del); return; }
   const t = e.target.closest('[data-search]');
-  if (t) { searchTag(t.dataset.search); return; }
+  if (t) { searchTag(t.dataset.search, t.dataset.searchType || 'q'); return; }
   const tr = e.target.closest('tr.movie');
   if (tr) toggleDetail(tr.dataset.code, tr);
+});
+$('browse-rows').addEventListener('click', e => {
+  const t = e.target.closest('[data-search]');
+  if (t) searchTag(t.dataset.search, t.dataset.searchType || 'q');
 });
 async function toggleDetail(code, tr) {
   const next = tr.nextElementSibling;
@@ -715,13 +826,13 @@ async function toggleDetail(code, tr) {
     `<a href="${esc(/^https?:/.test(s) ? s : SITE_BASE + s)}" target="_blank"><img src="${esc(/^https?:/.test(s) ? s : SITE_BASE + s)}" loading="lazy" style="width:96px;height:64px;object-fit:cover;border-radius:5px;border:1px solid var(--line);margin:2px"></a>`
   ).join('');
   row.innerHTML = `<td colspan="8">
-    <div class="mag"><b>导演</b> ${esc(m.director)||'-'}　<b>片商</b> <a href="javascript:void(0)" data-search="${esc(m.studio)}" style="color:inherit">${esc(m.studio)||'-'}</a>
+    <div class="mag"><b>导演</b> ${esc(m.director)||'-'}　<b>片商</b> <a href="javascript:void(0)" data-search="${esc(m.studio)}" data-search-type="studio" style="color:inherit">${esc(m.studio)||'-'}</a>
     　<b>发行</b> ${esc(m.label)||'-'}　<b>时长</b> ${esc(m.duration)||'-'}　<b>系列</b> ${esc(m.series)||'-'}</div>
-    <div class="mag" style="margin:4px 0"><b>演员</b> ${(m.actors||[]).map(a=>`<span class="tag" style="cursor:pointer" data-search="${esc(a)}">${esc(a)}</span>`).join('')||'-'}
-    　<b>类别</b> ${(m.genres||[]).map(g=>`<span class="tag" data-search="${esc(g)}" style="cursor:pointer">${esc(g)}</span>`).join('')||'-'}</div>
+    <div class="mag" style="margin:4px 0"><b>演员</b> ${(m.actors||[]).map(a=>`<span class="tag" style="cursor:pointer" data-search="${esc(a)}" data-search-type="actor">${esc(a)}</span>`).join('')||'-'}
+    　<b>类别</b> ${(m.genres||[]).map(g=>`<span class="tag" data-search="${esc(g)}" data-search-type="genre" style="cursor:pointer">${esc(g)}</span>`).join('')||'-'}</div>
     ${mags}
     ${samples ? `<div class="mag" style="margin-top:6px"><b>样图</b></div><div style="display:flex;flex-wrap:wrap">${samples}</div>` : ''}
-    <div class="mag"><a href="${esc(m.url)}" target="_blank">原页面 ↗</a>${SITE_BASE !== m.url.replace(/\/+$/,'') ? ` ｜ <a href="${esc(m.url.replace(/^https?:\/\/[^/]+/, SITE_BASE))}" target="_blank">本站镜像</a>` : ''} ｜ <a href="${esc((window.METATUBE_URL || '') + '/#/movie/javbus/' + encodeURIComponent(m.code))}" target="_blank" style="${window.METATUBE_URL ? '' : 'display:none'}">Metatube 查询</a></div></td>`;
+    <div class="mag"><a href="${esc(m.url)}" target="_blank">原页面 ↗</a>${SITE_BASE !== m.url.replace(/\/+$/,'') ? ` ｜ <a href="${esc(m.url.replace(/^https?:\/\/[^/]+/, SITE_BASE))}" target="_blank">本站镜像</a>` : ''} ｜ <a href="${esc((window.METATUBE_URL || '') + '/#/movie/javbus/' + encodeURIComponent(m.code))}" target="_blank" style="${window.METATUBE_URL ? '' : 'display:none'}">Metatube 查询</a> ｜ <button class="danger" data-del="${esc(m.code)}" style="padding:3px 12px;font-size:12px">删除此影片</button></div></td>`;
   tr.after(row);
 }
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -809,6 +920,15 @@ window.addEventListener('load', () => {
       if (!document.querySelector('#cat-filter-seg .seg-btn.active'))
         document.querySelector('#cat-filter-seg [data-cat=""]').classList.add('active');
     }
+    try {
+      const adv = JSON.parse(localStorage.getItem('jc.adv') || 'null');
+      if (adv && $('f-type')) {
+        $('f-type').value = adv.t || '';
+        $('f-value').value = adv.v || '';
+        $('f-from').value = adv.from || '';
+        $('f-to').value = adv.to || '';
+      }
+    } catch (e) {}
   } catch (e) {}
   loadGenres('');
   loadMovies(1);

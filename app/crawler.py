@@ -226,3 +226,54 @@ def run_job(
         log.info("结束: %(pages)d 页, %(new)d 新增, %(updated)d 更新, "
                  "%(magnets)d 磁力, %(errors)d 错误", stats)
     return stats
+
+
+_CODE_RE = re.compile(r"[0-9A-Za-z][0-9A-Za-z_-]{0,30}")
+
+
+def crawl_code(cfg: dict, code: str, magnets: bool = True, stop_check=None) -> dict:
+    """Crawl a single movie by code (tries the censored path, then /uncensored)."""
+    code = code.strip().upper()
+    if not _CODE_RE.fullmatch(code):
+        raise ValueError(f"番号格式无效: {code!r}（示例: BANK-248）")
+    fetcher = Fetcher(
+        base_url=cfg["BASE_URL"],
+        delay=cfg["DELAY_SECONDS"],
+        jitter=cfg["JITTER_SECONDS"],
+        max_retries=cfg["MAX_RETRIES"],
+        timeout=cfg["TIMEOUT"],
+        user_agent=cfg["USER_AGENT"],
+        proxy=(cfg.get("PROXY") or "").strip(),
+        stop_check=stop_check,
+    )
+    conn = db.connect(cfg["DB_PATH"])
+    try:
+        known = db.known_codes(conn)
+        for section, cat in (("", "censored"), ("/uncensored", "uncensored")):
+            html = fetcher.get(f"{section}/{code}")
+            if not html:
+                continue
+            movie = parse_detail(html, code, f"{fetcher.base_url}{section}/{code}")
+            if not movie.title:
+                continue  # shell/redirect page, try the next section
+            movie.category = cat
+            if magnets:
+                sv = parse_movie_script_vars(html)
+                if sv.get("gid"):
+                    frag = fetcher.get(magnet_ajax_path(sv), referer=movie.url)
+                    movie.magnets = parse_magnets(frag) if frag else []
+            keywords = [k for k in str(cfg.get("TAG_FILTERS") or "").split(",") if k.strip()]
+            if keywords:
+                movie.matched_tags = compute_matched(
+                    movie.genres, [m.name for m in movie.magnets], keywords)
+            db.upsert_movie(conn, movie)
+            db.insert_magnets(conn, movie.magnets, movie.code)
+            conn.commit()
+            is_new = code not in known
+            log.info("%s %s 磁力=%d %s", "补采新增" if is_new else "补采更新",
+                     code, len(movie.magnets), movie.title[:40])
+            return {"code": code, "title": movie.title, "category": cat,
+                    "new": is_new, "magnets": len(movie.magnets)}
+        raise ValueError(f"站点上找不到 {code}（有码/无码两个频道都试过了）")
+    finally:
+        conn.close()

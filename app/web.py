@@ -90,6 +90,11 @@ def _admin_password() -> str:
 
 _logs: deque[str] = deque(maxlen=1000)
 
+# Cheap TTL cache for /api/stats (its top_genres aggregation scans the whole
+# movies table). Invalidated when a crawl finishes or data is cleared/deleted.
+_stats_cache: dict = {"key": None, "ts": 0.0, "data": None}
+_STATS_TTL = 30.0
+
 
 class _WebLogHandler(logging.Handler):
     def emit(self, record):
@@ -148,6 +153,7 @@ def _crawl_thread(params: dict) -> None:
     finally:
         _job["running"] = False
         _job["finished_at"] = _now()
+        _stats_cache["ts"] = 0.0
 
 
 def create_app() -> Flask:
@@ -325,8 +331,17 @@ def create_app() -> Flask:
             page, size = 1, 20
         conn = sqlite3.connect(settings.load()["DB_PATH"], timeout=10)
         try:
-            total, items = db.list_movies(conn, q=q, page=page, size=size,
-                                          sort=sort, category=category)
+            total, items = db.list_movies(
+                conn, q=q, page=page, size=size, sort=sort, category=category,
+                actor=(request.args.get("actor") or "").strip(),
+                studio=(request.args.get("studio") or "").strip(),
+                label=(request.args.get("label") or "").strip(),
+                series=(request.args.get("series") or "").strip(),
+                genre=(request.args.get("genre") or "").strip(),
+                director=(request.args.get("director") or "").strip(),
+                date_from=(request.args.get("date_from") or "").strip(),
+                date_to=(request.args.get("date_to") or "").strip(),
+            )
         finally:
             conn.close()
         return jsonify({"total": total, "page": page, "size": size, "sort": sort, "items": items})
@@ -334,11 +349,15 @@ def create_app() -> Flask:
     @app.get("/api/stats")
     def stats():
         category = request.args.get("category", "")
+        now = time.monotonic()
+        if _stats_cache["key"] == category and now - _stats_cache["ts"] < _STATS_TTL:
+            return jsonify(_stats_cache["data"])
         conn = sqlite3.connect(settings.load()["DB_PATH"], timeout=15)
         try:
             data = db.library_stats(conn, category=category)
         finally:
             conn.close()
+        _stats_cache.update(key=category, ts=now, data=data)
         return jsonify(data)
 
     @app.get("/api/movies/<code>")
@@ -356,44 +375,107 @@ def create_app() -> Flask:
         movie["best_kw"] = kw
         return jsonify(movie)
 
-    @app.get("/api/export")
-    def export_data():
-        """Download all movies + magnets as a JSON file."""
-        import json as _json
-
-        conn = sqlite3.connect(settings.load()["DB_PATH"], timeout=30)
+    @app.delete("/api/movies/<code>")
+    def movie_delete(code: str):
+        conn = sqlite3.connect(settings.load()["DB_PATH"], timeout=10)
         try:
-            rows = conn.execute(
-                "SELECT code, title, url, cover, release_date, duration, director, "
-                "studio, label, series, actors, genres, samples, magnet_count, "
-                "first_seen, last_seen FROM movies"
-            ).fetchall()
-            cols = ("code title url cover release_date duration director studio label "
-                    "series actors genres samples magnet_count first_seen last_seen").split()
-            out = []
-            for r in rows:
-                m = dict(zip(cols, r))
-                for k in ("actors", "genres", "samples"):
-                    try:
-                        m[k] = _json.loads(m[k])
-                    except (TypeError, ValueError):
-                        m[k] = []
-                m["magnets"] = [
-                    {"hash": x[0], "name": x[1], "size": x[2], "date": x[3], "link": x[4]}
-                    for x in conn.execute(
-                        "SELECT hash, name, size, date, link FROM magnets WHERE code = ?",
-                        (m["code"],),
-                    )
-                ]
-                out.append(m)
+            deleted = db.delete_movie(conn, code)
         finally:
             conn.close()
-        body = _json.dumps({"exported_at": _now(), "count": len(out), "movies": out},
-                           ensure_ascii=False, indent=2)
-        return body, 200, {
+        if not deleted:
+            return jsonify({"ok": False, "error": "not found"}), 404
+        log.info("已删除影片 %s", code)
+        _stats_cache["ts"] = 0.0
+        return jsonify({"ok": True})
+
+    @app.get("/api/browse")
+    def browse():
+        """Aggregate counts for a browse dimension (actor/studio/label/series/director)."""
+        kind = request.args.get("type", "actor")
+        if kind not in ("actor", "studio", "label", "series", "director"):
+            kind = "actor"
+        q = (request.args.get("q") or "").strip()
+        try:
+            size = max(1, min(int(request.args.get("size", 200)), 500))
+        except ValueError:
+            size = 200
+        conn = sqlite3.connect(settings.load()["DB_PATH"], timeout=15)
+        try:
+            items = db.browse_counts(conn, kind, q, size)
+        finally:
+            conn.close()
+        return jsonify({"type": kind, "items": items})
+
+    @app.post("/api/crawl/code")
+    def crawl_one_code():
+        """Fetch a single movie by code (manual backfill for missed releases)."""
+        body = request.get_json(silent=True) or {}
+        code = str(body.get("code", "")).strip()
+        if not code:
+            return jsonify({"ok": False, "error": "请填写番号"}), 400
+        try:
+            result = crawler.crawl_code(settings.load(), code,
+                                        magnets=bool(body.get("magnets", True)))
+        except ValueError as exc:
+            return jsonify({"ok": False, "error": str(exc)}), 400
+        _stats_cache["ts"] = 0.0
+        return jsonify({"ok": True, **result})
+
+    @app.get("/api/export")
+    def export_data():
+        """Stream all movies + magnets as a downloadable JSON file (single JOIN)."""
+        db_path = settings.load()["DB_PATH"]
+
+        def generate():
+            conn = sqlite3.connect(db_path, timeout=30)
+            try:
+                count = conn.execute("SELECT COUNT(*) FROM movies").fetchone()[0]
+                yield '{"exported_at": "%s", "count": %d, "movies": [' % (_now(), count)
+                cols = ("code title url cover release_date duration director studio "
+                        "label series actors genres samples category matched_tags "
+                        "magnet_count first_seen last_seen").split()
+                cur = conn.execute(
+                    "SELECT m.code, m.title, m.url, m.cover, m.release_date, m.duration, "
+                    "m.director, m.studio, m.label, m.series, m.actors, m.genres, "
+                    "m.samples, m.category, m.matched_tags, m.magnet_count, "
+                    "m.first_seen, m.last_seen, "
+                    "mg.hash, mg.name, mg.size, mg.date, mg.link "
+                    "FROM movies m LEFT JOIN magnets mg ON mg.code = m.code "
+                    "ORDER BY m.code"
+                )
+
+                def render(m):
+                    for k in ("actors", "genres", "samples", "matched_tags"):
+                        try:
+                            m[k] = json.loads(m[k] or "[]")
+                        except (TypeError, ValueError):
+                            m[k] = []
+                    return json.dumps(m, ensure_ascii=False)
+
+                current, movie, first = None, None, True
+                for row in cur:
+                    mvals, mag = row[:18], row[18:]
+                    if mvals[0] != current:
+                        if movie is not None:
+                            yield ("" if first else ",") + render(movie)
+                            first = False
+                        current = mvals[0]
+                        movie = dict(zip(cols, mvals))
+                        movie["magnets"] = []
+                    if mag[0]:
+                        movie["magnets"].append(
+                            {"hash": mag[0], "name": mag[1], "size": mag[2],
+                             "date": mag[3], "link": mag[4]})
+                if movie is not None:
+                    yield ("" if first else ",") + render(movie)
+                yield "]}"
+            finally:
+                conn.close()
+
+        return app.response_class(generate(), 200, {
             "Content-Type": "application/json; charset=utf-8",
             "Content-Disposition": 'attachment; filename="javbus-crawler-export.json"',
-        }
+        })
 
     @app.post("/api/data/clear")
     def data_clear():
@@ -412,6 +494,7 @@ def create_app() -> Flask:
         finally:
             conn.close()
         log.warning("已清空全部采集数据（%d 部影片）并重置采集深度", deleted)
+        _stats_cache["ts"] = 0.0
         return jsonify({"ok": True, "deleted": deleted})
 
     # ---------------- update ----------------

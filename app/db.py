@@ -70,6 +70,15 @@ def connect(db_path: str) -> sqlite3.Connection:
         conn.execute("ALTER TABLE movies ADD COLUMN matched_count INTEGER NOT NULL DEFAULT 0")
     if "category" not in cols:
         conn.execute("ALTER TABLE movies ADD COLUMN category TEXT NOT NULL DEFAULT ''")
+    # secondary indexes for the common sort/filter paths (after migrations so
+    # the indexed columns are guaranteed to exist even on old databases)
+    conn.executescript("""
+    CREATE INDEX IF NOT EXISTS idx_movies_category ON movies(category);
+    CREATE INDEX IF NOT EXISTS idx_movies_first_seen ON movies(first_seen);
+    CREATE INDEX IF NOT EXISTS idx_movies_magnet_count ON movies(magnet_count);
+    CREATE INDEX IF NOT EXISTS idx_movies_matched_count ON movies(matched_count);
+    CREATE INDEX IF NOT EXISTS idx_movies_release_date ON movies(release_date);
+    """)
     conn.commit()
     return conn
 
@@ -145,8 +154,15 @@ _MOVIE_COLUMNS = "code, title, cover, release_date, duration, studio, label, ser
 
 
 def list_movies(conn: sqlite3.Connection, q: str = "", page: int = 1, size: int = 20,
-                sort: str = "new", category: str = ""):
-    """Paged movie list; sort: new (default) | match | magnets."""
+                sort: str = "new", category: str = "", actor: str = "", studio: str = "",
+                label: str = "", series: str = "", genre: str = "", director: str = "",
+                date_from: str = "", date_to: str = ""):
+    """Paged movie list; sort: new (default) | match | magnets.
+
+    Filters: free-text q; category (comma-separated); exact-name
+    actor/studio/label/series/director/genre (actor & genre match the stored
+    JSON arrays via a quoted substring); release_date range (ISO dates).
+    """
     size = max(1, min(size, 100))
     clauses, params = [], []
     if q:
@@ -157,6 +173,23 @@ def list_movies(conn: sqlite3.Connection, q: str = "", page: int = 1, size: int 
     if cats:
         clauses.append("category IN (%s)" % ",".join("?" * len(cats)))
         params.extend(cats)
+    if actor:
+        clauses.append("actors LIKE ?")
+        params.append(f'%"{actor.replace(chr(34), "")}"%')
+    if genre:
+        clauses.append("genres LIKE ?")
+        params.append(f'%"{genre.replace(chr(34), "")}"%')
+    for col, val in (("studio", studio), ("label", label),
+                     ("series", series), ("director", director)):
+        if val:
+            clauses.append(f"{col} = ?")
+            params.append(val)
+    if date_from:
+        clauses.append("release_date >= ?")
+        params.append(date_from)
+    if date_to:
+        clauses.append("release_date <= ?")
+        params.append(date_to)
     where = ("WHERE " + " AND ".join(clauses)) if clauses else ""
     total = conn.execute(f"SELECT COUNT(*) FROM movies {where}", params).fetchone()[0]
     offset = (max(1, page) - 1) * size
@@ -171,6 +204,41 @@ def list_movies(conn: sqlite3.Connection, q: str = "", page: int = 1, size: int 
     ).fetchall()
     cols = _MOVIE_COLUMNS.split(", ")
     return total, [dict(zip(cols, r)) for r in rows]
+
+
+def delete_movie(conn: sqlite3.Connection, code: str) -> bool:
+    """Delete one movie and its magnets. Returns False when the code was unknown."""
+    conn.execute("DELETE FROM magnets WHERE code = ?", (code,))
+    cur = conn.execute("DELETE FROM movies WHERE code = ?", (code,))
+    conn.commit()
+    return cur.rowcount > 0
+
+
+def browse_counts(conn: sqlite3.Connection, kind: str, q: str = "", limit: int = 200) -> list[dict]:
+    """Aggregate movie counts per name for a browse dimension.
+
+    kind: actor (JSON array, counted in Python) | studio | label | series |
+    director (plain columns via GROUP BY). `q` filters names by substring.
+    """
+    from collections import Counter
+
+    q = q.strip()
+    if kind == "actor":
+        counter: Counter = Counter()
+        for (raw,) in conn.execute("SELECT actors FROM movies"):
+            try:
+                counter.update(json.loads(raw or "[]"))
+            except (TypeError, ValueError):
+                continue
+        pairs = [(n, c) for n, c in counter.items() if n and (not q or q in n)]
+    else:
+        col = {"studio": "studio", "label": "label", "series": "series",
+               "director": "director"}[kind]
+        pairs = [(n, c) for n, c in conn.execute(
+            f"SELECT {col}, COUNT(*) FROM movies WHERE {col} != '' GROUP BY {col}"
+        ) if not q or q in n]
+    pairs.sort(key=lambda x: (-x[1], x[0]))
+    return [{"name": n, "count": c} for n, c in pairs[:limit]]
 
 
 def recompute_matched(conn: sqlite3.Connection, keywords: list[str]) -> int:

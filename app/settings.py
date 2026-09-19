@@ -10,13 +10,13 @@ import json
 import os
 import threading
 
-DATADIR = "/data" if os.path.isdir("/data") else "data"
+DATADIR = os.getenv("JC_DATADIR") or ("/data" if os.path.isdir("/data") else "data")
 CONFIG_PATH = os.path.join(DATADIR, "config.json")
 
 DEFAULTS: dict = {
     "BASE_URL": "https://www.seedmm.bond",
     "DB_PATH": os.path.join(DATADIR, "seedmm.db"),
-    "CATEGORY": "censored",           # censored | uncensored
+    "CATEGORY": "censored",           # censored | uncensored | comma-separated both
     "DELAY_SECONDS": 2.0,
     "JITTER_SECONDS": 1.0,
     "MAX_RETRIES": 3,
