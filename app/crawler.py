@@ -29,8 +29,11 @@ def magnet_ajax_path(vars_: dict[str, str]) -> str:
     return f"{MAGNET_AJAX_PATH}?{qs}"
 
 
+MAX_PAGES_PER_RUN = 500
+
+
 def parse_pages(spec: str) -> list[int]:
-    """'3' -> [3]; '2-5' -> [2,3,4,5]."""
+    """'3' -> [3]; '2-5' -> [2,3,4,5]. Range capped at MAX_PAGES_PER_RUN."""
     m = re.fullmatch(r"(\d+)(?:-(\d+))?", str(spec).strip())
     if not m:
         raise ValueError(f"页码格式无效: {spec!r}（示例: '3' 或 '2-5'）")
@@ -38,17 +41,26 @@ def parse_pages(spec: str) -> list[int]:
     end = int(m.group(2) or start)
     if start < 1 or end < start:
         raise ValueError(f"页码范围无效: {spec!r}")
+    if end - start + 1 > MAX_PAGES_PER_RUN:
+        raise ValueError(f"单次最多 {MAX_PAGES_PER_RUN} 页，收到 {end - start + 1} 页")
     return list(range(start, end + 1))
 
 
 def compute_matched(tags: list[str], magnet_names: list[str], keywords: list[str]) -> list[str]:
-    """Return the filter keywords hit by genre tags or magnet link names."""
+    """Return the filter keywords hit by genre tags or magnet link names.
+
+    Comparison is case-insensitive (magnet names mix "4K"/"4k" freely);
+    the returned keywords keep their original spelling for display.
+    """
+    tags_l = [t.lower() for t in tags]
+    names_l = [n.lower() for n in magnet_names]
     hits = []
     for kw in keywords:
         k = kw.strip()
         if not k:
             continue
-        if any(k in t for t in tags) or any(k in n for n in magnet_names):
+        kl = k.lower()
+        if any(kl in t for t in tags_l) or any(kl in n for n in names_l):
             hits.append(k)
     return hits
 
@@ -65,8 +77,9 @@ def pick_magnet(magnets: list[dict], keywords: list[str]) -> tuple[dict | None, 
         k = kw.strip()
         if not k:
             continue
+        kl = k.lower()
         for m in magnets:
-            if k in (m.get("name") or ""):
+            if kl in (m.get("name") or "").lower():
                 return m, k
     return (magnets[0] if magnets else None), ""
 
@@ -168,11 +181,14 @@ def run_job(
 
                     movie = parse_detail(detail_html, item.code, item.url)
                     movie.category = cat
+                    magnets_fetched = False
                     if magnets:
                         sv = parse_movie_script_vars(detail_html)
                         if sv.get("gid"):
                             frag = fetcher.get(magnet_ajax_path(sv), referer=item.url)
-                            movie.magnets = parse_magnets(frag) if frag else []
+                            if frag is not None:
+                                movie.magnets = parse_magnets(frag)
+                                magnets_fetched = True
                         else:
                             log.warning("%s: 未找到 gid 参数，跳过磁力", item.code)
 
@@ -189,6 +205,10 @@ def run_job(
                             continue
 
                     is_new = item.code not in known
+                    if refresh and magnets_fetched and not is_new:
+                        # drop links that vanished from the site so the table
+                        # stays in sync with movies.magnet_count
+                        db.delete_magnets(conn, movie.code)
                     db.upsert_movie(conn, movie)
                     stats["magnets"] += db.insert_magnets(conn, movie.magnets, movie.code)
                     conn.commit()

@@ -87,6 +87,7 @@ class Fetcher:
                 backoff = 2 ** attempt
                 log.warning("attempt %d/%d failed for %s (%s), backoff %ds",
                             attempt, self.max_retries, url, exc, backoff)
-                time.sleep(backoff)
+                if attempt < self.max_retries:
+                    time.sleep(backoff)
         log.error("giving up on %s", url)
         return None

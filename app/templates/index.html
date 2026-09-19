@@ -636,7 +636,7 @@ async function loadGenres() {
     const list = showAllGenres ? all : all.slice(0, 25);
     const max = list.length ? list[0].count : 1;
     $('genre-bars').innerHTML = list.map(g => `
-      <div class="gbar-row" onclick="searchTag('${esc(g.tag)}')" title="筛选「${esc(g.tag)}」">
+      <div class="gbar-row" data-search="${esc(g.tag)}" title="筛选「${esc(g.tag)}」">
         <span class="gname">${esc(g.tag)}</span>
         <span class="gbar"><i style="width:${Math.max(4, Math.round(g.count / max * 100))}%"></i></span>
         <span class="gcount">${g.count}</span>
@@ -665,12 +665,12 @@ async function loadMovies(page) {
     try { matched = JSON.parse(m.matched_tags || '[]'); } catch (e) {}
     const catName = m.category === 'censored' ? '有码' : m.category === 'uncensored' ? '无码' : '未知';
     return `
-    <tr class="movie" onclick="toggleDetail('${m.code}', this)">
+    <tr class="movie" data-code="${esc(m.code)}">
       <td><img src="${coverUrl(m.cover)}" loading="lazy" alt="" style="width:54px;height:38px;object-fit:cover;border-radius:4px;border:1px solid var(--line)" onerror="this.style.visibility='hidden'"></td>
       <td><span class="code">${m.code}</span></td>
       <td>${esc(m.title)}</td>
       <td><span class="cat ${m.category||'unknown'}">${catName}</span></td>
-      <td>${matched.length ? `<span class="tag hit" title="${esc(matched.join(', '))}" onclick="event.stopPropagation();searchTag('${esc(matched[0])}')">${esc(matched[0])}</span>` : '<span style="color:var(--line)">—</span>'}</td>
+      <td>${matched.length ? `<span class="tag hit" title="${esc(matched.join(', '))}" data-search="${esc(matched[0])}">${esc(matched[0])}</span>` : '<span style="color:var(--line)">—</span>'}</td>
       <td>${m.release_date || ''}</td>
       <td>${m.magnet_count}</td><td style="color:var(--mut)">${(m.first_seen || '').replace('T',' ').slice(5,16)}</td>
     </tr>`;
@@ -685,6 +685,18 @@ function searchTag(text) {
   $('q').value = text;
   loadMovies(1);
 }
+// event delegation: user-content lives in data-* attributes (HTML-escaped),
+// never inside inline JS strings — closes the attribute-context XSS hole
+$('genre-bars').addEventListener('click', e => {
+  const t = e.target.closest('[data-search]');
+  if (t) searchTag(t.dataset.search);
+});
+$('movie-rows').addEventListener('click', e => {
+  const t = e.target.closest('[data-search]');
+  if (t) { searchTag(t.dataset.search); return; }
+  const tr = e.target.closest('tr.movie');
+  if (tr) toggleDetail(tr.dataset.code, tr);
+});
 async function toggleDetail(code, tr) {
   const next = tr.nextElementSibling;
   if (next && next.classList.contains('detail')) { next.remove(); return; }
@@ -703,10 +715,10 @@ async function toggleDetail(code, tr) {
     `<a href="${esc(/^https?:/.test(s) ? s : SITE_BASE + s)}" target="_blank"><img src="${esc(/^https?:/.test(s) ? s : SITE_BASE + s)}" loading="lazy" style="width:96px;height:64px;object-fit:cover;border-radius:5px;border:1px solid var(--line);margin:2px"></a>`
   ).join('');
   row.innerHTML = `<td colspan="8">
-    <div class="mag"><b>导演</b> ${esc(m.director)||'-'}　<b>片商</b> <a href="javascript:void(0)" onclick="searchTag('${esc(m.studio)}')" style="color:inherit">${esc(m.studio)||'-'}</a>
+    <div class="mag"><b>导演</b> ${esc(m.director)||'-'}　<b>片商</b> <a href="javascript:void(0)" data-search="${esc(m.studio)}" style="color:inherit">${esc(m.studio)||'-'}</a>
     　<b>发行</b> ${esc(m.label)||'-'}　<b>时长</b> ${esc(m.duration)||'-'}　<b>系列</b> ${esc(m.series)||'-'}</div>
-    <div class="mag" style="margin:4px 0"><b>演员</b> ${(m.actors||[]).map(a=>`<span class="tag" style="cursor:pointer" onclick="searchTag('${esc(a)}')">${esc(a)}</span>`).join('')||'-'}
-    　<b>类别</b> ${(m.genres||[]).map(g=>`<span class="tag" onclick="searchTag('${esc(g)}')" style="cursor:pointer">${esc(g)}</span>`).join('')||'-'}</div>
+    <div class="mag" style="margin:4px 0"><b>演员</b> ${(m.actors||[]).map(a=>`<span class="tag" style="cursor:pointer" data-search="${esc(a)}">${esc(a)}</span>`).join('')||'-'}
+    　<b>类别</b> ${(m.genres||[]).map(g=>`<span class="tag" data-search="${esc(g)}" style="cursor:pointer">${esc(g)}</span>`).join('')||'-'}</div>
     ${mags}
     ${samples ? `<div class="mag" style="margin-top:6px"><b>样图</b></div><div style="display:flex;flex-wrap:wrap">${samples}</div>` : ''}
     <div class="mag"><a href="${esc(m.url)}" target="_blank">原页面 ↗</a>${SITE_BASE !== m.url.replace(/\/+$/,'') ? ` ｜ <a href="${esc(m.url.replace(/^https?:\/\/[^/]+/, SITE_BASE))}" target="_blank">本站镜像</a>` : ''} ｜ <a href="${esc((window.METATUBE_URL || '') + '/#/movie/javbus/' + encodeURIComponent(m.code))}" target="_blank" style="${window.METATUBE_URL ? '' : 'display:none'}">Metatube 查询</a></div></td>`;

@@ -130,6 +130,12 @@ def insert_magnets(conn: sqlite3.Connection, magnets: list[Magnet], code: str) -
     return n
 
 
+def delete_magnets(conn: sqlite3.Connection, code: str) -> int:
+    """Remove all magnet rows for a movie (refresh drops links vanished from the site)."""
+    cur = conn.execute("DELETE FROM magnets WHERE code = ?", (code,))
+    return cur.rowcount
+
+
 def known_codes(conn: sqlite3.Connection) -> set[str]:
     return {row[0] for row in conn.execute("SELECT code FROM movies")}
 

@@ -51,23 +51,29 @@ def _load_tokens() -> dict[str, float]:
 def _save_tokens() -> None:
     try:
         os.makedirs(settings.DATADIR, exist_ok=True)
+        with _tokens_lock:
+            payload = dict(_tokens)  # snapshot: concurrent mutation can't break json.dump
         tmp = _SESSIONS_FILE + ".tmp"
         with open(tmp, "w", encoding="utf-8") as fh:
-            json.dump(_tokens, fh)
+            json.dump(payload, fh)
         os.replace(tmp, _SESSIONS_FILE)
-    except OSError as exc:
+    except (OSError, RuntimeError) as exc:
         log.warning("保存会话失败: %s", exc)
 
 
 _tokens: dict[str, float] = _load_tokens()
+_tokens_lock = threading.RLock()
 
 
 def _token_valid(token: str) -> bool:
-    exp = _tokens.get(token)
-    if exp is None:
-        return False
-    if exp < time.time():
-        _tokens.pop(token, None)
+    with _tokens_lock:
+        exp = _tokens.get(token)
+        if exp is None:
+            return False
+        expired = exp < time.time()
+        if expired:
+            _tokens.pop(token, None)
+    if expired:
         _save_tokens()
         return False
     return True
@@ -172,7 +178,8 @@ def create_app() -> Flask:
             time.sleep(0.8)  # crude brute-force delay
             return jsonify({"ok": False, "error": "用户名或密码错误"}), 401
         token = secrets.token_urlsafe(32)
-        _tokens[token] = time.time() + _SESSION_TTL
+        with _tokens_lock:
+            _tokens[token] = time.time() + _SESSION_TTL
         _save_tokens()
         resp = jsonify({"ok": True, "user": ADMIN_USER})
         resp.set_cookie(_COOKIE, token, httponly=True, samesite="Strict",
@@ -183,7 +190,8 @@ def create_app() -> Flask:
     @app.post("/api/logout")
     def logout():
         token = request.cookies.get(_COOKIE, "")
-        _tokens.pop(token, None)
+        with _tokens_lock:
+            _tokens.pop(token, None)
         _save_tokens()
         resp = jsonify({"ok": True})
         resp.delete_cookie(_COOKIE, path="/")
@@ -390,6 +398,9 @@ def create_app() -> Flask:
     @app.post("/api/data/clear")
     def data_clear():
         """Erase all crawled movies + magnets and reset the page depth."""
+        with _job_lock:
+            if _job["running"]:
+                return jsonify({"ok": False, "error": "有采集任务正在运行，请先停止后再清空"}), 409
         conn = sqlite3.connect(settings.load()["DB_PATH"], timeout=30)
         try:
             deleted = conn.execute("SELECT COUNT(*) FROM movies").fetchone()[0]
@@ -492,6 +503,11 @@ def _auto_crawl_loop() -> None:
                     log.info("自动采集: 已有任务在运行，跳过本次")
                     continue
                 pages = str(cfg.get("AUTO_CRAWL_PAGES") or "1")
+                try:
+                    crawler.parse_pages(pages)  # validate before launching
+                except ValueError as exc:
+                    log.error("自动采集页码配置无效（%s），本次跳过；请到「采集设置」修正「每次检查页数」", exc)
+                    continue
                 _job.update(
                     running=True, stop=False, stats={}, error=None,
                     started_at=_now(), finished_at=None,
