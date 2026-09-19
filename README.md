@@ -98,6 +98,7 @@ docker compose run --rm crawler --check-update
 | GET | `/api/export` | 全库 JSON 流式导出 |
 | POST | `/api/data/clear` | 清空数据（采集运行中返回 409） |
 | POST | `/api/metatube/test` | 测试 MetaTube 服务连通性 |
+| POST | `/api/site/test` | 测试站点地址连通性（返回耗时 / 拦截提示） |
 | GET | `/api/update/check` · POST `/api/update/apply` | 检查 / 一键更新 |
 
 ## 数据表

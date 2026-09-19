@@ -451,6 +451,7 @@
 
       <div class="row save-row">
         <button class="primary" onclick="saveConfig()">保存配置</button>
+        <button class="ghost" type="button" id="site-test-btn" onclick="testSite()">测试站点连接</button>
         <button class="ghost" type="button" id="mt-test-btn" onclick="testMetatube()">测试 MetaTube 连接</button>
         <span class="msg cfg-msg"></span>
       </div>
@@ -618,6 +619,19 @@ async function testMetatube() {
     else toast('✗ ' + (j.error || '连接失败'), 'err');
   } catch (e) { toast('✗ 请求失败: ' + e.message, 'err'); }
   finally { btn.disabled = false; btn.textContent = '测试连接'; }
+}
+async function testSite() {
+  const btn = $('site-test-btn');
+  const url = $('c_BASE_URL').value.trim();
+  if (!url) { toast('请先填写站点地址', 'err'); return; }
+  btn.disabled = true; btn.textContent = '测试中…';
+  try {
+    const j = await (await fetch('/api/site/test', {method:'POST', headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({url})})).json();
+    if (j.ok) toast('✓ ' + (j.message || '连接成功'), 'ok');
+    else toast('✗ ' + (j.error || '连接失败'), 'err');
+  } catch (e) { toast('✗ 请求失败: ' + e.message, 'err'); }
+  finally { btn.disabled = false; btn.textContent = '测试站点连接'; }
 }
 
 /* ---------- crawl ---------- */

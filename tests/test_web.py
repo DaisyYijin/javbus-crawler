@@ -95,6 +95,11 @@ def test_metatube_test_validation(client):
     assert j["ok"] is False and j["error"]
 
 
+def test_site_test_validation(client):
+    # invalid scheme is rejected before any network access
+    assert client.post("/api/site/test", json={"url": "ftp://x"}).get_json()["ok"] is False
+
+
 # ---------- crawl control ----------
 
 def test_crawl_start_rejects_bad_pages(client):

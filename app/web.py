@@ -16,7 +16,7 @@ from datetime import datetime, timezone
 from flask import Flask, jsonify, render_template, request
 
 from . import crawler, db, selfupdate, settings, updater
-from .fetcher import StopRequested
+from .fetcher import BROWSER_UA, StopRequested
 from .version import __version__
 
 log = logging.getLogger("seedmm.web")
@@ -252,6 +252,28 @@ def create_app() -> Flask:
         if r.status_code == 401:
             return jsonify({"ok": False, "error": "服务需要 Token 或 Token 无效（HTTP 401）"})
         return jsonify({"ok": False, "error": f"服务返回 HTTP {r.status_code}"})
+
+    @app.post("/api/site/test")
+    def site_test():
+        """Probe the configured BASE_URL homepage for reachability."""
+        body = request.get_json(silent=True) or {}
+        cfg = settings.load()
+        base = str(body.get("url") or cfg.get("BASE_URL") or "").strip().rstrip("/")
+        if not base:
+            return jsonify({"ok": False, "error": "请先填写站点地址"})
+        if not base.startswith(("http://", "https://")):
+            return jsonify({"ok": False, "error": "地址需以 http:// 或 https:// 开头"})
+        t0 = time.monotonic()
+        try:
+            r = requests.get(base, timeout=10, headers={"User-Agent": BROWSER_UA})
+        except requests.RequestException as exc:
+            return jsonify({"ok": False, "error": f"无法连接: {exc}"})
+        ms = int((time.monotonic() - t0) * 1000)
+        if r.status_code == 200:
+            return jsonify({"ok": True, "message": f"连接成功（HTTP 200 · {ms}ms）"})
+        if r.status_code in (401, 403):
+            return jsonify({"ok": False, "error": f"站点拒绝访问（HTTP {r.status_code}），可能被反爬拦截"})
+        return jsonify({"ok": False, "error": f"站点返回 HTTP {r.status_code}"})
 
     # ---------------- crawl control ----------------
     @app.post("/api/crawl/start")
