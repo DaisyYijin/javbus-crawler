@@ -112,6 +112,7 @@ def test_p115_endpoints_unauthenticated(client):
     assert client.post("/api/p115/magnet", json={"code": "TEST-001"}).status_code == 400
     assert client.get("/api/p115/tasks").status_code == 400
     assert len(client.get("/api/p115/devices").get_json()["devices"]) > 0
+    assert client.get("/api/p115/qr.svg").status_code == 404  # no active QR
 
 
 # ---------- crawl control ----------

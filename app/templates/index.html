@@ -516,10 +516,11 @@
       <div class="card">
         <h2>整理设置 <small>（下载完成后重命名为「番号 标题」并移动到目标目录）</small></h2>
         <div class="form-grid">
-          <div class="field w3"><label>目标目录 <small>P115_TARGET_DIR · 115 根目录下，不存在会自动创建</small></label><input id="c_P115_TARGET_DIR" type="text" placeholder="javbus"></div>
-          <div class="field w3"><label class="check-line"><input type="checkbox" id="c_P115_AUTO_ORGANIZE"> 启用自动整理<small>每分钟检查完成的任务 · P115_AUTO_ORGANIZE</small></label></div>
+          <div class="field w3"><label>下载目录（待整理） <small>P115_DOWNLOAD_DIR · 离线任务落盘处，不存在自动创建；留空用 115 默认目录</small></label><input id="c_P115_DOWNLOAD_DIR" type="text" placeholder="待整理"></div>
+          <div class="field w3"><label>整理后目录（已整理） <small>P115_TARGET_DIR · 完成后重命名并移动到这里</small></label><input id="c_P115_TARGET_DIR" type="text" placeholder="已整理"></div>
+          <div class="field w6"><label class="check-line"><input type="checkbox" id="c_P115_AUTO_ORGANIZE"> 启用自动整理<small>每分钟检查完成的任务 · P115_AUTO_ORGANIZE</small></label></div>
         </div>
-        <div class="hint">整理通过任务的 info_hash 反查本库影片（番号 + 标题），仅对从本系统发送且已完成的任务生效，重复任务自动跳过。也可在采集数据页点开影片详情，用「发送到 115」手动提交。</div>
+        <div class="hint">整理流程：下载完成 → 通过 info_hash 反查本库影片 → 重命名「番号 标题」→ 从待整理目录移动到已整理目录。已整理任务自动记忆去重。</div>
         <div class="row save-row">
           <button class="primary" onclick="saveConfig()">保存配置</button>
           <span class="msg cfg-msg"></span>
@@ -605,6 +606,7 @@ function activatePage(page) {
   if (page === 'data') loadMovies(curPage);
   if (page === 'browse') loadBrowse();
   if (page === 'p115') { load115Status(); load115Devices(); }
+  else if (qrTimer) { clearInterval(qrTimer); qrTimer = null; }  // stop QR polling when leaving
   if (window.innerWidth <= 860) toggleMenu(false);
   window.scrollTo(0, 0);
 }
@@ -654,7 +656,7 @@ async function saveConfig() {
   const body = {};
   ['BASE_URL','METATUBE_URL','METATUBE_TOKEN','DELAY_SECONDS','JITTER_SECONDS',
    'MAX_RETRIES','TIMEOUT','WEB_PORT','AUTO_CRAWL_INTERVAL_HOURS','AUTO_CRAWL_PAGES',
-   'TAG_FILTERS','P115_TARGET_DIR']
+   'TAG_FILTERS','P115_DOWNLOAD_DIR','P115_TARGET_DIR']
     .forEach(k => { const el = $('c_' + k); if (el) body[k] = el.value; });
   body.CATEGORY = [...document.querySelectorAll('#cat-seg .seg-btn.active')].map(b => b.dataset.cat).join(',');
   const mb = document.querySelector('#mode-seg .seg-btn.active');
@@ -1017,7 +1019,8 @@ async function qrStart() {
     const j = await (await fetch('/api/p115/qr/start', {method: 'POST', headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({device: $('p115-device').value})})).json();
     if (!j.ok) { toast('✗ ' + (j.error || '获取二维码失败'), 'err'); return; }
-    $('p115-qr-box').style.display = ''; $('p115-qr-img').src = j.qrcode;
+    $('p115-qr-box').style.display = '';
+    $('p115-qr-img').src = '/api/p115/qr.svg?t=' + Date.now();
     $('p115-qr-state').textContent = '请用 115 手机 App 扫码';
     clearInterval(qrTimer);
     qrTimer = setInterval(qrPoll, 3000);

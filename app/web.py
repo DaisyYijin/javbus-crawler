@@ -562,6 +562,14 @@ def create_app() -> Flask:
             return jsonify({"ok": False, "error": f"获取二维码失败: {exc}"}), 500
         return jsonify({"ok": True, **result})
 
+    @app.get("/api/p115/qr.svg")
+    def p115_qr_svg():
+        svg = p115.qr_svg()
+        if not svg:
+            return "", 404
+        return svg, 200, {"Content-Type": "image/svg+xml; charset=utf-8",
+                          "Cache-Control": "no-store"}
+
     @app.get("/api/p115/qr/poll")
     def p115_qr_poll():
         result = p115.qr_poll()

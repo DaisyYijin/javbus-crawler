@@ -43,6 +43,16 @@ def test_auth_roundtrip():
     assert p115.has_auth() is False
 
 
+def test_qr_svg():
+    assert p115.qr_svg() == ""  # no active QR
+    p115._qr["url"] = "https://115.com/scan/dg-test"
+    try:
+        svg = p115.qr_svg()
+        assert "<svg" in svg and "</svg>" in svg and "path" in svg
+    finally:
+        p115._qr.clear()
+
+
 def test_import_with_broken_home():
     """Regression: container runs as nobody (HOME=/nonexistent); importing
     app.p115 must not crash when the home dir cannot host the cache."""

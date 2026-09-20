@@ -4,3 +4,4 @@ flask>=3.0
 waitress>=3.0
 docker>=7.1
 p115client
+qrcode

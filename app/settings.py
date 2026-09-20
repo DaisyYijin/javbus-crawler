@@ -30,7 +30,8 @@ DEFAULTS: dict = {
     "TAG_FILTER_MODE": "mark",        # all | only | mark
     "METATUBE_URL": "",               # e.g. http://192.168.1.10:8080
     "METATUBE_TOKEN": "",             # optional bearer token for metatube server
-    "P115_TARGET_DIR": "javbus",      # 115 directory completed downloads move into
+    "P115_DOWNLOAD_DIR": "待整理",    # 115 dir offline downloads land in
+    "P115_TARGET_DIR": "已整理",      # 115 dir completed downloads move into
     "P115_AUTO_ORGANIZE": False,      # background loop: rename+move finished tasks
 }
 
@@ -52,6 +53,7 @@ _TYPES = {
     "TAG_FILTER_MODE": str,
     "METATUBE_URL": str,
     "METATUBE_TOKEN": str,
+    "P115_DOWNLOAD_DIR": str,
     "P115_TARGET_DIR": str,
     "P115_AUTO_ORGANIZE": bool,
 }

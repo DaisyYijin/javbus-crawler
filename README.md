@@ -69,7 +69,8 @@ docker compose up -d
 | `TAG_FILTERS` | 空 | 筛选关键词（逗号分隔，顺序即优先级，大小写不敏感；站点常用：字幕 / 高清 / -U 无码流出 / -UC 无码中字 / AI） |
 | `TAG_FILTER_MODE` | `mark` | `mark` 全部入库并标记 / `only` 只收命中的 |
 | `METATUBE_URL` / `METATUBE_TOKEN` | 空 | MetaTube 服务地址与 Token（详情页跳转用） |
-| `P115_TARGET_DIR` | `javbus` | 115 整理目标目录（根目录下，自动创建） |
+| `P115_DOWNLOAD_DIR` | `待整理` | 115 离线下载落盘目录（留空用 115 默认） |
+| `P115_TARGET_DIR` | `已整理` | 115 整理目标目录（完成后重命名并移动到这里） |
 | `P115_AUTO_ORGANIZE` | `false` | 自动整理：每分钟检查完成并重命名+移动 |
 | `AUTO_CRAWL_ENABLED` | `false` | 定时自动采集开关 |
 | `AUTO_CRAWL_INTERVAL_HOURS` | `24` | 自动采集间隔（小时） |

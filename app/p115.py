@@ -65,8 +65,10 @@ _ILLEGAL_FS = re.compile(r'[\\/:*?"<>|\r\n\t]')
 
 _client = None
 _client_lock = threading.Lock()
-_target_cid: int | None = None
+_user_cache: dict | None = None
+_dir_cid: dict[str, int] = {}
 _qr: dict = {}
+_TIMEOUT = 10  # seconds, applied to every 115 network call
 
 
 # ---------------------------------------------------------------- auth ----
@@ -109,7 +111,7 @@ def get_client(refresh: bool = False):
         try:
             c = P115Client(auth["cookies"], app=auth.get("app") or "android",
                            console_qrcode=False)
-            check_response(c.login_status())
+            check_response(c.login_status(timeout=_TIMEOUT))
             _client = c
             return c
         except Exception as exc:
@@ -119,10 +121,11 @@ def get_client(refresh: bool = False):
 
 
 def logout() -> None:
-    global _client, _target_cid
+    global _client, _user_cache
     with _client_lock:
         _client = None
-        _target_cid = None
+        _user_cache = None
+    _dir_cid.clear()
     try:
         os.remove(AUTH_FILE)
     except OSError:
@@ -130,18 +133,22 @@ def logout() -> None:
 
 
 def status() -> dict:
+    global _user_cache
     if not HAS_P115:
         return {"available": False, "logged_in": False}
+    if _user_cache is not None:
+        return _user_cache
     c = get_client()
     if not c:
         return {"available": True, "logged_in": False}
     try:
-        data = check_response(c.user_info())["data"]
+        data = check_response(c.user_info(timeout=_TIMEOUT))["data"]
         auth = _load_auth() or {}
-        return {"available": True, "logged_in": True,
-                "user": data.get("user_name"),
-                "user_id": str(data.get("user_id", "")),
-                "device": auth.get("app", "")}
+        _user_cache = {"available": True, "logged_in": True,
+                       "user": data.get("user_name"),
+                       "user_id": str(data.get("user_id", "")),
+                       "device": auth.get("app", "")}
+        return _user_cache
     except Exception as exc:
         log.warning("115 用户信息获取失败: %s", exc)
         return {"available": True, "logged_in": False}
@@ -158,11 +165,28 @@ def qr_start(device: str) -> dict:
         raise RuntimeError("p115client 未安装")
     app = device if device in DEVICES else "android"
     c = _bare_client(app)
-    data = check_response(c.login_qrcode_token(app))["data"]
+    data = check_response(c.login_qrcode_token(app, timeout=_TIMEOUT))["data"]
+    url = data.get("qrcode") or f"https://115.com/scan/dg-{data['uid']}"
     _qr.clear()
     _qr.update(client=c, uid=str(data["uid"]), time=data["time"], sign=data["sign"],
-               app=app, created=time.time())
-    return {"qrcode": data.get("qrcode") or "", "app": app}
+               app=app, url=url, created=time.time())
+    return {"qrcode": url, "app": app}
+
+
+def qr_svg() -> str:
+    """Render the current login QR as an SVG image (empty when none)."""
+    url = _qr.get("url") or ""
+    if not url:
+        return ""
+    import io
+
+    import qrcode
+    import qrcode.image.svg
+
+    img = qrcode.make(url, image_factory=qrcode.image.svg.SvgPathImage)
+    buf = io.BytesIO()
+    img.save(buf)
+    return buf.getvalue().decode()
 
 
 def qr_poll() -> dict:
@@ -173,7 +197,8 @@ def qr_poll() -> dict:
     try:
         # same session (cookiejar) as the token request is required here
         data = check_response(c.login_qrcode_scan_status(
-            {"uid": _qr["uid"], "time": _qr["time"], "sign": _qr["sign"]}))["data"] or {}
+            {"uid": _qr["uid"], "time": _qr["time"], "sign": _qr["sign"]},
+            timeout=_TIMEOUT))["data"] or {}
     except Exception as exc:
         return {"status": "error", "message": str(exc)}
     raw = data.get("status")
@@ -187,22 +212,29 @@ def qr_poll() -> dict:
         return {"status": st}
     if st != "success":
         return {"status": st}
-    resp = check_response(c.login_qrcode_scan_result(_qr["uid"], app=_qr["app"]))
+    global _client, _user_cache
+    resp = check_response(c.login_qrcode_scan_result(
+        _qr["uid"], app=_qr["app"], timeout=_TIMEOUT))
     cookies = "; ".join(f"{x['name']}={x['value']}"
                         for x in resp["data"]["cookie"])
     _save_auth(cookies, _qr["app"])
     _qr.clear()
     _client = None
+    _user_cache = None
     return {"status": "success", "user": status().get("user")}
 
 
 # -------------------------------------------------------- offline tasks ----
 def add_magnet(link: str) -> dict:
-    """Submit a magnet link to 115 cloud download (lands in its default dir)."""
+    """Submit a magnet link to 115 cloud download, into the download dir."""
     c = get_client()
     if not c:
         raise RuntimeError("115 未登录")
-    resp = check_response(c.clouddownload_task_add_urls({"url": link}))
+    payload = {"url": link}
+    dl_dir = (settings.load().get("P115_DOWNLOAD_DIR") or "").strip()
+    if dl_dir:
+        payload["wp_path_id"] = resolve_dir(c, dl_dir)
+    resp = check_response(c.clouddownload_task_add_urls(payload, timeout=_TIMEOUT))
     return {"name": resp.get("name") or link,
             "info_hash": (resp.get("info_hash") or "").upper()}
 
@@ -212,7 +244,7 @@ def list_tasks(page: int = 1, size: int = 30) -> dict:
     if not c:
         raise RuntimeError("115 未登录")
     resp = check_response(c.clouddownload_task_list(
-        {"page": page, "page_size": size}))
+        {"page": page, "page_size": size}, timeout=_TIMEOUT))
     items = [{
         "name": t.get("name"),
         "status": _map_task_status(t.get("status")),
@@ -240,7 +272,8 @@ def _find_dir(c, name: str) -> int | None:
     offset = 0
     while True:
         data = check_response(c.fs_files(
-            {"cid": 0, "limit": 100, "offset": offset, "show_dir": 1}))["data"]
+            {"cid": 0, "limit": 100, "offset": offset, "show_dir": 1},
+            timeout=_TIMEOUT))["data"]
         for item in data.get("list") or []:
             if item.get("n") == name and str(item.get("fc")) == "0":
                 return int(item["fid"])
@@ -249,21 +282,23 @@ def _find_dir(c, name: str) -> int | None:
         offset += 100
 
 
-def _resolve_target_cid(c) -> int | None:
-    global _target_cid
-    if _target_cid is not None:
-        return _target_cid
-    name = (settings.load().get("P115_TARGET_DIR") or "javbus").strip() or "javbus"
+def resolve_dir(c, name: str) -> int:
+    """Find a root-level 115 directory by name, creating it when missing.
+
+    Results are cached per name; use reset_dir_cache() after renames.
+    """
+    name = (name or "").strip() or "未命名"
+    if name in _dir_cid:
+        return _dir_cid[name]
     cid = _find_dir(c, name)
     if cid is None:
-        cid = int(check_response(c.fs_mkdir(name, pid=0))["file_id"])
-    _target_cid = cid
+        cid = int(check_response(c.fs_mkdir(name, pid=0, timeout=_TIMEOUT))["file_id"])
+    _dir_cid[name] = cid
     return cid
 
 
-def reset_target_cache() -> None:
-    global _target_cid
-    _target_cid = None
+def reset_dir_cache() -> None:
+    _dir_cid.clear()
 
 
 def organize_pass(max_pages: int = 5) -> int:
@@ -281,7 +316,7 @@ def organize_pass(max_pages: int = 5) -> int:
         tasks: list[dict] = []
         for page in range(1, max_pages + 1):
             resp = check_response(c.clouddownload_task_list(
-                {"page": page, "page_size": 50}))
+                {"page": page, "page_size": 50}, timeout=_TIMEOUT))
             batch = resp.get("tasks") or []
             tasks.extend(batch)
             if page * 50 >= int(resp.get("count", len(tasks))):
@@ -316,7 +351,7 @@ def _organize_one(conn, c, task: dict, info_hash: str) -> None:
         code, title = row
         old = str(task.get("name") or code)
         try:
-            finfo = check_response(c.fs_file(fid))["data"]
+            finfo = check_response(c.fs_file(fid, timeout=_TIMEOUT))["data"]
             old = str(finfo.get("file_name") or old)
             src_cid = int(finfo.get("cid") or 0)
         except Exception:
@@ -325,11 +360,11 @@ def _organize_one(conn, c, task: dict, info_hash: str) -> None:
         ext = f".{parts[1]}" if len(parts) == 2 and 0 < len(parts[1]) <= 5 else ""
         new_name = _sanitize_name(f"{code} {title}")[:180] + ext
         if new_name and new_name != old:
-            check_response(c.fs_rename((int(fid), new_name)))
+            check_response(c.fs_rename((int(fid), new_name), timeout=_TIMEOUT))
             log.info("115 重命名: %s -> %s", old, new_name)
-        target = _resolve_target_cid(c)
+        target = resolve_dir(c, (settings.load().get("P115_TARGET_DIR") or "").strip() or "已整理")
         if target and src_cid is not None and src_cid != target:
-            check_response(c.fs_move(int(fid), target))
+            check_response(c.fs_move(int(fid), target, timeout=_TIMEOUT))
             log.info("115 移动: %s -> 目录 %s", new_name, target)
     conn.execute("INSERT OR REPLACE INTO meta(key, value) VALUES (?, '1')",
                  (f"p115:done:{info_hash}",))
