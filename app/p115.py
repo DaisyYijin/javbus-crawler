@@ -433,7 +433,9 @@ def _sweep_ads(c, folder_fid: int, reject_cid: int) -> int:
         return 0
     for item in items:
         # fc == 0 -> directory; only judge files, folders keep the torrent layout
-        if str(item.get("fc")) == "0" or not looks_ad(item.get("n")):
+        if str(item.get("fc", "")) == "0" or not looks_ad(item.get("n")):
+            continue
+        if item.get("fid") is None:
             continue
         try:
             check_response(c.fs_move(int(item["fid"]), reject_cid, timeout=_TIMEOUT))
@@ -454,8 +456,9 @@ def _find_dir(c, name: str, pid: int = 0) -> int | None:
     while True:
         items, done = _fs_page(c, pid, offset)
         for item in items:
-            if item.get("n") == name and str(item.get("fc")) == "0":
-                return int(item["fid"])
+            fid = item.get("fid")
+            if item.get("n") == name and str(item.get("fc", "")) == "0" and fid is not None:
+                return int(fid)
         if done:
             return None
         offset += 100
@@ -497,8 +500,14 @@ def list_dirs(cid: int = 0) -> list[dict]:
     while True:
         items, done = _fs_page(c, cid, offset)
         for item in items:
-            if str(item.get("fc")) == "0":
-                out.append({"fid": int(item["fid"]), "name": item.get("n") or ""})
+            if str(item.get("fc", "")) != "0":
+                continue
+            # entries without fid (e.g. the cwd itself, which carries cid
+            # instead) are not navigable sub-directories — skip them
+            fid = item.get("fid")
+            if fid is None:
+                continue
+            out.append({"fid": int(fid), "name": item.get("n") or ""})
         if done:
             break
         offset += 100
