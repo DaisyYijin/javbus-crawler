@@ -1558,7 +1558,7 @@ async function qrPollTick() {
 async function qrPoll() {
   try {
     const j = await (await fetch('/api/p115/qr/poll')).json();
-    const map = {waiting: '等待扫码…（扫码确认后 1 分钟内自动登录）', scanned: '已扫码，请在手机上确认', expired: '二维码已过期，正在刷新…',
+    const map = {waiting: '等待扫码…', scanned: '已扫码，请在手机上确认（确认后约半分钟自动登录）', expired: '二维码已过期，正在刷新…',
                  canceled: '已取消，正在刷新…', none: '请先生成二维码'};
     if (j.status === 'success') {
       qrStopTimers();

@@ -262,25 +262,20 @@ def qr_poll() -> dict:
     except Exception as exc:
         return {"status": "error", "message": str(exc)}
     raw = data.get("status")
-    if raw is None:
-        # 115 answers {"data": {}} a LOT (rate-limited endpoint): the status
-        # report may NEVER show the confirmation even though the phone has
-        # already accepted. Probe the result endpoint directly every ~40s —
-        # a confirmed login hands out the cookie regardless of the status feed.
-        now = time.time()
-        if now - _qr.get("last_probe", 0.0) >= 40:
-            _qr["last_probe"] = now
-            try:
-                return _qr_finish(c, engine)
-            except Exception:
-                pass  # not confirmed yet (or not scanned at all) — keep waiting
-        return {"status": "waiting"}
-    st = _QR_STATUS.get(raw, f"unknown({raw})")
+    st = _QR_STATUS.get(raw) if raw is not None else None
     if st in ("expired", "canceled"):
         _qr.clear()
         return {"status": st}
     if st != "success":
-        return {"status": st}
+        # The status feed is unreliable on this endpoint: it can stay EMPTY
+        # or stall at "scanned" (status=1) forever, even after the phone
+        # confirmed. Probe the result endpoint directly on every poll —
+        # a confirmed login hands out the cookie regardless of the feed.
+        try:
+            return _qr_finish(c, engine)
+        except Exception:
+            pass  # not confirmed yet (or not scanned at all) — keep waiting
+        return {"status": st or "waiting"}
     return _qr_finish(c, engine)
 
 
