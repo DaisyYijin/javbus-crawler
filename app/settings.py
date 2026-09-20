@@ -34,6 +34,7 @@ DEFAULTS: dict = {
     "METATUBE_TOKEN": "",             # optional bearer token for metatube server
     "P115_DOWNLOAD_DIR": "待整理",    # 115 dir offline downloads land in
     "P115_TARGET_DIR": "已整理",      # 115 dir completed downloads move into
+    "P115_REJECT_DIR": "冗余",        # 115 dir ad/spam files get swept into
     "P115_AUTO_ORGANIZE": False,      # background loop: rename+move finished tasks
 }
 
@@ -59,6 +60,7 @@ _TYPES = {
     "METATUBE_TOKEN": str,
     "P115_DOWNLOAD_DIR": str,
     "P115_TARGET_DIR": str,
+    "P115_REJECT_DIR": str,
     "P115_AUTO_ORGANIZE": bool,
 }
 

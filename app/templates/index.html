@@ -169,6 +169,22 @@
   .tag.gtag.hit { background: var(--pri); border-color: var(--pri); color: #fff; font-weight: 600; }
   .gsel-btn { font-size: 12px; color: var(--pri); cursor: pointer; user-select: none; white-space: nowrap; background: none; border: none; padding: 0; font-family: inherit; }
   .gsel-btn:hover { text-decoration: underline; }
+  .dir-pick-btn { flex: none; width: 40px; padding: 0; font-size: 15px; height: 38px; display: flex; align-items: center; justify-content: center; }
+  .dir-pick-btn svg { width: 16px; height: 16px; }
+  .dpicker-mask { position: fixed; inset: 0; background: rgba(15,18,24,.45); z-index: 90; display: flex; align-items: center; justify-content: center; }
+  .dpicker-mask[hidden] { display: none; }
+  .dpicker { background: var(--card); border-radius: 12px; width: min(430px, 92vw); max-height: 72vh; display: flex; flex-direction: column; box-shadow: 0 18px 50px rgba(20,25,40,.3); overflow: hidden; }
+  .dpicker-head { padding: 12px 14px; border-bottom: 1px solid var(--line); }
+  .dpicker-crumb { display: flex; align-items: center; gap: 2px; flex-wrap: wrap; font-size: 13px; }
+  .dpicker-crumb .crumb { color: var(--pri); cursor: pointer; padding: 2px 6px; border-radius: 6px; }
+  .dpicker-crumb .crumb:hover { background: var(--pri-soft); }
+  .dpicker-crumb .crumb.cur { color: var(--txt); font-weight: 600; cursor: default; }
+  .dpicker-list { overflow: auto; padding: 6px; flex: 1; min-height: 160px; }
+  .dpicker-item { display: flex; align-items: center; gap: 9px; padding: 9px 10px; border-radius: 8px; cursor: pointer; font-size: 13.5px; }
+  .dpicker-item:hover { background: var(--pri-soft); }
+  .dpicker-item svg { width: 15px; height: 15px; color: var(--pri); flex: none; }
+  .dpicker-foot { display: flex; gap: 8px; justify-content: flex-end; padding: 10px 14px; border-top: 1px solid var(--line); }
+  .dpicker-foot button { padding: 7px 14px; font-size: 13px; }
   .code { font-weight: 700; color: var(--pri); }
   .cat { font-size: 11px; padding: 1px 6px; border-radius: 5px; }
   .cat.censored { background: var(--pri-soft); color: var(--pri); }
@@ -568,11 +584,24 @@
       <div class="card">
         <h2>整理设置 <small>（下载完成后重命名为「番号 标题」并移动到目标目录）</small></h2>
         <div class="form-grid">
-          <div class="field w3"><label>下载目录（待整理） <small>P115_DOWNLOAD_DIR · 离线任务落盘处，不存在自动创建；留空用 115 默认目录</small></label><input id="c_P115_DOWNLOAD_DIR" type="text" placeholder="待整理"></div>
-          <div class="field w3"><label>整理后目录（已整理） <small>P115_TARGET_DIR · 完成后重命名并移动到这里</small></label><input id="c_P115_TARGET_DIR" type="text" placeholder="已整理"></div>
-          <div class="field w6"><label class="check-line"><input type="checkbox" id="c_P115_AUTO_ORGANIZE"> 启用自动整理<small>每分钟检查完成的任务 · P115_AUTO_ORGANIZE</small></label></div>
+          <div class="field w3"><label>下载目录（待整理） <small>P115_DOWNLOAD_DIR · 离线任务落盘处，不存在自动创建；留空用 115 默认目录</small></label>
+            <div class="row" style="gap:6px;flex-wrap:nowrap">
+              <input id="c_P115_DOWNLOAD_DIR" type="text" placeholder="待整理" style="flex:1">
+              <button type="button" class="ghost dir-pick-btn" title="从 115 目录中点选" onclick="openDirPicker('c_P115_DOWNLOAD_DIR')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg></button>
+            </div></div>
+          <div class="field w3"><label>整理后目录（已整理） <small>P115_TARGET_DIR · 完成后重命名并移动到这里</small></label>
+            <div class="row" style="gap:6px;flex-wrap:nowrap">
+              <input id="c_P115_TARGET_DIR" type="text" placeholder="已整理" style="flex:1">
+              <button type="button" class="ghost dir-pick-btn" title="从 115 目录中点选" onclick="openDirPicker('c_P115_TARGET_DIR')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg></button>
+            </div></div>
+          <div class="field w3"><label>冗余目录（广告等） <small>P115_REJECT_DIR · 整理时识别出的广告文件、疑似广告任务自动移入这里</small></label>
+            <div class="row" style="gap:6px;flex-wrap:nowrap">
+              <input id="c_P115_REJECT_DIR" type="text" placeholder="冗余" style="flex:1">
+              <button type="button" class="ghost dir-pick-btn" title="从 115 目录中点选" onclick="openDirPicker('c_P115_REJECT_DIR')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg></button>
+            </div></div>
+          <div class="field w3"><label class="check-line"><input type="checkbox" id="c_P115_AUTO_ORGANIZE"> 启用自动整理<small>每分钟检查完成的任务 · P115_AUTO_ORGANIZE</small></label></div>
         </div>
-        <div class="hint">整理流程：下载完成 → 通过 info_hash 反查本库影片 → 重命名「番号 标题」→ 从待整理目录移动到已整理目录。已整理任务自动记忆去重。</div>
+        <div class="hint">整理流程：下载完成 → 通过 info_hash 反查本库影片 → 重命名「番号 标题」→ 从待整理目录移动到已整理目录。文件夹内的广告文件（.url / .txt / 推广名）与未匹配到影片的疑似广告任务会自动移入冗余目录。目录可点输入框右侧文件夹图标从 115 网盘中直接选取（支持多级，不存在会自动创建）。已整理任务自动记忆去重。</div>
         <div class="row save-row">
           <button class="primary" onclick="saveConfig()">保存配置</button>
           <span class="msg cfg-msg"></span>
@@ -607,6 +636,16 @@
   </main>
 </div>
 <div id="toasts"></div>
+<div class="dpicker-mask" id="dpicker-mask" hidden onclick="if (event.target === this) closeDirPicker()">
+  <div class="dpicker">
+    <div class="dpicker-head"><div class="dpicker-crumb" id="dpicker-crumb"></div></div>
+    <div class="dpicker-list" id="dpicker-list"></div>
+    <div class="dpicker-foot">
+      <button class="ghost" type="button" onclick="closeDirPicker()">取消</button>
+      <button class="primary" type="button" onclick="confirmDirPicker()">选择此目录</button>
+    </div>
+  </div>
+</div>
 
 <script>
 let curPage = 1, curSort = 'new', curCat = '', pollTimer = null;
@@ -726,7 +765,7 @@ async function saveConfig() {
   const body = {};
   ['BASE_URL','METATUBE_URL','METATUBE_TOKEN','DELAY_SECONDS','JITTER_SECONDS',
    'MAX_RETRIES','TIMEOUT','WEB_PORT','AUTO_CRAWL_INTERVAL_HOURS','AUTO_CRAWL_PAGES',
-   'TAG_FILTERS','P115_DOWNLOAD_DIR','P115_TARGET_DIR']
+   'TAG_FILTERS','P115_DOWNLOAD_DIR','P115_TARGET_DIR','P115_REJECT_DIR']
     .forEach(k => { const el = $('c_' + k); if (el) body[k] = el.value; });
   body.CATEGORY = [...document.querySelectorAll('#cat-seg .seg-btn.active')].map(b => b.dataset.cat).join(',');
   body.GENRE_CENSORED = [...GENRE_SEL.censored].join(',');
@@ -1276,6 +1315,45 @@ async function sendTo115(code) {
     if (j.ok) toast('✓ 已提交离线：' + (j.name || code), 'ok');
     else toast('✗ ' + (j.error || '提交失败'), 'err');
   } catch (e) { toast('✗ ' + e.message, 'err'); }
+}
+
+/* ---------- 115 dir picker ---------- */
+const DIR_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>';
+let dirPicker = { target: '', stack: [{ name: '根目录', fid: 0 }] };
+async function openDirPicker(inputId) {
+  dirPicker = { target: inputId, stack: [{ name: '根目录', fid: 0 }] };
+  $('dpicker-mask').hidden = false;
+  await loadDirLevel();
+}
+function closeDirPicker() { $('dpicker-mask').hidden = true; }
+async function loadDirLevel() {
+  const stack = dirPicker.stack;
+  $('dpicker-crumb').innerHTML = stack.map((s, i) =>
+    `<span class="crumb${i === stack.length - 1 ? ' cur' : ''}" onclick="jumpDirLevel(${i})">${esc(s.name)}</span>`)
+    .join('<span style="color:var(--mut)">/</span>');
+  $('dpicker-list').innerHTML = '<div class="hint" style="padding:12px">加载中…</div>';
+  try {
+    const j = await (await fetch('/api/p115/dirs?cid=' + stack[stack.length - 1].fid)).json();
+    if (!j.ok) { $('dpicker-list').innerHTML = `<div class="hint" style="padding:12px;color:var(--err)">✗ ${esc(j.error || '加载失败')}</div>`; return; }
+    $('dpicker-list').innerHTML = (j.dirs || []).length
+      ? (j.dirs || []).map(d =>
+          `<div class="dpicker-item" data-fid="${d.fid}" data-name="${esc(d.name)}" onclick="enterDirLevel(this)">${DIR_SVG}${esc(d.name)}</div>`).join('')
+      : '<div class="hint" style="padding:12px">没有子目录，可直接点「选择此目录」</div>';
+  } catch (e) { $('dpicker-list').innerHTML = `<div class="hint" style="padding:12px;color:var(--err)">✗ ${esc(e.message)}</div>`; }
+}
+function enterDirLevel(el) {
+  dirPicker.stack.push({ name: el.dataset.name, fid: +el.dataset.fid });
+  loadDirLevel();
+}
+function jumpDirLevel(i) {
+  if (i === dirPicker.stack.length - 1) return;
+  dirPicker.stack = dirPicker.stack.slice(0, i + 1);
+  loadDirLevel();
+}
+function confirmDirPicker() {
+  const el = $(dirPicker.target);
+  if (el) el.value = dirPicker.stack.slice(1).map(s => s.name).join('/');
+  closeDirPicker();
 }
 
 /* ---------- update ---------- */

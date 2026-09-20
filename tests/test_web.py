@@ -132,6 +132,9 @@ def test_genres_endpoint_catalog(client, monkeypatch):
 def test_p115_endpoints_unauthenticated(client):
     j = client.get("/api/p115/status").get_json()
     assert j["available"] is True and j["logged_in"] is False
+    r = client.get("/api/p115/dirs")
+    assert r.status_code == 400
+    assert "未登录" in r.get_json()["error"]
     assert client.post("/api/p115/magnet", json={"code": "TEST-001"}).status_code == 400
     assert client.get("/api/p115/tasks").status_code == 400
     assert len(client.get("/api/p115/devices").get_json()["devices"]) > 0

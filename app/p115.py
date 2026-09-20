@@ -264,16 +264,59 @@ def _map_task_status(raw) -> str:
 
 
 # ------------------------------------------------------------ organize ----
+_AD_EXTS = {".url", ".txt", ".htm", ".html", ".lnk", ".exe", ".apk", ".bat", ".cmd"}
+_AD_PAT = re.compile(
+    r"广告|推广|宣传|官网|发布页|最新地址|永久地址|防失联|失联|地址发布|"
+    r"电报|飞机群|telegram|t\.me|qq群|微信群|扫码|二维码|请访问|"
+    r"www\.|https?://|\.(com|net|org|xyz|top|icu|cc|tv|info|club|site|shop|fun|online|vip)\b|"
+    r"娱乐城|押注|六合彩|赌博|赌场|赌城|彩票|免费领|福利群|资源群|中文不卡|高清资源|必看|"
+    r"磁力|磁链|bt下载|bbs|论坛|导航站|搜索引擎|字幕网|每日更新|大更新", re.I)
+
+
+def looks_ad(name: str) -> bool:
+    """Heuristic: is this file/task name promotional spam?"""
+    n = str(name or "").strip()
+    if not n:
+        return False
+    ext = n.rsplit(".", 1)
+    if len(ext) == 2 and len(ext[1]) <= 5 and f".{ext[1].lower()}" in _AD_EXTS:
+        return True
+    return bool(_AD_PAT.search(n))
+
+
+def _sweep_ads(c, folder_fid: int, reject_cid: int) -> int:
+    """Move ad files inside a downloaded folder to the reject dir."""
+    moved = 0
+    try:
+        data = check_response(c.fs_files(
+            {"cid": folder_fid, "limit": 1000, "offset": 0, "show_dir": 1},
+            timeout=_TIMEOUT))["data"]
+    except Exception as exc:
+        log.warning("115 列出文件夹 %s 失败: %s", folder_fid, exc)
+        return 0
+    for item in data.get("list") or []:
+        # fc == 0 -> directory; only judge files, folders keep the torrent layout
+        if str(item.get("fc")) == "0" or not looks_ad(item.get("n")):
+            continue
+        try:
+            check_response(c.fs_move(int(item["fid"]), reject_cid, timeout=_TIMEOUT))
+            moved += 1
+            log.info("115 广告清理: %s -> 冗余目录", item.get("n"))
+        except Exception as exc:
+            log.warning("115 移动广告文件失败 %s: %s", item.get("n"), exc)
+    return moved
+
+
 def _sanitize_name(name: str) -> str:
     """Filesystem-illegal characters (for 115 too) -> spaces."""
     return _ILLEGAL_FS.sub(" ", str(name or "")).strip()
 
 
-def _find_dir(c, name: str) -> int | None:
+def _find_dir(c, name: str, pid: int = 0) -> int | None:
     offset = 0
     while True:
         data = check_response(c.fs_files(
-            {"cid": 0, "limit": 100, "offset": offset, "show_dir": 1},
+            {"cid": pid, "limit": 100, "offset": offset, "show_dir": 1},
             timeout=_TIMEOUT))["data"]
         for item in data.get("list") or []:
             if item.get("n") == name and str(item.get("fc")) == "0":
@@ -283,19 +326,48 @@ def _find_dir(c, name: str) -> int | None:
         offset += 100
 
 
-def resolve_dir(c, name: str) -> int:
-    """Find a root-level 115 directory by name, creating it when missing.
+def _split_path(path: str) -> list[str]:
+    """'待整理 / 备份' -> ['待整理', '备份']（支持 / 与 \\ 分隔，去空白段）。"""
+    return [p.strip() for p in str(path or "").replace("\\", "/").split("/") if p.strip()]
 
-    Results are cached per name; use reset_dir_cache() after renames.
+
+def resolve_dir(c, name: str) -> int:
+    """Resolve a 115 directory by path ("一级/二级"), creating missing levels.
+
+    Results are cached per path; use reset_dir_cache() after renames.
     """
-    name = (name or "").strip() or "未命名"
-    if name in _dir_cid:
-        return _dir_cid[name]
-    cid = _find_dir(c, name)
-    if cid is None:
-        cid = int(check_response(c.fs_mkdir(name, pid=0, timeout=_TIMEOUT))["file_id"])
-    _dir_cid[name] = cid
+    parts = _split_path(name) or ["未命名"]
+    key = "/".join(parts)
+    if key in _dir_cid:
+        return _dir_cid[key]
+    cid = 0
+    for part in parts:
+        nxt = _find_dir(c, part, cid)
+        if nxt is None:
+            nxt = int(check_response(c.fs_mkdir(part, pid=cid, timeout=_TIMEOUT))["file_id"])
+        cid = nxt
+    _dir_cid[key] = cid
     return cid
+
+
+def list_dirs(cid: int = 0) -> list[dict]:
+    """List immediate sub-directories of a 115 folder (for the dir picker)."""
+    c = get_client()
+    if not c:
+        raise RuntimeError("115 未登录")
+    out: list[dict] = []
+    offset = 0
+    while True:
+        data = check_response(c.fs_files(
+            {"cid": cid, "limit": 100, "offset": offset, "show_dir": 1},
+            timeout=_TIMEOUT))["data"]
+        for item in data.get("list") or []:
+            if str(item.get("fc")) == "0":
+                out.append({"fid": int(item["fid"]), "name": item.get("n") or ""})
+        if offset + 100 >= int(data.get("count", 0)):
+            break
+        offset += 100
+    return out
 
 
 def reset_dir_cache() -> None:
@@ -344,29 +416,46 @@ def db_get_meta(conn, key: str) -> str:
 
 
 def _organize_one(conn, c, task: dict, info_hash: str) -> None:
+    cfg = settings.load()
     fid = task.get("file_id") or task.get("delete_file_id")
     row = conn.execute(
         "SELECT m.code, m.title FROM magnets g JOIN movies m ON m.code = g.code "
         "WHERE g.hash = ?", (info_hash,)).fetchone()
-    if row and fid:
+    if not fid:
+        pass  # nothing to act on; only mark done
+    elif row:
         code, title = row
         old = str(task.get("name") or code)
+        src_cid = None
         try:
             finfo = check_response(c.fs_file(fid, timeout=_TIMEOUT))["data"]
             old = str(finfo.get("file_name") or old)
             src_cid = int(finfo.get("cid") or 0)
+            is_folder = str(finfo.get("fc")) == "0"
         except Exception:
-            src_cid = None
+            is_folder = False
+        # ad files riding along inside the download folder -> reject dir first
+        if is_folder:
+            reject = resolve_dir(c, (cfg.get("P115_REJECT_DIR") or "").strip() or "冗余")
+            _sweep_ads(c, int(fid), reject)
         parts = old.rsplit(".", 1)
         ext = f".{parts[1]}" if len(parts) == 2 and 0 < len(parts[1]) <= 5 else ""
         new_name = _sanitize_name(f"{code} {title}")[:180] + ext
         if new_name and new_name != old:
             check_response(c.fs_rename((int(fid), new_name), timeout=_TIMEOUT))
             log.info("115 重命名: %s -> %s", old, new_name)
-        target = resolve_dir(c, (settings.load().get("P115_TARGET_DIR") or "").strip() or "已整理")
+        target = resolve_dir(c, (cfg.get("P115_TARGET_DIR") or "").strip() or "已整理")
         if target and src_cid is not None and src_cid != target:
             check_response(c.fs_move(int(fid), target, timeout=_TIMEOUT))
             log.info("115 移动: %s -> 目录 %s", new_name, target)
+    elif looks_ad(task.get("name")):
+        # a completed task we don't know that smells like spam -> reject dir
+        reject = resolve_dir(c, (cfg.get("P115_REJECT_DIR") or "").strip() or "冗余")
+        try:
+            check_response(c.fs_move(int(fid), reject, timeout=_TIMEOUT))
+            log.info("115 广告任务: %s -> 冗余目录", task.get("name"))
+        except Exception as exc:
+            log.warning("115 移动广告任务失败 %s: %s", task.get("name"), exc)
     conn.execute("INSERT OR REPLACE INTO meta(key, value) VALUES (?, '1')",
                  (f"p115:done:{info_hash}",))
     conn.commit()

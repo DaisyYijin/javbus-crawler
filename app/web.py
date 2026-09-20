@@ -659,6 +659,22 @@ def create_app() -> Flask:
         log.info("已提交 115 离线任务: %s (%s)", result["name"], code)
         return jsonify({"ok": True, **result})
 
+    @app.get("/api/p115/dirs")
+    def p115_dirs():
+        """List immediate sub-directories of a 115 folder (dir picker)."""
+        if not p115.HAS_P115:
+            return jsonify({"ok": False, "error": "p115client 未安装"}), 503
+        if not p115.has_auth():
+            return jsonify({"ok": False, "error": "115 未登录，请先到「115 网盘」页扫码"}), 400
+        try:
+            cid = max(0, int(request.args.get("cid", 0)))
+        except ValueError:
+            cid = 0
+        try:
+            return jsonify({"ok": True, "cid": cid, "dirs": p115.list_dirs(cid)})
+        except Exception as exc:
+            return jsonify({"ok": False, "error": f"获取目录失败: {exc}"}), 502
+
     @app.get("/api/p115/tasks")
     def p115_tasks():
         if not p115.has_auth():
