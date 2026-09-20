@@ -8,7 +8,8 @@ from urllib.parse import urlencode
 
 from . import db
 from .fetcher import Fetcher, StopRequested
-from .parser import parse_detail, parse_list, parse_movie_script_vars, parse_magnets
+from .parser import (parse_detail, parse_genre_catalog, parse_list,
+                     parse_movie_script_vars, parse_magnets)
 
 log = logging.getLogger("seedmm.crawl")
 
@@ -52,6 +53,29 @@ def looks_blocked(html: str) -> bool:
     """Detect the site's age-verification/risk-control interstitial (it
     answers HTTP 200, so an empty parse alone would be misleading)."""
     return "driver-verify" in html or "Age Verification" in html
+
+
+def fetch_genre_catalog(cfg: dict) -> dict:
+    """Fetch both channels' genre catalogs from the site index pages.
+
+    Returns {"censored": [{"group", "genres": [(name, id)]}], "uncensored": [...]}.
+    On failure/blocked the affected channel is an empty list (callers fall
+    back to the learned-genre cache).
+    """
+    import requests as _rq
+
+    from .fetcher import BROWSER_UA
+
+    base = str(cfg.get("BASE_URL") or "").rstrip("/")
+    out: dict = {"censored": [], "uncensored": []}
+    for cat, path in (("censored", "/genre"), ("uncensored", "/uncensored/genre")):
+        try:
+            r = _rq.get(base + path, headers={"User-Agent": BROWSER_UA}, timeout=15)
+            if r.status_code == 200 and not looks_blocked(r.text):
+                out[cat] = parse_genre_catalog(r.text)
+        except _rq.RequestException:
+            continue
+    return out
 
 
 def parse_pages(spec: str) -> list[int]:

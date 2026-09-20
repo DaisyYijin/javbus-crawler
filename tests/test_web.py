@@ -106,10 +106,24 @@ def test_filter_chips_endpoint(client):
     assert {"kw": "4K", "count": 1} in j["items"]  # seeded magnet "4k rip"
 
 
-def test_genres_endpoint(client):
+def test_genres_endpoint(client, monkeypatch):
+    from app import crawler as _crawler
+    monkeypatch.setattr(_crawler, "fetch_genre_catalog", lambda cfg: {})
     j = client.get("/api/genres").get_json()
+    assert j["ok"] is True
     assert set(j["items"].keys()) == {"censored", "uncensored"}
     assert isinstance(j["items"]["censored"], list)
+
+
+def test_genres_endpoint_catalog(client, monkeypatch):
+    from app import crawler as _crawler
+    monkeypatch.setattr(_crawler, "fetch_genre_catalog",
+                        lambda cfg: {"censored": [{"group": "主題", "genres": [("折磨", "62")]}],
+                                     "uncensored": []})
+    j = client.get("/api/genres?refresh=1").get_json()
+    assert j["items"]["censored"][0]["group"] == "主題"
+    assert j["items"]["censored"][0]["genres"] == [["折磨", "62"]]  # tuples -> lists in JSON
+    assert j["items"]["uncensored"] == []
 
 
 def test_p115_endpoints_unauthenticated(client):

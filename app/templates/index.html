@@ -415,11 +415,15 @@
               <button type="button" class="seg-btn" data-cat="uncensored" onclick="toggleCat(this)">无码</button>
             </div></div>
           <div class="field w6"><label>类别筛选（可选 · 点击多选） <small>留空 = 采集该频道全部类别</small></label>
-            <div class="kv" style="margin-bottom:5px">有码类别：</div>
+            <div class="row" style="margin-bottom:8px">
+              <button class="ghost" type="button" onclick="loadGenreChips(true)" style="padding:4px 12px;font-size:12px">刷新类别</button>
+              <span class="hint" style="margin:0">类别目录直接取自站点 有碼類別 / 無碼類別 页，缓存一天</span>
+            </div>
+            <div class="kv" style="margin-bottom:5px"><b>有码类别</b>：</div>
             <div id="genre-chips-censored" class="row" style="gap:6px;flex-wrap:wrap;margin-bottom:9px"></div>
-            <div class="kv" style="margin-bottom:5px">无码类别：</div>
+            <div class="kv" style="margin-bottom:5px"><b>无码类别</b>：</div>
             <div id="genre-chips-uncensored" class="row" style="gap:6px;flex-wrap:wrap"></div>
-            <div class="hint">按频道分组的站点类别（即 有碼類別 / 無碼類別），点击标签选中 / 取消（可多选）。类别在采集影片时自动学习积累，无需手动输入。仅对上方勾选的频道生效。</div></div>
+            <div class="hint">按大标题分组展示站点全部类别，点击标签选中 / 取消（可多选）；仅对上方勾选的频道生效。若站点临时拦截目录页，会回退显示已学习的类别。</div></div>
         </div>
       </div>
 
@@ -721,14 +725,21 @@ function addKeyword(kw) {
   el.focus();
 }
 const GENRE_SEL = { censored: new Set(), uncensored: new Set() };
-async function loadGenreChips() {
+async function loadGenreChips(force) {
   try {
-    const j = await (await fetch('/api/genres')).json();
+    const r = await fetch('/api/genres' + (force ? '?refresh=1' : ''));
+    const j = await r.json();
     for (const cat of ['censored', 'uncensored']) {
-      const items = (j.items && j.items[cat]) || [];
-      $('genre-chips-' + cat).innerHTML = items.length
-        ? items.map(x => `<span class="tag" style="cursor:pointer" data-gcat="${cat}" data-genre="${esc(String(x.id))}" title="${esc(x.name)}（${esc(String(x.id))}）">${esc(x.name)}</span>`).join('')
-        : '<span class="hint" style="margin:0">暂无（采集后自动学习）</span>';
+      const groups = (j.items && j.items[cat]) || [];
+      $('genre-chips-' + cat).innerHTML = groups.length
+        ? groups.map(g => `
+          <div style="width:100%">
+            <div class="kv" style="margin:4px 0">${esc(g.group)}</div>
+            <div class="row" style="gap:6px;flex-wrap:wrap">
+              ${g.genres.map(x => `<span class="tag" style="cursor:pointer" data-gcat="${cat}" data-genre="${esc(String(x.id))}" title="${esc(x.name)}（${esc(String(x.id))}）">${esc(x.name)}</span>`).join('')}
+            </div>
+          </div>`).join('')
+        : '<span class="hint" style="margin:0">暂无（点击「刷新类别」从站点获取）</span>';
     }
     syncGenreChips();
   } catch (e) {}

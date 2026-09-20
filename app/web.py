@@ -544,21 +544,46 @@ def create_app() -> Flask:
 
     @app.get("/api/genres")
     def known_genres():
-        """Per-channel genre lists learned from crawled detail pages."""
-        conn = sqlite3.connect(settings.load()["DB_PATH"], timeout=10)
+        """Site genre catalog (grouped, 24h cache) with learned-genre fallback."""
+        refresh = request.args.get("refresh") == "1"
+        cfg = settings.load()
+        conn = sqlite3.connect(cfg["DB_PATH"], timeout=10)
         try:
+            catalog = None
+            try:
+                cached = db.get_meta(conn, "genre_catalog", "")
+                ts = float(db.get_meta(conn, "genre_catalog_ts", "0") or 0)
+                if cached and not refresh and time.time() - ts < 24 * 3600:
+                    catalog = json.loads(cached)
+            except ValueError:
+                catalog = None
+            if catalog is None:
+                try:
+                    fetched = crawler.fetch_genre_catalog(cfg)
+                except Exception:
+                    fetched = {}
+                if any(fetched.values()):
+                    catalog = fetched
+                    db.set_meta(conn, "genre_catalog",
+                                json.dumps(catalog, ensure_ascii=False))
+                    db.set_meta(conn, "genre_catalog_ts", int(time.time()))
+                    conn.commit()
+            if not isinstance(catalog, dict):
+                catalog = {"censored": [], "uncensored": []}
+            # learned genres serve as fallback when a channel catalog is empty
             rows = conn.execute(
                 "SELECT key, value FROM meta WHERE key LIKE 'genre_id:%'").fetchall()
+            learned = {"censored": [], "uncensored": []}
+            for k, v in rows:
+                parts = k.split(":", 2)
+                if len(parts) == 3 and parts[1] in learned:
+                    learned[parts[1]].append({"name": parts[2], "id": v})
+            for cat in ("censored", "uncensored"):
+                if not catalog.get(cat) and learned[cat]:
+                    catalog[cat] = [{"group": "已学习", "genres": learned[cat]}]
+            return jsonify({"ok": True, "items": catalog})
         finally:
             conn.close()
-        items = {"censored": [], "uncensored": []}
-        for k, v in rows:
-            parts = k.split(":", 2)
-            if len(parts) == 3 and parts[1] in items:
-                items[parts[1]].append({"name": parts[2], "id": v})
-        for lst in items.values():
-            lst.sort(key=lambda x: x["name"])
-        return jsonify({"items": items})
 
     # ---------------- 115 cloud ----------------
     @app.get("/api/p115/status")

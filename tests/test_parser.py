@@ -85,6 +85,28 @@ def test_parse_detail_genre_links_learned():
     assert mv.genre_links == [("censored", "巨乳", "42"), ("uncensored", "高清", "hd")]
 
 
+def test_parse_genre_catalog():
+    html = """
+    <html><body>
+    <h4>主題</h4>
+    <div class="row genre-box">
+      <a href="https://x/genre/62">折磨</a>
+      <a href="https://x/genre/5g">嘔吐</a>
+    </div>
+    <h4>角色</h4>
+    <div class="row genre-box">
+      <a href="https://x/genre/1">學生</a>
+    </div>
+    <h4>聯絡我們</h4>
+    <div>footer stuff</div>
+    </body></html>"""
+    out = parser.parse_genre_catalog(html)
+    assert out == [
+        {"group": "主題", "genres": [("折磨", "62"), ("嘔吐", "5g")]},
+        {"group": "角色", "genres": [("學生", "1")]},
+    ]
+
+
 def test_magnet_hash_uppercases():
     assert parser.magnet_hash("magnet:?xt=urn:btih:AbCd1234&dn=x") == "ABCD1234"
     assert parser.magnet_hash("not a magnet link") is None

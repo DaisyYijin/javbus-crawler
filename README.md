@@ -61,7 +61,7 @@ docker compose up -d
 |---|---|---|
 | `BASE_URL` | `https://www.seedmm.bond` | 站点根地址 |
 | `CATEGORY` | `censored` | 采集频道：有码 `censored` / 无码 `uncensored`，可逗号分隔同时采 |
-| `GENRE_CENSORED` / `GENRE_UNCENSORED` | 空 | 按频道分组的类别筛选（站点类别 ID/slug，网页上点击多选）；留空采集全部类别 |
+| `GENRE_CENSORED` / `GENRE_UNCENSORED` | 空 | 按频道分组的类别筛选（目录直接取自站点 /genre 页并按大标题分组，网页点击多选）；留空采集全部类别 |
 | `PROXY` | 空 | HTTP 代理（如 `http://127.0.0.1:7890`），留空不使用 |
 | `DELAY_SECONDS` | `2.0` | 请求间隔下限（秒） |
 | `JITTER_SECONDS` | `1.0` | 请求间隔随机抖动上限（秒） |

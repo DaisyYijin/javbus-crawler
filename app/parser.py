@@ -150,6 +150,30 @@ def parse_detail(html: str, code: str, url: str) -> Movie:
     return movie
 
 
+def parse_genre_catalog(html: str) -> list[dict]:
+    """Parse a site /genre index page into [{"group": 大标题, "genres": [(name, id)]}].
+
+    Structure (verified against seedmm.bond): <h4>主題</h4> followed by
+    <div class="row genre-box"> whose <a> children link to /genre/{id}.
+    Footer headings (聯絡我們) are skipped.
+    """
+    soup = BeautifulSoup(html, "html.parser")
+    out: list[dict] = []
+    current: dict | None = None
+    for el in soup.select("h4, div.genre-box a[href]"):
+        if el.name == "h4":
+            title = _clean(el.get_text())
+            if title and title not in ("聯絡我們", "联系我们"):
+                current = {"group": title, "genres": []}
+                out.append(current)
+        elif current is not None:
+            m = re.search(r"/genre/([A-Za-z0-9_-]+)", el.get("href", ""))
+            name = _clean(el.get_text())
+            if name and m:
+                current["genres"].append((name, m.group(1)))
+    return [g for g in out if g["genres"]]
+
+
 def parse_magnets(html: str) -> list[Magnet]:
     """Parse magnet rows from an HTML fragment (AJAX response or detail page)."""
     soup = BeautifulSoup(html, "html.parser")
