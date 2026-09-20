@@ -470,8 +470,13 @@ def create_app() -> Flask:
             conn.close()
         if not movie:
             return jsonify({"error": "not found"}), 404
-        keywords = [k for k in settings.load().get("TAG_FILTERS", "").split(",") if k.strip()]
-        best, kw = crawler.pick_magnet(movie.get("magnets") or [], keywords)
+        cfg = settings.load()
+        keywords = [k for k in cfg.get("TAG_FILTERS", "").split(",") if k.strip()]
+        try:
+            tiebreak = crawler.parse_tiebreak(cfg.get("MAGNET_TIEBREAK"))
+        except ValueError:
+            tiebreak = ["size", "date"]
+        best, kw = crawler.pick_magnet(movie.get("magnets") or [], keywords, tiebreak)
         movie["best_magnet"] = best["hash"] if best else None
         movie["best_kw"] = kw
         return jsonify(movie)
@@ -704,8 +709,13 @@ def create_app() -> Flask:
         if body.get("hash"):
             magnet = next((m for m in movie["magnets"] if m["hash"] == body["hash"]), None)
         else:
-            keywords = [k for k in settings.load().get("TAG_FILTERS", "").split(",") if k.strip()]
-            magnet, _kw = crawler.pick_magnet(movie["magnets"], keywords)
+            cfg = settings.load()
+            keywords = [k for k in cfg.get("TAG_FILTERS", "").split(",") if k.strip()]
+            try:
+                tiebreak = crawler.parse_tiebreak(cfg.get("MAGNET_TIEBREAK"))
+            except ValueError:
+                tiebreak = ["size", "date"]
+            magnet, _kw = crawler.pick_magnet(movie["magnets"], keywords, tiebreak)
         if not magnet:
             return jsonify({"ok": False, "error": "没有可用的磁力链接"}), 400
         try:

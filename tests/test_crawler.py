@@ -65,6 +65,36 @@ def test_pick_prefers_multi_keyword_match():
     assert m["name"] == "中文 无码" and kw == "中文"
 
 
+def test_parse_tiebreak_and_size():
+    assert crawler.parse_tiebreak("size,date") == ["size", "date"]
+    assert crawler.parse_tiebreak(" date , size ") == ["date", "size"]
+    assert crawler.parse_tiebreak("size,size") == ["size"]
+    assert crawler.parse_tiebreak("") == []
+    with pytest.raises(ValueError):
+        crawler.parse_tiebreak("size,颜色")
+    assert crawler.parse_size("5.23GB") == pytest.approx(5.23 * 1024 ** 3)
+    assert crawler.parse_size("890 MB") == pytest.approx(890 * 1024 ** 2)
+    assert crawler.parse_size("1TB") == pytest.approx(1024 ** 4)
+    assert crawler.parse_size("嗯?") == 0.0
+
+
+def test_tiebreak_size_then_date():
+    from app.parser import Magnet
+
+    # same keyword score (中文+高清): bigger file wins
+    ms = [Magnet(link="magnet:?xt=urn:btih:B1", name="高清 中文", size="3.5GB", date="2024-06-01"),
+          Magnet(link="magnet:?xt=urn:btih:B2", name="中文 高清", size="7.9GB", date="2024-01-01")]
+    assert crawler.pick_best(ms, ["中文", "高清"], ["size", "date"])[0].link.endswith("B2")
+    # date-first config: newer wins instead
+    assert crawler.pick_best(ms, ["中文", "高清"], ["date", "size"])[0].link.endswith("B1")
+    # no tiebreakers: first in list wins
+    assert crawler.pick_best(ms, ["中文", "高清"], [])[0].link.endswith("B1")
+    # keyword score still outranks size: a huge 高清-only loses to a small 中文+高清
+    ms2 = [Magnet(link="magnet:?xt=urn:btih:C1", name="高清 4K", size="30GB", date="2024-06-01"),
+           Magnet(link="magnet:?xt=urn:btih:C2", name="中文 高清", size="2GB", date="2023-01-01")]
+    assert crawler.pick_best(ms2, ["中文", "高清"], ["size", "date"])[0].link.endswith("C2")
+
+
 def test_compute_matched_keeps_original_spelling():
     hits = crawler.compute_matched(["VR専用"], [], ["vr专用"])
     assert hits == []

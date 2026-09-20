@@ -512,6 +512,15 @@
               <button type="button" class="seg-btn" data-mode="only" onclick="setFilterMode(this)">只收命中的</button>
             </div>
             <div class="hint">「命中」= 影片标签或磁力名称包含上面任意一个关键词。不填关键词时两种模式效果相同。</div></div>
+          <div class="field w3"><label>磁力同级决胜 <small>MAGNET_TIEBREAK · 关键词同分时的排序依据</small></label>
+            <select id="c_MAGNET_TIEBREAK">
+              <option value="size,date">大小优先，其次日期</option>
+              <option value="date,size">日期优先，其次大小</option>
+              <option value="size">仅看大小（大者优先）</option>
+              <option value="date">仅看日期（新者优先）</option>
+              <option value="">都不看（取列表第一条）</option>
+            </select>
+            <div class="hint">关键词命中数与关键词顺序始终最优先，此规则只决定同分磁力（如都是「中文+高清」）之间的取舍：大小大者优先 / 日期新者优先。</div></div>
         </div>
       </div>
 
@@ -796,7 +805,7 @@ async function saveConfig() {
   const body = {};
   ['BASE_URL','METATUBE_URL','METATUBE_TOKEN','DELAY_SECONDS','JITTER_SECONDS',
    'MAX_RETRIES','TIMEOUT','WEB_PORT','AUTO_CRAWL_INTERVAL_HOURS','AUTO_CRAWL_PAGES',
-   'TAG_FILTERS','P115_DOWNLOAD_DIR','P115_TARGET_DIR','P115_REJECT_DIR']
+   'TAG_FILTERS','MAGNET_TIEBREAK','P115_DOWNLOAD_DIR','P115_TARGET_DIR','P115_REJECT_DIR']
     .forEach(k => { const el = $('c_' + k); if (el) body[k] = el.value; });
   body.CATEGORY = [...document.querySelectorAll('#cat-seg .seg-btn.active')].map(b => b.dataset.cat).join(',');
   body.GENRE_CENSORED = [...GENRE_SEL.censored].join(',');

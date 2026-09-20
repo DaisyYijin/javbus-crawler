@@ -124,14 +124,53 @@ def compute_matched(tags: list[str], magnet_names: list[str], keywords: list[str
     return hits
 
 
-def _pick_index(names: list[str], keywords: list[str]) -> int | None:
+def parse_tiebreak(spec) -> list[str]:
+    """'size,date' -> ['size', 'date']; unknown tokens raise ValueError."""
+    parts = [p.strip().lower() for p in str(spec or "").split(",") if p.strip()]
+    for p in parts:
+        if p not in ("size", "date"):
+            raise ValueError(f"MAGNET_TIEBREAK 含无效规则: {p!r}（可选 size / date）")
+    # dedupe, keep order
+    return list(dict.fromkeys(parts))
+
+
+_SIZE_RE = re.compile(r"([\d.]+)\s*(tb|gb|mb|kb|b)", re.I)
+_SIZE_UNITS = {"b": 1, "kb": 1024, "mb": 1024 ** 2, "gb": 1024 ** 3, "tb": 1024 ** 4}
+
+
+def parse_size(spec) -> float:
+    """'5.23GB' -> bytes (float); unparseable -> 0 (treated as smallest)."""
+    m = _SIZE_RE.search(str(spec or ""))
+    if not m:
+        return 0.0
+    try:
+        return float(m.group(1)) * _SIZE_UNITS[m.group(2).lower()]
+    except ValueError:
+        return 0.0
+
+
+def _date_ordinal(spec) -> int:
+    """ISO date string -> sortable day number; unparseable -> 0 (oldest)."""
+    try:
+        from datetime import date
+
+        return date.fromisoformat(str(spec or "").strip()).toordinal()
+    except ValueError:
+        return 0
+
+
+def _pick_index(names: list[str], keywords: list[str],
+                tiebreak: list[str] | None = None,
+                sizes: list | None = None, dates: list | None = None) -> int | None:
     """Rank magnet names and return the best index (None = no keyword hit).
 
     Scoring: the magnet matching MORE keywords wins (中文+高清 beats 中文-only);
-    ties go to the higher-priority keyword (earlier in `keywords`), then to
-    the earlier list position (newest first).
+    ties go to the higher-priority keyword (earlier in `keywords`), then to the
+    configured tiebreakers ("size": bigger first, "date": newer first), and
+    finally to the earlier list position (newest first).
     """
     kws = [(i, k.strip().lower()) for i, k in enumerate(keywords) if k.strip()]
+    tb = tiebreak or []
     best_i: int | None = None
     best_key: tuple | None = None
     for idx, name in enumerate(names):
@@ -139,17 +178,26 @@ def _pick_index(names: list[str], keywords: list[str]) -> int | None:
         hits = [ki for ki, k in kws if k in n]
         if not hits:
             continue
-        key = (-len(hits), hits[0], idx)
+        key = [-len(hits), hits[0]]
+        for t in tb:
+            if t == "size":
+                key.append(-parse_size((sizes or [])[idx] if idx < len(sizes or []) else ""))
+            elif t == "date":
+                key.append(-_date_ordinal((dates or [])[idx] if idx < len(dates or []) else ""))
+        key.append(idx)
+        key = tuple(key)
         if best_key is None or key < best_key:
             best_key, best_i = key, idx
     return best_i
 
 
-def pick_magnet(magnets: list[dict], keywords: list[str]) -> tuple[dict | None, str]:
+def pick_magnet(magnets: list[dict], keywords: list[str],
+                tiebreak: list[str] | None = None) -> tuple[dict | None, str]:
     """Pick the single magnet to use, honouring keyword quality then priority.
 
     A magnet matching several keywords (e.g. 中文 AND 高清) beats one matching
-    a single keyword; among equals the earlier keyword has priority, and the
+    a single keyword; among equals the earlier keyword has priority, then the
+    configured tiebreakers (size bigger-first / date newer-first), and the
     list order (newest first) breaks remaining ties. When no keyword matches
     any magnet name, fall back to the first magnet on the list.
     Returns (magnet-or-None, matched-keyword-or-empty-string).
@@ -157,7 +205,9 @@ def pick_magnet(magnets: list[dict], keywords: list[str]) -> tuple[dict | None, 
     if not magnets:
         return None, ""
     names = [m.get("name") or "" for m in magnets]
-    i = _pick_index(names, keywords)
+    i = _pick_index(names, keywords, tiebreak,
+                    [m.get("size") or "" for m in magnets],
+                    [m.get("date") or "" for m in magnets])
     if i is None:
         return magnets[0], ""
     kws = [k.strip() for k in keywords if k.strip()]
@@ -166,18 +216,21 @@ def pick_magnet(magnets: list[dict], keywords: list[str]) -> tuple[dict | None, 
     return magnets[i], matched
 
 
-def pick_best(magnets: list, keywords: list[str]) -> list:
+def pick_best(magnets: list, keywords: list[str],
+              tiebreak: list[str] | None = None) -> list:
     """Keep only the single best magnet for storage.
 
     Uses the same scoring as pick_magnet: most keyword hits first (中文+高清
-    beats 中文-only), then keyword priority, then list order. No match -> the
-    first magnet (newest). Filtering/marking should still be computed on the
-    FULL list before calling this.
+    beats 中文-only), then keyword priority, then the configured tiebreakers,
+    then list order. No match -> the first magnet (newest). Filtering/marking
+    should still be computed on the FULL list before calling this.
     """
     if not magnets:
         return []
     names = [getattr(m, "name", "") or "" for m in magnets]
-    i = _pick_index(names, keywords)
+    i = _pick_index(names, keywords, tiebreak,
+                    [getattr(m, "size", "") or "" for m in magnets],
+                    [getattr(m, "date", "") or "" for m in magnets])
     return [magnets[i if i is not None else 0]]
 
 
@@ -314,6 +367,10 @@ def run_job(
 
                     # tag filtering: match genres + magnet names against keywords
                     keywords = [k for k in str(cfg.get("TAG_FILTERS") or "").split(",") if k.strip()]
+                    try:
+                        tiebreak = parse_tiebreak(cfg.get("MAGNET_TIEBREAK"))
+                    except ValueError:
+                        tiebreak = ["size", "date"]
                     filter_mode = cfg.get("TAG_FILTER_MODE", "mark")
                     if keywords:
                         movie.matched_tags = compute_matched(
@@ -329,8 +386,8 @@ def run_job(
                         db.set_meta(conn, f"genre_id:{gcat}:{gname}", gid)
 
                     # store ONE magnet per movie: the best pick by keyword
-                    # priority (matching above used the full list on purpose)
-                    movie.magnets = pick_best(movie.magnets, keywords)
+                    # priority + tiebreakers (matching used the full list)
+                    movie.magnets = pick_best(movie.magnets, keywords, tiebreak)
 
                     is_new = item.code not in known
                     if refresh and magnets_fetched:
@@ -391,10 +448,14 @@ def crawl_code(cfg: dict, code: str, magnets: bool = True, stop_check=None) -> d
                     frag = fetcher.get(magnet_ajax_path(sv), referer=movie.url)
                     movie.magnets = parse_magnets(frag) if frag else []
             keywords = [k for k in str(cfg.get("TAG_FILTERS") or "").split(",") if k.strip()]
+            try:
+                tiebreak = parse_tiebreak(cfg.get("MAGNET_TIEBREAK"))
+            except ValueError:
+                tiebreak = ["size", "date"]
             if keywords:
                 movie.matched_tags = compute_matched(
                     movie.genres, [m.name for m in movie.magnets], keywords)
-            movie.magnets = pick_best(movie.magnets, keywords)
+            movie.magnets = pick_best(movie.magnets, keywords, tiebreak)
             db.upsert_movie(conn, movie)
             db.delete_magnets(conn, movie.code)  # single-magnet storage: resync
             db.insert_magnets(conn, movie.magnets, movie.code)
