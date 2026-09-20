@@ -151,7 +151,7 @@ def parse_detail(html: str, code: str, url: str) -> Movie:
 
 
 def parse_genre_catalog(html: str) -> list[dict]:
-    """Parse a site /genre index page into [{"group": 大标题, "genres": [(name, id)]}].
+    """Parse a site /genre index page into [{"group": 大标题, "genres": [{"name", "id"}]}].
 
     Structure (verified against seedmm.bond): <h4>主題</h4> followed by
     <div class="row genre-box"> whose <a> children link to /genre/{id}.
@@ -170,7 +170,7 @@ def parse_genre_catalog(html: str) -> list[dict]:
             m = re.search(r"/genre/([A-Za-z0-9_-]+)", el.get("href", ""))
             name = _clean(el.get_text())
             if name and m:
-                current["genres"].append((name, m.group(1)))
+                current["genres"].append({"name": name, "id": m.group(1)})
     return [g for g in out if g["genres"]]
 
 

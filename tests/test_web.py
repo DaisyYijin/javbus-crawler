@@ -120,12 +120,12 @@ def test_genres_endpoint(client, monkeypatch):
 def test_genres_endpoint_catalog(client, monkeypatch):
     from app import crawler as _crawler
     monkeypatch.setattr(_crawler, "fetch_genre_catalog",
-                        lambda cfg: ({"censored": [{"group": "主題", "genres": [("折磨", "62")]}],
+                        lambda cfg: ({"censored": [{"group": "主題", "genres": [{"name": "折磨", "id": "62"}]}],
                                       "uncensored": []},
                                      {"censored": "", "uncensored": ""}))
     j = client.get("/api/genres?refresh=1").get_json()
     assert j["items"]["censored"][0]["group"] == "主題"
-    assert j["items"]["censored"][0]["genres"] == [["折磨", "62"]]  # tuples -> lists in JSON
+    assert j["items"]["censored"][0]["genres"] == [{"name": "折磨", "id": "62"}]
     assert j["items"]["uncensored"] == []
 
 

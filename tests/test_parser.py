@@ -102,8 +102,8 @@ def test_parse_genre_catalog():
     </body></html>"""
     out = parser.parse_genre_catalog(html)
     assert out == [
-        {"group": "主題", "genres": [("折磨", "62"), ("嘔吐", "5g")]},
-        {"group": "角色", "genres": [("學生", "1")]},
+        {"group": "主題", "genres": [{"name": "折磨", "id": "62"}, {"name": "嘔吐", "id": "5g"}]},
+        {"group": "角色", "genres": [{"name": "學生", "id": "1"}]},
     ]
 
 

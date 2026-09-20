@@ -552,8 +552,10 @@ def create_app() -> Flask:
             catalog = None
             status = {"censored": "", "uncensored": ""}
             try:
-                cached = db.get_meta(conn, "genre_catalog", "")
-                ts = float(db.get_meta(conn, "genre_catalog_ts", "0") or 0)
+                # v2: genres are {"name", "id"} objects; v1 cached tuples
+                # (JSON arrays) broke the frontend, so old caches are ignored
+                cached = db.get_meta(conn, "genre_catalog_v2", "")
+                ts = float(db.get_meta(conn, "genre_catalog_v2_ts", "0") or 0)
                 if cached and not refresh and time.time() - ts < 24 * 3600:
                     catalog = json.loads(cached)
             except ValueError:
@@ -566,9 +568,9 @@ def create_app() -> Flask:
                     fetched = {}
                 if any(fetched.values()):
                     catalog = fetched
-                    db.set_meta(conn, "genre_catalog",
+                    db.set_meta(conn, "genre_catalog_v2",
                                 json.dumps(catalog, ensure_ascii=False))
-                    db.set_meta(conn, "genre_catalog_ts", int(time.time()))
+                    db.set_meta(conn, "genre_catalog_v2_ts", int(time.time()))
                     conn.commit()
                 else:
                     status = fstatus

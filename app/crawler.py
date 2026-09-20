@@ -63,7 +63,7 @@ def fetch_genre_catalog(cfg: dict) -> tuple[dict, dict]:
     age-verification wall.
 
     Returns (catalog, status): catalog is {"censored": [{"group", "genres":
-    [(name, id)]}], "uncensored": [...]}; status is a per-channel
+    [{"name", "id"}]}], "uncensored": [...]}; status is a per-channel
     human-readable error string (empty on success).
     """
     from .fetcher import Fetcher
