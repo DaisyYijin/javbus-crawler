@@ -118,7 +118,11 @@ def get_client(refresh: bool = False):
         try:
             c = P115Client(auth["cookies"], app=auth.get("app") or "android",
                            console_qrcode=False)
-            check_response(c.login_status(timeout=_TIMEOUT))
+            # login_status returns a BOOL (not a dict): a healthy login
+            # answers True, which check_response would misread as an
+            # error (P115OSError [Errno 5] True) — check it directly
+            if not c.login_status(timeout=_TIMEOUT):
+                raise ValueError("cookie 已失效，请重新扫码登录")
             _client = c
             return c
         except Exception as exc:
