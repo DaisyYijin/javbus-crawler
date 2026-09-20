@@ -408,17 +408,30 @@ def looks_ad(name: str) -> bool:
     return bool(_AD_PAT.search(n))
 
 
+def _fs_page(c, cid: int, offset: int, limit: int = 100) -> tuple[list, bool]:
+    """One page of fs_files, normalized to (items, reached_end).
+
+    115 sometimes answers with data as a bare LIST instead of the usual
+    {"list": [...], "count": N} dict (empty folders etc.); accept both.
+    """
+    data = check_response(c.fs_files(
+        {"cid": cid, "limit": limit, "offset": offset, "show_dir": 1},
+        timeout=_TIMEOUT))["data"]
+    if isinstance(data, list):
+        return data or [], True  # bare list carries no pagination info
+    items = data.get("list") or []
+    return items, offset + limit >= int(data.get("count", 0) or 0)
+
+
 def _sweep_ads(c, folder_fid: int, reject_cid: int) -> int:
     """Move ad files inside a downloaded folder to the reject dir."""
     moved = 0
     try:
-        data = check_response(c.fs_files(
-            {"cid": folder_fid, "limit": 1000, "offset": 0, "show_dir": 1},
-            timeout=_TIMEOUT))["data"]
+        items, _done = _fs_page(c, folder_fid, 0, 1000)
     except Exception as exc:
         log.warning("115 列出文件夹 %s 失败: %s", folder_fid, exc)
         return 0
-    for item in data.get("list") or []:
+    for item in items:
         # fc == 0 -> directory; only judge files, folders keep the torrent layout
         if str(item.get("fc")) == "0" or not looks_ad(item.get("n")):
             continue
@@ -439,13 +452,11 @@ def _sanitize_name(name: str) -> str:
 def _find_dir(c, name: str, pid: int = 0) -> int | None:
     offset = 0
     while True:
-        data = check_response(c.fs_files(
-            {"cid": pid, "limit": 100, "offset": offset, "show_dir": 1},
-            timeout=_TIMEOUT))["data"]
-        for item in data.get("list") or []:
+        items, done = _fs_page(c, pid, offset)
+        for item in items:
             if item.get("n") == name and str(item.get("fc")) == "0":
                 return int(item["fid"])
-        if offset + 100 >= int(data.get("count", 0)):
+        if done:
             return None
         offset += 100
 
@@ -484,13 +495,11 @@ def list_dirs(cid: int = 0) -> list[dict]:
     out: list[dict] = []
     offset = 0
     while True:
-        data = check_response(c.fs_files(
-            {"cid": cid, "limit": 100, "offset": offset, "show_dir": 1},
-            timeout=_TIMEOUT))["data"]
-        for item in data.get("list") or []:
+        items, done = _fs_page(c, cid, offset)
+        for item in items:
             if str(item.get("fc")) == "0":
                 out.append({"fid": int(item["fid"]), "name": item.get("n") or ""})
-        if offset + 100 >= int(data.get("count", 0)):
+        if done:
             break
         offset += 100
     return out
