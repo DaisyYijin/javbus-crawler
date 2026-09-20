@@ -106,6 +106,11 @@ def test_filter_chips_endpoint(client):
     assert {"kw": "4K", "count": 1} in j["items"]  # seeded magnet "4k rip"
 
 
+def test_genres_endpoint(client):
+    j = client.get("/api/genres").get_json()
+    assert isinstance(j["items"], list)
+
+
 def test_p115_endpoints_unauthenticated(client):
     j = client.get("/api/p115/status").get_json()
     assert j["available"] is True and j["logged_in"] is False

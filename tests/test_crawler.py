@@ -35,6 +35,26 @@ def test_compute_matched_keeps_original_spelling():
     assert hits == ["VR専用"]
 
 
+def test_parse_genre_list():
+    assert crawler.parse_genre_list("42,hd") == ["42", "hd"]
+    assert crawler.parse_genre_list(" 42 , hd ") == ["42", "hd"]
+    assert crawler.parse_genre_list("") == []
+    assert crawler.parse_genre_list(None) == []
+    assert crawler.parse_genre_list("a b,42,%%%,hd") == ["42", "hd"]
+
+
+def test_listing_path():
+    assert crawler.listing_path("", "", 1) == "/page/1"
+    assert crawler.listing_path("", "42", 3) == "/genre/42/3"
+    assert crawler.listing_path("/uncensored", "hd", 2) == "/uncensored/genre/hd/2"
+
+
+def test_looks_blocked():
+    assert crawler.looks_blocked("<html>... driver-verify?referer=... </html>")
+    assert crawler.looks_blocked("<title>Age Verification JavBus</title>")
+    assert not crawler.looks_blocked('<a class="movie-box">ok</a>')
+
+
 def test_pick_magnet_left_to_right_priority():
     mags = [{"name": "1080p A", "hash": "a"},
             {"name": "4K B", "hash": "b"},

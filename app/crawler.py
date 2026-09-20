@@ -31,6 +31,28 @@ def magnet_ajax_path(vars_: dict[str, str]) -> str:
 
 MAX_PAGES_PER_RUN = 500
 
+# site genre filter slugs must look like this (digits or short slugs like "hd")
+_GENRE_RE = re.compile(r"[A-Za-z0-9_-]{1,32}")
+
+
+def parse_genre_list(spec) -> list[str]:
+    """'42,hd' -> ['42', 'hd']; invalid entries are dropped."""
+    return [g for g in (s.strip() for s in str(spec or "").split(","))
+            if _GENRE_RE.fullmatch(g)]
+
+
+def listing_path(section: str, genre: str, page: int) -> str:
+    """URL path for a listing page, optionally filtered by a site genre."""
+    if genre:
+        return f"{section}/genre/{genre}/{page}"
+    return f"{section}/page/{page}"
+
+
+def looks_blocked(html: str) -> bool:
+    """Detect the site's age-verification/risk-control interstitial (it
+    answers HTTP 200, so an empty parse alone would be misleading)."""
+    return "driver-verify" in html or "Age Verification" in html
+
 
 def parse_pages(spec: str) -> list[int]:
     """'3' -> [3]; '2-5' -> [2,3,4,5]. Range capped at MAX_PAGES_PER_RUN."""
@@ -112,13 +134,20 @@ def run_job(
     sections = {"censored": "", "uncensored": "/uncensored"}
     cats = [c.strip() for c in str(cfg.get("CATEGORY", "censored")).split(",")
             if c.strip() in sections] or ["censored"]
+    genres = parse_genre_list(cfg.get("GENRE"))
+    combos = [(c, g) for c in cats for g in (genres or [""])]
 
-    def cat_label(c: str) -> str:
-        return "无码" if c == "uncensored" else "有码"
+    def combo_label(c: str, g: str) -> str:
+        base = "无码" if c == "uncensored" else "有码"
+        return f"{base}/类别{g}" if g else base
+
+    def depth_key(c: str, g: str) -> str:
+        return f"max_page:{c}:{g}" if g else f"max_page:{c}"
 
     conn = db.connect(cfg["DB_PATH"])
     known = db.known_codes(conn)
-    depths = {c: int(db.get_meta(conn, f"max_page:{c}", "0") or 0) for c in cats}
+    depths = {depth_key(c, g): int(db.get_meta(conn, depth_key(c, g), "0") or 0)
+              for c, g in combos}
 
     if mode == "backfill":
         try:
@@ -127,48 +156,55 @@ def run_job(
             count = len(parse_pages(pages))  # e.g. "2-5" -> 4 pages
         count = max(1, min(count, 500))
         plans = []
-        for c in cats:
-            if depths[c] <= 0:
-                log.warning("补历史跳过 %s 频道：尚无采集深度记录，请先用「追新」采集第 1 页",
-                            cat_label(c))
+        for c, g in combos:
+            dk = depth_key(c, g)
+            if depths[dk] <= 0:
+                log.warning("补历史跳过 %s：尚无采集深度记录，请先用「追新」采集第 1 页",
+                            combo_label(c, g))
                 continue
-            plans.append((c, list(range(depths[c] + 1, depths[c] + 1 + count))))
+            plans.append((c, g, list(range(depths[dk] + 1, depths[dk] + 1 + count))))
             log.info("补历史 %s: 从第 %d 页继续，本次 %d 页（当前深度 %d）",
-                     cat_label(c), depths[c] + 1, count, depths[c])
+                     combo_label(c, g), depths[dk] + 1, count, depths[dk])
         if not plans:
             raise ValueError("尚无采集深度记录：请先用「追新」模式采集第 1 页")
     else:
         page_list = parse_pages(pages)
         mode = "new"
-        plans = [(c, page_list) for c in cats]
+        plans = [(c, g, page_list) for c, g in combos]
     log.info("开始采集: 模式=%s 频道=%s pages=%s base=%s 已入库=%d delay=%.1fs",
              "补历史" if mode == "backfill" else "追新",
-             "/".join(cat_label(c) for c in cats), pages, fetcher.base_url,
+             "/".join(combo_label(c, g) for c, g in combos), pages, fetcher.base_url,
              len(known), fetcher.delay)
 
     stats = {"pages": 0, "listed": 0, "new": 0, "updated": 0,
              "magnets": 0, "errors": 0, "stopped": False}
 
     try:
-        for cat, page_list in plans:
+        for cat, genre, page_list in plans:
             section = sections[cat]
+            dk = depth_key(cat, genre)
             for page in page_list:
-                html = fetcher.get(f"{section}/page/{page}")
+                html = fetcher.get(listing_path(section, genre, page))
                 if not html:
                     log.error("第 %d 页抓取失败，跳过", page)
                     stats["errors"] += 1
                     continue
+                if looks_blocked(html):
+                    log.error("第 %d 页触发站点年龄验证/风控（driver-verify），"
+                              "请降低采集频率稍后重试", page)
+                    stats["errors"] += 1
+                    break
                 items = parse_list(html, fetcher.base_url)
                 if not items:
                     log.warning("第 %d 页没有条目，已到站点尽头，停止补历史", page)
                     break
-                if page > depths[cat]:
-                    depths[cat] = page
-                    db.set_meta(conn, f"max_page:{cat}", depths[cat])
+                if page > depths[dk]:
+                    depths[dk] = page
+                    db.set_meta(conn, dk, depths[dk])
                     conn.commit()
                 stats["pages"] += 1
                 stats["listed"] += len(items)
-                log.info("[%s] 第 %d 页: %d 部影片", cat_label(cat), page, len(items))
+                log.info("[%s] 第 %d 页: %d 部影片", combo_label(cat, genre), page, len(items))
 
                 for item in items:
                     if not refresh and item.code in known:
@@ -202,6 +238,10 @@ def run_job(
                             stats["skipped"] += 1
                             log.info("跳过 %s（不匹配筛选: %s）", item.code, ",".join(keywords))
                             continue
+
+                    # learn genre name -> site id mapping for the filter picker
+                    for gname, gid in movie.genre_ids.items():
+                        db.set_meta(conn, f"genre_id:{gname}", gid)
 
                     is_new = item.code not in known
                     if refresh and magnets_fetched and not is_new:
@@ -255,6 +295,8 @@ def crawl_code(cfg: dict, code: str, magnets: bool = True, stop_check=None) -> d
             if not movie.title:
                 continue  # shell/redirect page, try the next section
             movie.category = cat
+            for gname, gid in movie.genre_ids.items():
+                db.set_meta(conn, f"genre_id:{gname}", gid)
             if magnets:
                 sv = parse_movie_script_vars(html)
                 if sv.get("gid"):

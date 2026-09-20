@@ -37,6 +37,7 @@ class Movie:
     series: str = ""
     actors: list[str] = field(default_factory=list)
     genres: list[str] = field(default_factory=list)
+    genre_ids: dict[str, str] = field(default_factory=dict)  # name -> site genre slug/id
     samples: list[str] = field(default_factory=list)
     magnets: list[Magnet] = field(default_factory=list)
     matched_tags: list[str] = field(default_factory=list)  # tag-filter hits
@@ -123,11 +124,22 @@ def parse_detail(html: str, code: str, url: str) -> Movie:
         for a in soup.select(".avatar-box .star-name, a.star-name")
         if _clean(a.get_text())
     ]
-    movie.genres = [
-        _clean(g.get_text())
-        for g in soup.select("span.genre label")
-        if _clean(g.get_text())
-    ]
+    movie.genres = []
+    for a in soup.select("span.genre a[href]"):
+        label = a.select_one("label") or a
+        name = _clean(label.get_text())
+        m = re.search(r"/genre/([A-Za-z0-9_-]+)", a.get("href", ""))
+        if name and m:
+            movie.genres.append(name)
+            movie.genre_ids[name] = m.group(1)
+        elif name:
+            movie.genres.append(name)
+    if not movie.genres:  # older markup: plain labels without links
+        movie.genres = [
+            _clean(g.get_text())
+            for g in soup.select("span.genre label")
+            if _clean(g.get_text())
+        ]
     movie.samples = [
         a["href"] for a in soup.select("#sample-waterfall a.sample-box[href]")
     ]

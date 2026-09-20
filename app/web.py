@@ -542,6 +542,19 @@ def create_app() -> Flask:
         _invalidate_stats_cache()
         return jsonify({"ok": True, "deleted": deleted})
 
+    @app.get("/api/genres")
+    def known_genres():
+        """Genre names learned from crawled detail pages (for the GENRE picker)."""
+        conn = sqlite3.connect(settings.load()["DB_PATH"], timeout=10)
+        try:
+            rows = conn.execute(
+                "SELECT key, value FROM meta WHERE key LIKE 'genre_id:%'").fetchall()
+        finally:
+            conn.close()
+        items = sorted(({"name": k[10:], "id": v} for k, v in rows),
+                       key=lambda x: x["name"])
+        return jsonify({"items": items})
+
     # ---------------- 115 cloud ----------------
     @app.get("/api/p115/status")
     def p115_status():

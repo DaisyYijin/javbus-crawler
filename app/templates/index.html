@@ -414,6 +414,13 @@
               <button type="button" class="seg-btn active" data-cat="censored" onclick="toggleCat(this)">有码</button>
               <button type="button" class="seg-btn" data-cat="uncensored" onclick="toggleCat(this)">无码</button>
             </div></div>
+          <div class="field w6"><label>类别筛选（可选 · 精准采集指定类别） <small>GENRE · 留空采集全部类别</small></label>
+            <input id="c_GENRE" type="text" placeholder="如: 42 或 42,hd（留空采集全部）">
+            <div class="row" style="gap:6px;margin-top:8px;flex-wrap:wrap">
+              <span class="kv">已知类别：</span>
+              <span id="genre-chips" style="display:inline-flex;gap:6px;flex-wrap:wrap"></span>
+            </div>
+            <div class="hint">按「有码 / 无码 × 类别」组合采集（即站点导航的 有碼類別 / 無碼類別）。类别标识在影片详情页类别标签的链接中，采集时自动学习积累，点击标签即可添加 / 移除。</div></div>
         </div>
       </div>
 
@@ -685,7 +692,7 @@ async function saveConfig() {
   const body = {};
   ['BASE_URL','METATUBE_URL','METATUBE_TOKEN','DELAY_SECONDS','JITTER_SECONDS',
    'MAX_RETRIES','TIMEOUT','WEB_PORT','AUTO_CRAWL_INTERVAL_HOURS','AUTO_CRAWL_PAGES',
-   'TAG_FILTERS','P115_DOWNLOAD_DIR','P115_TARGET_DIR']
+   'TAG_FILTERS','P115_DOWNLOAD_DIR','P115_TARGET_DIR','GENRE']
     .forEach(k => { const el = $('c_' + k); if (el) body[k] = el.value; });
   body.CATEGORY = [...document.querySelectorAll('#cat-seg .seg-btn.active')].map(b => b.dataset.cat).join(',');
   const mb = document.querySelector('#mode-seg .seg-btn.active');
@@ -709,6 +716,26 @@ function addKeyword(kw) {
   el.value = kws.join(',');
   el.focus();
 }
+function addGenreVal(v) {
+  const el = $('c_GENRE');
+  const vals = el.value.split(',').map(s => s.trim()).filter(Boolean);
+  const i = vals.indexOf(v);
+  if (i >= 0) vals.splice(i, 1); else vals.push(v);
+  el.value = vals.join(',');
+}
+async function loadGenreChips() {
+  try {
+    const j = await (await fetch('/api/genres')).json();
+    const items = j.items || [];
+    $('genre-chips').innerHTML = items.length
+      ? items.map(x => `<span class="tag" style="cursor:pointer" data-genre="${esc(String(x.id))}" title="${esc(x.name)}（${esc(String(x.id))}）；点击添加 / 移除">${esc(x.name)}</span>`).join('')
+      : '<span class="hint" style="margin:0">暂无（采集后自动从详情页学习）</span>';
+  } catch (e) {}
+}
+$('genre-chips').addEventListener('click', e => {
+  const t = e.target.closest('[data-genre]');
+  if (t) addGenreVal(t.dataset.genre);
+});
 function setFilterMode(btn) {
   document.querySelectorAll('#mode-seg .seg-btn').forEach(b => b.classList.toggle('active', b === btn));
 }
@@ -1222,6 +1249,7 @@ function waitForRebirth(newImage) {
 
 window.addEventListener('load', loadConfig);
 window.addEventListener('load', loadFilterChips);
+window.addEventListener('load', loadGenreChips);
 window.addEventListener('load', () => checkUpdate(false));
 window.addEventListener('load', () => {
   try {

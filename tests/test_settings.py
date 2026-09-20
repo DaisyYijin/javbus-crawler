@@ -24,6 +24,14 @@ def test_category_invalid_rejected():
         settings.save({"CATEGORY": ""})
 
 
+def test_genre_validation():
+    assert settings.save({"GENRE": "42,hd"})["GENRE"] == "42,hd"
+    assert settings.save({"GENRE": " 42 , hd "})["GENRE"] == "42,hd"
+    assert settings.save({"GENRE": ""})["GENRE"] == ""
+    with pytest.raises(ValueError):
+        settings.save({"GENRE": "42,不良 id"})
+
+
 def test_tag_filter_mode_legacy_migration():
     assert settings.save({"TAG_FILTER_MODE": "all"})["TAG_FILTER_MODE"] == "mark"
     assert settings.save({"TAG_FILTER_MODE": "only"})["TAG_FILTER_MODE"] == "only"

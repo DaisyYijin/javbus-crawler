@@ -72,6 +72,18 @@ def test_parse_magnets_dedupes_by_hash_and_reads_columns():
     assert mags[0].date == "2024-01-01"
 
 
+def test_parse_detail_genre_links_learned():
+    html = """
+    <html><body><div class="container"><h3>标题</h3></div>
+    <span class="genre"><a href="https://x/genre/42"><label>巨乳</label></a></span>
+    <span class="genre"><a href="https://x/uncensored/genre/hd"><label>高清</label></a></span>
+    <span class="genre"><a href="https://x/other"><label>无ID类别</label></a></span>
+    </body></html>"""
+    mv = parser.parse_detail(html, "X-1", "https://x/X-1")
+    assert mv.genres == ["巨乳", "高清", "无ID类别"]
+    assert mv.genre_ids == {"巨乳": "42", "高清": "hd"}
+
+
 def test_magnet_hash_uppercases():
     assert parser.magnet_hash("magnet:?xt=urn:btih:AbCd1234&dn=x") == "ABCD1234"
     assert parser.magnet_hash("not a magnet link") is None
