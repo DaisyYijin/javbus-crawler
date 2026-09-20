@@ -147,10 +147,11 @@ def logout() -> None:
 _user_cache: dict | None = None
 _user_cache_at: float = 0.0
 _USER_CACHE_TTL = 300  # seconds; usage numbers go stale as tasks download
+_user_diag_logged = False
 
 
 def status() -> dict:
-    global _user_cache, _user_cache_at
+    global _user_cache, _user_cache_at, _user_diag_logged
     if not HAS_P115:
         return {"available": False, "logged_in": False}
     if _user_cache is not None and time.time() - _user_cache_at < _USER_CACHE_TTL:
@@ -161,16 +162,30 @@ def status() -> dict:
     try:
         data = check_response(c.user_info(timeout=_TIMEOUT))["data"]
         auth = _load_auth() or {}
-        space = data.get("space_info") or {}
+        if not _user_diag_logged:
+            _user_diag_logged = True
+            try:
+                log.info("115 user_info 字段: %s", ",".join(sorted(data.keys()))[:300])
+            except Exception:
+                pass
+        # capacity lives in files/index_info, not user_info
+        total = used = 0
+        try:
+            si = check_response(c.fs_index_info(timeout=_TIMEOUT)).get("data") or {}
+            space = si.get("space_info") or {}
+            total = int(space.get("total_size") or 0)
+            used = int(space.get("use_size") or space.get("used_size") or 0)
+        except Exception as exc:
+            log.warning("115 容量信息获取失败: %s", exc)
         _user_cache = {
             "available": True, "logged_in": True,
             "user": data.get("user_name"),
             "user_id": str(data.get("user_id", "")),
             "device": auth.get("app", ""),
-            "icon": (data.get("user_pic") or data.get("icon") or ""),
-            "total_size": int(space.get("total_size") or data.get("total_size") or 0),
-            "used_size": int(space.get("use_size") or space.get("used_size")
-                              or data.get("use_size") or 0),
+            "icon": (data.get("user_pic") or data.get("icon")
+                     or data.get("head_img_url") or ""),
+            "total_size": total,
+            "used_size": used,
             "vip_end": int(data.get("vip_end_time") or 0),
         }
         _user_cache_at = time.time()
