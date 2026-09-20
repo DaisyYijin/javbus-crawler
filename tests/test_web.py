@@ -33,6 +33,7 @@ def client(tmp_path, monkeypatch):
     monkeypatch.setattr(web, "ADMIN_PASSWORD", "test-pass", raising=False)
     web._stats_cache["ts"] = None  # never serve a previous test's cache
     web._chips_cache["ts"] = None
+    web._login_clear("127.0.0.1")  # brute-force guard state from prior tests
 
     app = web.create_app()
     app.config["TESTING"] = True
@@ -135,8 +136,46 @@ def test_p115_endpoints_unauthenticated(client):
     r = client.get("/api/p115/dirs")
     assert r.status_code == 400
     assert "未登录" in r.get_json()["error"]
+    assert client.post("/api/p115/tasks/del", json={"hashes": ["ABC"]}).status_code == 400
     assert client.post("/api/p115/magnet", json={"code": "TEST-001"}).status_code == 400
     assert client.get("/api/p115/tasks").status_code == 400
+
+
+def test_login_bruteforce_lockout(tmp_path, monkeypatch):
+    dbp = str(tmp_path / "t.db")
+    conn = appdb.connect(dbp)
+    conn.close()
+    with open(settings.CONFIG_PATH, "w", encoding="utf-8") as fh:
+        json.dump({"DB_PATH": dbp}, fh)
+    monkeypatch.setattr(web, "ADMIN_USER", "admin", raising=False)
+    monkeypatch.setattr(web, "ADMIN_PASSWORD", "test-pass", raising=False)
+    web._login_clear("127.0.0.1")
+    app = web.create_app()
+    app.config["TESTING"] = True
+    try:
+        with app.test_client() as c:
+            for _ in range(web._LOGIN_MAX_FAILS):
+                r = c.post("/api/login", json={"user": "admin", "password": "wrong"})
+                assert r.status_code == 401
+            # locked: even the right password is rejected with 429
+            r = c.post("/api/login", json={"user": "admin", "password": "test-pass"})
+            assert r.status_code == 429
+            assert "锁定" in r.get_json()["error"]
+    finally:
+        web._login_clear("127.0.0.1")
+
+
+def test_config_token_masked(client):
+    settings.save({"METATUBE_TOKEN": "secret-token-123"})
+    j = client.get("/api/config").get_json()
+    assert j["config"]["METATUBE_TOKEN"] == "••••"
+    # saving the sentinel back must keep the stored token (key is omitted
+    # by the frontend; the server treats missing key as unchanged)
+    r = client.post("/api/config", json={"METATUBE_URL": "http://x:8080"})
+    assert r.get_json()["ok"] is True
+    assert settings.load()["METATUBE_TOKEN"] == "secret-token-123"
+    settings.save({"METATUBE_TOKEN": ""})  # explicit clear still works
+    assert settings.load()["METATUBE_TOKEN"] == ""
     assert len(client.get("/api/p115/devices").get_json()["devices"]) > 0
     assert client.get("/api/p115/qr.svg").status_code == 404  # no active QR
 

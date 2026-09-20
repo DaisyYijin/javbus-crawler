@@ -66,7 +66,10 @@ _ILLEGAL_FS = re.compile(r'[\\/:*?"<>|\r\n\t]')
 _client = None
 _client_lock = threading.Lock()
 _user_cache: dict | None = None
-_dir_cid: dict[str, int] = {}
+# path -> (cid, cached_at); entries expire so renames/deletes made in the
+# 115 app are picked up without a container restart
+_dir_cid: dict[str, tuple[int, float]] = {}
+_DIR_TTL = 10 * 60
 _qr: dict = {}
 _TIMEOUT = 10  # seconds, applied to every 115 network call
 _QR_TIMEOUT = 5  # QR endpoints: break tarpits faster to free the thread sooner
@@ -263,6 +266,26 @@ def _map_task_status(raw) -> str:
         return "未知"
 
 
+def del_tasks(info_hashes: list[str]) -> int:
+    """Remove offline-task records from the 115 list (files are kept)."""
+    c = get_client()
+    if not c:
+        raise RuntimeError("115 未登录")
+    hashes = [h.strip().upper() for h in info_hashes if h and h.strip()]
+    if not hashes:
+        return 0
+    deleted = 0
+    # batch in groups of 20 to keep the form payload modest
+    for i in range(0, len(hashes), 20):
+        batch = hashes[i:i + 20]
+        try:
+            check_response(c.clouddownload_task_del(batch, timeout=_TIMEOUT))
+            deleted += len(batch)
+        except Exception as exc:
+            log.warning("115 删除任务记录失败 %s…: %s", batch[0], exc)
+    return deleted
+
+
 # ------------------------------------------------------------ organize ----
 _AD_EXTS = {".url", ".txt", ".htm", ".html", ".lnk", ".exe", ".apk", ".bat", ".cmd"}
 _AD_PAT = re.compile(
@@ -334,19 +357,21 @@ def _split_path(path: str) -> list[str]:
 def resolve_dir(c, name: str) -> int:
     """Resolve a 115 directory by path ("一级/二级"), creating missing levels.
 
-    Results are cached per path; use reset_dir_cache() after renames.
+    Results are cached per path (with a TTL — see _DIR_TTL); use
+    reset_dir_cache() to force a refresh.
     """
     parts = _split_path(name) or ["未命名"]
     key = "/".join(parts)
-    if key in _dir_cid:
-        return _dir_cid[key]
+    hit = _dir_cid.get(key)
+    if hit and time.time() - hit[1] < _DIR_TTL:
+        return hit[0]
     cid = 0
     for part in parts:
         nxt = _find_dir(c, part, cid)
         if nxt is None:
             nxt = int(check_response(c.fs_mkdir(part, pid=cid, timeout=_TIMEOUT))["file_id"])
         cid = nxt
-    _dir_cid[key] = cid
+    _dir_cid[key] = (cid, time.time())
     return cid
 
 

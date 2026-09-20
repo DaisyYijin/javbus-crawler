@@ -10,6 +10,25 @@ def test_load_defaults():
     assert cfg["TAG_FILTER_MODE"] in ("mark", "only")
     assert cfg["DELAY_SECONDS"] >= 0
     assert "USER_AGENT" not in cfg  # removed in v0.9.16; UA lives in fetcher now
+    assert cfg["P115_REJECT_DIR"] == "冗余"
+
+
+def test_load_cache_returns_copies_and_sees_external_writes():
+    settings.save({"DELAY_SECONDS": 0.3})  # make sure the file exists on disk
+    a = settings.load()
+    a["DELAY_SECONDS"] = 99  # caller mutation must not poison the cache
+    assert settings.load()["DELAY_SECONDS"] != 99
+    # an external write to the file invalidates the cache via mtime change
+    import json as _json
+    import time as _time
+
+    with open(settings.CONFIG_PATH, "r", encoding="utf-8") as fh:
+        stored = _json.load(fh)
+    stored["DELAY_SECONDS"] = 1.5
+    _time.sleep(0.02)  # ensure a distinguishable mtime
+    with open(settings.CONFIG_PATH, "w", encoding="utf-8") as fh:
+        _json.dump(stored, fh)
+    assert settings.load()["DELAY_SECONDS"] == 1.5
 
 
 def test_category_multi_select():

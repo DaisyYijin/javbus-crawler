@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import os
 import threading
+import time
 
 DATADIR = os.getenv("JC_DATADIR") or ("/data" if os.path.isdir("/data") else "data")
 CONFIG_PATH = os.path.join(DATADIR, "config.json")
@@ -64,11 +65,37 @@ _TYPES = {
     "P115_AUTO_ORGANIZE": bool,
 }
 
-_lock = threading.Lock()
+_lock = threading.RLock()  # reentrant: save() holds it and calls load()
+_cache: dict = {"ts": 0.0, "mtime": None, "cfg": None}
+_CACHE_TTL = 5.0  # seconds; every API request re-reading the JSON file adds up
+
+
+def _config_mtime() -> float | None:
+    try:
+        return os.path.getmtime(CONFIG_PATH)
+    except OSError:
+        return None
 
 
 def load() -> dict:
-    """Load config merged over defaults; create the file on first run."""
+    """Load config merged over defaults; create the file on first run.
+
+    Serves from a short-lived in-process cache (web endpoints call this per
+    request). The cache also drops when the file's mtime changes, so external
+    writes (tests, editors) are picked up immediately. Returns a fresh copy
+    each time so callers may mutate freely.
+    """
+    with _lock:
+        mtime = _config_mtime()
+        if (_cache["cfg"] is not None and _cache["mtime"] == mtime
+                and time.monotonic() - _cache["ts"] < _CACHE_TTL):
+            return dict(_cache["cfg"])
+        cfg = _read_config_file()
+        _cache.update(ts=time.monotonic(), cfg=cfg, mtime=mtime)
+        return dict(cfg)
+
+
+def _read_config_file() -> dict:
     cfg = dict(DEFAULTS)
     os.makedirs(DATADIR, exist_ok=True)
     if os.path.exists(CONFIG_PATH):
@@ -135,4 +162,6 @@ def save(partial: dict) -> dict:
         with open(tmp, "w", encoding="utf-8") as fh:
             json.dump(cfg, fh, ensure_ascii=False, indent=2)
         os.replace(tmp, CONFIG_PATH)
+        with _lock:
+            _cache.update(ts=time.monotonic(), cfg=cfg, mtime=_config_mtime())
     return cfg

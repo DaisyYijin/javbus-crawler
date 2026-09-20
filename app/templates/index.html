@@ -475,7 +475,7 @@
         <div class="form-grid">
           <div class="field w3"><label>服务地址与 Token <small>METATUBE_URL / METATUBE_TOKEN</small></label>
             <input id="c_METATUBE_URL" type="text" placeholder="http://192.168.1.10:8080">
-            <input id="c_METATUBE_TOKEN" type="password" placeholder="Token（服务开启鉴权才需要填）" style="margin-top:8px">
+            <input id="c_METATUBE_TOKEN" type="password" placeholder="Token（服务开启鉴权才需要填）" title="已设置时显示 ••••，保持不动即可沿用；清空并保存 = 删除 Token" style="margin-top:8px">
             <div class="hint">填写后影片详情出现「Metatube 查询」按钮；留空隐藏。Token 仅服务开鉴权时需要。</div></div>
         </div>
       </div>
@@ -575,14 +575,20 @@
         <h2>离线任务</h2>
         <div class="row" style="margin-bottom:12px">
           <button class="ghost" onclick="load115Tasks()">刷新</button>
+          <button class="ghost" onclick="clear115DoneTasks()">清理已完成记录</button>
           <button class="primary" onclick="organizeNow()">立即整理</button>
           <span id="p115-task-msg" class="msg"></span>
         </div>
         <div class="table-wrap">
         <table>
-          <thead><tr><th>名称</th><th style="width:90px">状态</th><th style="width:110px">进度</th><th style="width:100px">大小</th></tr></thead>
+          <thead><tr><th>名称</th><th style="width:90px">状态</th><th style="width:110px">进度</th><th style="width:100px">大小</th><th style="width:70px">操作</th></tr></thead>
           <tbody id="p115-task-rows"></tbody>
         </table>
+        </div>
+        <div class="row" style="margin-top:10px;justify-content:center;gap:10px">
+          <button class="ghost" id="p115-task-prev" onclick="p115TaskPrev()">← 上一页</button>
+          <span class="kv" id="p115-task-pager">第 1 / 1 页</span>
+          <button class="ghost" id="p115-task-next" onclick="p115TaskNext()">下一页 →</button>
         </div>
       </div>
       </div>
@@ -801,6 +807,9 @@ async function saveConfig() {
   if (p115cb) body.P115_AUTO_ORGANIZE = p115cb.checked;
   const cb = $('c_AUTO_CRAWL_ENABLED');
   if (cb) body.AUTO_CRAWL_ENABLED = cb.checked;
+  // the masked token sentinel must never be sent back: drop the key so the
+  // server keeps the stored value (empty string still clears it on purpose)
+  if (body.METATUBE_TOKEN === '••••') delete body.METATUBE_TOKEN;
   const j = await (await fetch('/api/config', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body)})).json();
   // success is confirmed by the transient toast only; the inline slot next to
   // the test-connection button must not carry a lingering "saved" state
@@ -918,7 +927,8 @@ async function testTabConnection() {
   if (!url) { toast(isSite ? '请先填写站点地址' : '请先填写 MetaTube 服务地址', 'err'); return; }
   btn.disabled = true; btn.textContent = '测试中…';
   try {
-    const body = isSite ? {url} : {url, token: $('c_METATUBE_TOKEN').value.trim()};
+    const tok = $('c_METATUBE_TOKEN').value.trim();
+    const body = isSite ? {url} : {url, token: tok === '••••' ? '' : tok};
     const ep = isSite ? '/api/site/test' : '/api/metatube/test';
     const j = await (await fetch(ep, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body)})).json();
     if (j.ok) toast('✓ ' + (j.message || '连接成功'), 'ok');
@@ -1345,18 +1355,57 @@ async function p115Logout() {
   load115Status();
 }
 function fmtSize(n) { n = Number(n) || 0; const u = ['B','KB','MB','GB','TB']; let i = 0; while (n >= 1024 && i < 4) { n /= 1024; i++; } return (n >= 100 || i === 0 ? n.toFixed(0) : n.toFixed(1)) + u[i]; }
-async function load115Tasks() {
+const P115_TASK_SIZE = 20;
+let p115TaskPage = 1, p115TaskTotal = 0;
+async function load115Tasks(page) {
+  if (typeof page === 'number') p115TaskPage = Math.max(1, page);
   try {
-    const r = await fetch('/api/p115/tasks');
-    if (r.status === 400) { $('p115-task-rows').innerHTML = '<tr><td colspan="4" style="color:var(--mut);text-align:center;padding:30px">未登录</td></tr>'; return; }
+    const r = await fetch('/api/p115/tasks?page=' + p115TaskPage + '&size=' + P115_TASK_SIZE);
+    if (r.status === 400) { $('p115-task-rows').innerHTML = '<tr><td colspan="5" style="color:var(--mut);text-align:center;padding:30px">未登录</td></tr>'; return; }
     const j = await r.json();
     if (!j.ok) { $('p115-task-msg').textContent = j.error || ''; return; }
-    $('p115-task-msg').textContent = '共 ' + (j.total ?? (j.items || []).length) + ' 个任务';
+    p115TaskTotal = j.total ?? (j.items || []).length;
+    const pages = Math.max(1, Math.ceil(p115TaskTotal / P115_TASK_SIZE));
+    if (p115TaskPage > pages) { p115TaskPage = pages; return load115Tasks(); }
+    $('p115-task-msg').textContent = '共 ' + p115TaskTotal + ' 个任务';
     $('p115-task-rows').innerHTML = (j.items || []).map(t => `
       <tr><td class="mag">${esc(t.name)}</td><td>${esc(t.status)}</td>
-      <td>${t.status === '已完成' ? '100%' : (t.percent ?? 0) + '%'}</td><td>${fmtSize(t.size)}</td></tr>`).join('')
-      || '<tr><td colspan="4" style="color:var(--mut);text-align:center;padding:30px">暂无离线任务</td></tr>';
+      <td>${t.status === '已完成' ? '100%' : (t.percent ?? 0) + '%'}</td><td>${fmtSize(t.size)}</td>
+      <td>${t.info_hash ? `<button class="ghost" style="padding:3px 10px;font-size:12px" onclick="del115Task('${t.info_hash}', this.dataset.n)" data-n="${esc(t.name)}">删除</button>` : '-'}</td></tr>`).join('')
+      || '<tr><td colspan="5" style="color:var(--mut);text-align:center;padding:30px">暂无离线任务</td></tr>';
+    $('p115-task-pager').textContent = `第 ${p115TaskPage} / ${pages} 页`;
+    $('p115-task-prev').disabled = p115TaskPage <= 1;
+    $('p115-task-next').disabled = p115TaskPage >= pages;
   } catch (e) {}
+}
+function p115TaskPrev() { if (p115TaskPage > 1) load115Tasks(p115TaskPage - 1); }
+function p115TaskNext() { load115Tasks(p115TaskPage + 1); }
+async function del115Task(hash, name) {
+  if (!confirm('删除任务记录「' + (name || '') + '」？\n只移除列表记录，不删除网盘文件。')) return;
+  try {
+    const j = await (await fetch('/api/p115/tasks/del', {method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({hashes: [hash]})})).json();
+    if (j.ok) { toast('✓ 已删除记录', 'ok'); load115Tasks(); }
+    else toast('✗ ' + (j.error || '删除失败'), 'err');
+  } catch (e) { toast('✗ ' + e.message, 'err'); }
+}
+async function clear115DoneTasks() {
+  if (!confirm('清理全部「已完成」任务的记录？\n只移除列表记录，不删除网盘文件。')) return;
+  toast('正在收集已完成任务…');
+  try {
+    const hashes = [];
+    for (let page = 1; page <= 50; page++) {
+      const j = await (await fetch('/api/p115/tasks?page=' + page + '&size=100')).json();
+      if (!j.ok) break;
+      (j.items || []).forEach(t => { if (t.status === '已完成' && t.info_hash) hashes.push(t.info_hash); });
+      if (page * 100 >= (j.total || 0)) break;
+    }
+    if (!hashes.length) { toast('没有已完成任务可清理', 'err'); return; }
+    const j = await (await fetch('/api/p115/tasks/del', {method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({hashes})})).json();
+    if (j.ok) { toast(`✓ 已清理 ${j.deleted} 条记录`, 'ok'); load115Tasks(1); }
+    else toast('✗ ' + (j.error || '清理失败'), 'err');
+  } catch (e) { toast('✗ ' + e.message, 'err'); }
 }
 async function organizeNow() {
   if (!p115LoggedIn) { toast('115 未登录，请先到「账号登录」页扫码', 'err'); return; }

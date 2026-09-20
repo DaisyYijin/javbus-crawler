@@ -121,21 +121,25 @@ def upsert_movie(conn: sqlite3.Connection, movie: Movie) -> None:
 
 
 def insert_magnets(conn: sqlite3.Connection, magnets: list[Magnet], code: str) -> int:
+    """Insert new magnet rows, refreshing existing ones. Returns the count of
+    genuinely NEW hashes (updates don't inflate the per-run stats)."""
     n = 0
     for m in magnets:
         h = magnet_hash(m.link)
         if not h:
             continue
         cur = conn.execute(
-            """
-            INSERT INTO magnets (hash, code, name, size, date, link)
-            VALUES (?, ?, ?, ?, ?, ?)
-            ON CONFLICT(hash) DO UPDATE SET
-                name=excluded.name, size=excluded.size, date=excluded.date
-            """,
+            "INSERT OR IGNORE INTO magnets (hash, code, name, size, date, link) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
             (h, code, m.name, m.size, m.date, m.link),
         )
-        n += cur.rowcount if cur.rowcount > 0 else 0
+        if cur.rowcount:
+            n += 1
+        else:
+            conn.execute(
+                "UPDATE magnets SET name = ?, size = ?, date = ? WHERE hash = ?",
+                (m.name, m.size, m.date, h),
+            )
     return n
 
 

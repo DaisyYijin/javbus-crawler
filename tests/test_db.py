@@ -54,6 +54,23 @@ def test_magnet_delete_sync(tmp_path):
     conn.close()
 
 
+def test_insert_magnets_counts_only_new(tmp_path):
+    conn = make_conn(tmp_path)
+    seed(conn)
+    # re-inserting the same magnet must count 0 new but still refresh fields
+    m = Magnet(link="magnet:?xt=urn:btih:AAAA1111BBBB", name="4k rip v2",
+               size="6GB", date="2024-02-02")
+    assert db.insert_magnets(conn, [m], "TEST-001") == 0
+    row = conn.execute("SELECT name, size FROM magnets WHERE hash = "
+                       "'AAAA1111BBBB'").fetchone()
+    assert row == ("4k rip v2", "6GB")
+    m2 = Magnet(link="magnet:?xt=urn:btih:CCCC3333DDDD", name="1080p",
+                size="3GB", date="2024-03-03")
+    assert db.insert_magnets(conn, [m2], "TEST-001") == 1
+    conn.commit()
+    conn.close()
+
+
 def test_list_movies_categories_and_q(tmp_path):
     conn = make_conn(tmp_path)
     seed(conn)

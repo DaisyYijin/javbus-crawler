@@ -90,6 +90,44 @@ def _admin_password() -> str:
 
 _logs: deque[str] = deque(maxlen=1000)
 
+# ---- login brute-force guard ---------------------------------------------
+# per-IP sliding window of failed attempts; N failures within the window
+# locks that IP out for the rest of the window
+_LOGIN_FAILS: dict[str, deque[float]] = {}
+_LOGIN_FAILS_LOCK = threading.Lock()
+_LOGIN_WINDOW = 15 * 60
+_LOGIN_MAX_FAILS = 5
+
+
+def _login_locked_remaining(ip: str) -> int:
+    """Seconds until the IP may retry; 0 when not locked."""
+    with _LOGIN_FAILS_LOCK:
+        dq = _LOGIN_FAILS.get(ip)
+        if not dq:
+            return 0
+        now = time.time()
+        while dq and now - dq[0] > _LOGIN_WINDOW:
+            dq.popleft()
+        if dq and len(dq) >= _LOGIN_MAX_FAILS:
+            return max(1, int(dq[0] + _LOGIN_WINDOW - now))
+        return 0
+
+
+def _login_record_fail(ip: str) -> None:
+    with _LOGIN_FAILS_LOCK:
+        _LOGIN_FAILS.setdefault(ip, deque()).append(time.time())
+        # keep the map bounded (long-gone clients)
+        if len(_LOGIN_FAILS) > 1000:
+            cutoff = time.time() - _LOGIN_WINDOW
+            for k in [k for k, v in _LOGIN_FAILS.items()
+                      if not v or v[-1] < cutoff]:
+                _LOGIN_FAILS.pop(k, None)
+
+
+def _login_clear(ip: str) -> None:
+    with _LOGIN_FAILS_LOCK:
+        _LOGIN_FAILS.pop(ip, None)
+
 # Cheap TTL cache for /api/stats (its top_genres aggregation scans the whole
 # movies table). Invalidated when a crawl finishes or data is cleared/deleted.
 _stats_cache: dict = {"key": None, "ts": None, "data": None}
@@ -185,12 +223,20 @@ def create_app() -> Flask:
         body = request.get_json(silent=True) or {}
         user = str(body.get("user", ""))
         password = str(body.get("password", ""))
+        ip = request.remote_addr or "?"
+        remaining = _login_locked_remaining(ip)
+        if remaining:
+            time.sleep(0.5)
+            return jsonify({"ok": False,
+                            "error": f"失败次数过多，已锁定，请约 {max(1, remaining // 60)} 分钟后再试"}), 429
         ok = (hmac.compare_digest(user.encode("utf-8"), ADMIN_USER.encode("utf-8"))
               and hmac.compare_digest(password.encode("utf-8"),
                                       _admin_password().encode("utf-8")))
         if not ok:
+            _login_record_fail(ip)
             time.sleep(0.8)  # crude brute-force delay
             return jsonify({"ok": False, "error": "用户名或密码错误"}), 401
+        _login_clear(ip)
         token = secrets.token_urlsafe(32)
         with _tokens_lock:
             _tokens[token] = time.time() + _SESSION_TTL
@@ -223,7 +269,13 @@ def create_app() -> Flask:
     # ---------------- config ----------------
     @app.get("/api/config")
     def get_config():
-        return jsonify({"config": settings.load()})
+        cfg = settings.load()
+        # secret never echoes back to the browser; the sentinel tells the UI
+        # a token exists while "empty" still means "cleared"
+        if cfg.get("METATUBE_TOKEN"):
+            cfg = dict(cfg)
+            cfg["METATUBE_TOKEN"] = "••••"
+        return jsonify({"config": cfg})
 
     @app.post("/api/config")
     def post_config():
@@ -688,6 +740,23 @@ def create_app() -> Flask:
             return jsonify({"ok": True, **p115.list_tasks(page, size)})
         except Exception as exc:
             return jsonify({"ok": False, "error": f"获取任务失败: {exc}"}), 502
+
+    @app.post("/api/p115/tasks/del")
+    def p115_tasks_del():
+        """Remove offline-task records (files on the drive are untouched)."""
+        if not p115.HAS_P115:
+            return jsonify({"ok": False, "error": "p115client 未安装"}), 503
+        if not p115.has_auth():
+            return jsonify({"ok": False, "error": "115 未登录"}), 400
+        body = request.get_json(silent=True) or {}
+        hashes = [h for h in body.get("hashes") or [] if isinstance(h, str) and h.strip()]
+        if not hashes:
+            return jsonify({"ok": False, "error": "未提供任务"}), 400
+        try:
+            n = p115.del_tasks(hashes)
+        except Exception as exc:
+            return jsonify({"ok": False, "error": f"删除任务记录失败: {exc}"}), 502
+        return jsonify({"ok": True, "deleted": n})
 
     @app.post("/api/p115/mkdir")
     def p115_mkdir():
