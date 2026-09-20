@@ -65,7 +65,6 @@ _ILLEGAL_FS = re.compile(r'[\\/:*?"<>|\r\n\t]')
 
 _client = None
 _client_lock = threading.Lock()
-_user_cache: dict | None = None
 # path -> (cid, cached_at); entries expire so renames/deletes made in the
 # 115 app are picked up without a container restart
 _dir_cid: dict[str, tuple[int, float]] = {}
@@ -140,11 +139,16 @@ def logout() -> None:
         pass
 
 
+_user_cache: dict | None = None
+_user_cache_at: float = 0.0
+_USER_CACHE_TTL = 300  # seconds; usage numbers go stale as tasks download
+
+
 def status() -> dict:
-    global _user_cache
+    global _user_cache, _user_cache_at
     if not HAS_P115:
         return {"available": False, "logged_in": False}
-    if _user_cache is not None:
+    if _user_cache is not None and time.time() - _user_cache_at < _USER_CACHE_TTL:
         return _user_cache
     c = get_client()
     if not c:
@@ -152,10 +156,19 @@ def status() -> dict:
     try:
         data = check_response(c.user_info(timeout=_TIMEOUT))["data"]
         auth = _load_auth() or {}
-        _user_cache = {"available": True, "logged_in": True,
-                       "user": data.get("user_name"),
-                       "user_id": str(data.get("user_id", "")),
-                       "device": auth.get("app", "")}
+        space = data.get("space_info") or {}
+        _user_cache = {
+            "available": True, "logged_in": True,
+            "user": data.get("user_name"),
+            "user_id": str(data.get("user_id", "")),
+            "device": auth.get("app", ""),
+            "icon": (data.get("user_pic") or data.get("icon") or ""),
+            "total_size": int(space.get("total_size") or data.get("total_size") or 0),
+            "used_size": int(space.get("use_size") or space.get("used_size")
+                              or data.get("use_size") or 0),
+            "vip_end": int(data.get("vip_end_time") or 0),
+        }
+        _user_cache_at = time.time()
         return _user_cache
     except Exception as exc:
         log.warning("115 用户信息获取失败: %s", exc)

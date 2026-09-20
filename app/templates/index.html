@@ -229,6 +229,18 @@
   .pv-meta { color: var(--mut); white-space: nowrap; }
   .pv-empty { color: var(--mut); font-size: 13px; margin-top: 12px; }
 
+  /* 115 account card */
+  .p115-user-card { display: flex; align-items: center; gap: 14px; padding: 12px 14px;
+    background: #fafbfd; border: 1px solid var(--line); border-radius: 10px; flex-wrap: wrap; }
+  .p115-user-card img#p115-avatar { width: 46px; height: 46px; border-radius: 50%;
+    object-fit: cover; border: 1px solid var(--line); flex: none; }
+  .p115-user-info { display: flex; flex-direction: column; gap: 7px; min-width: 260px; }
+  .p115-user-info b { font-size: 14.5px; }
+  .p115-space { display: flex; align-items: center; gap: 10px; }
+  .p115-space-bar { width: 180px; height: 8px; border-radius: 5px; background: #e8ebf1; overflow: hidden; flex: none; }
+  .p115-space-bar i { display: block; height: 100%; background: var(--pri); border-radius: 5px; }
+  .p115-space-bar i.hot { background: var(--err); }
+
   .banner { display: none; padding: 13px 16px; border-radius: var(--radius); margin-bottom: 16px; font-size: 14px; background: #fff8e6; border: 1px solid #f0d48a; }
   #upd-notes { display: none; margin-top: 10px; white-space: pre-wrap; font-size: 13px; }
 
@@ -616,10 +628,20 @@
           <div class="hint" id="p115-qr-state" style="margin-top:8px">等待扫码…</div>
           <div class="hint" id="p115-qr-ttl" style="margin-top:2px"></div>
         </div>
-        <div id="p115-user-box" style="display:none" class="row">
-          <span class="kv">已登录：<b id="p115-user"></b></span>
-          <span class="kv">设备：<b id="p115-device-cur"></b></span>
-          <button class="danger" onclick="p115Logout()">退出 115 登录</button>
+        <div id="p115-user-box" style="display:none" class="p115-user-card">
+          <img id="p115-avatar" alt="" style="display:none" onerror="this.style.display='none'">
+          <div class="p115-user-info">
+            <div class="row" style="gap:8px;flex-wrap:nowrap;align-items:baseline">
+              <b id="p115-user"></b>
+              <span class="pill" id="p115-vip" style="display:none"></span>
+              <span class="kv">设备：<b id="p115-device-cur"></b></span>
+            </div>
+            <div class="p115-space" id="p115-space" style="display:none">
+              <div class="p115-space-bar"><i id="p115-space-fill"></i></div>
+              <span class="hint" id="p115-space-text" style="margin:0"></span>
+            </div>
+          </div>
+          <button class="danger" onclick="p115Logout()" style="margin-left:auto">退出 115 登录</button>
         </div>
       </div>
       </div>
@@ -1425,6 +1447,25 @@ async function load115Status() {
       $('p115-user-box').style.display = '';
       $('p115-user').textContent = j.user || j.user_id;
       $('p115-device-cur').textContent = j.device || '-';
+      const av = $('p115-avatar');
+      if (j.icon) { av.src = j.icon; av.style.display = ''; } else av.style.display = 'none';
+      const vip = $('p115-vip');
+      if (j.vip_end) {
+        const left = j.vip_end * 1000 - Date.now();
+        const d = new Date(j.vip_end * 1000).toLocaleDateString();
+        vip.textContent = left > 0 ? `VIP ${d} 到期` : `VIP 已过期（${d}）`;
+        vip.className = 'pill' + (left > 0 ? ' run' : ' err');
+        vip.style.display = '';
+      } else vip.style.display = 'none';
+      const sp = $('p115-space');
+      if (j.total_size) {
+        const pct = Math.min(100, j.used_size / j.total_size * 100);
+        const fill = $('p115-space-fill');
+        fill.style.width = pct.toFixed(1) + '%';
+        fill.className = pct > 90 ? 'hot' : '';
+        $('p115-space-text').textContent = `${fmtSize(j.used_size)} / ${fmtSize(j.total_size)}（${pct.toFixed(1)}%）`;
+        sp.style.display = '';
+      } else sp.style.display = 'none';
       load115Tasks();
     } else {
       $('p115-login-box').style.display = ''; $('p115-user-box').style.display = 'none';
