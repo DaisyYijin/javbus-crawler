@@ -41,3 +41,18 @@ def test_auth_roundtrip():
     assert p115.has_auth() is True
     p115.logout()
     assert p115.has_auth() is False
+
+
+def test_import_with_broken_home():
+    """Regression: container runs as nobody (HOME=/nonexistent); importing
+    app.p115 must not crash when the home dir cannot host the cache."""
+    import os
+    import subprocess
+    import sys
+
+    env = dict(os.environ)
+    env["HOME"] = "/nonexistent"
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    r = subprocess.run([sys.executable, "-c", "import app.p115; print('OK')"],
+                       cwd=root, env=env, capture_output=True, text=True)
+    assert r.returncode == 0 and "OK" in r.stdout, r.stderr

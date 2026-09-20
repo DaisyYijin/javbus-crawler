@@ -18,6 +18,20 @@ from . import settings
 
 log = logging.getLogger("seedmm.p115")
 
+
+def _ensure_p115_cache_home() -> None:
+    """p115client creates ~/.p115client.cache.d at import time; when the real
+    home cannot host it (container user nobody -> HOME=/nonexistent), point
+    HOME at our writable data dir before the import happens."""
+    cache = os.path.join(os.path.expanduser("~"), ".p115client.cache.d")
+    try:
+        os.makedirs(cache, exist_ok=True)
+    except OSError:
+        os.environ["HOME"] = settings.DATADIR
+
+
+_ensure_p115_cache_home()
+
 try:
     from p115client import P115Client, check_response
     HAS_P115 = True

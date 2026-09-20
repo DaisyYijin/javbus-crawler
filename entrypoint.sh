@@ -17,6 +17,10 @@ if [ "$(id -u)" = "0" ]; then
             RUN_USER="nobody:$SOCK_GID"
         fi
     fi
+    # nobody's HOME (/nonexistent) cannot host the p115client import-time
+    # cache dir (~/.p115client.cache.d) — give the process a writable HOME.
+    HOME=/data
+    export HOME
     exec gosu "$RUN_USER" "$@"
 fi
 
