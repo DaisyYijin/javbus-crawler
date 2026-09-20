@@ -370,21 +370,32 @@ def list_dirs(cid: int = 0) -> list[dict]:
     return out
 
 
+def mkdir_dir(cid: int, name: str) -> int:
+    """Create a sub-directory inside the given 115 folder (for the picker)."""
+    c = get_client()
+    if not c:
+        raise RuntimeError("115 未登录")
+    name = _sanitize_name(name) or "新建文件夹"
+    return int(check_response(c.fs_mkdir(name, pid=cid, timeout=_TIMEOUT))["file_id"])
+
+
 def reset_dir_cache() -> None:
     _dir_cid.clear()
 
 
-def organize_pass(max_pages: int = 5) -> int:
+def organize_pass(max_pages: int = 5) -> dict:
     """Rename completed tasks (code + title) and move them to the target dir.
 
     Tasks are matched back to movies via the magnet info_hash stored in our
     own database; already-organized hashes are remembered in the meta table.
+    Returns counters and stores them as the last result in the meta table.
     """
     c = get_client()
+    stats = {"at": int(time.time()), "scanned": 0, "organized": 0,
+             "ads": 0, "rejected": 0}
     if not c:
-        return 0
+        return stats
     conn = sqlite3.connect(settings.load()["DB_PATH"], timeout=30)
-    organized = 0
     try:
         tasks: list[dict] = []
         for page in range(1, max_pages + 1):
@@ -400,14 +411,17 @@ def organize_pass(max_pages: int = 5) -> int:
             ih = (t.get("info_hash") or "").upper()
             if not ih or db_get_meta(conn, f"p115:done:{ih}"):
                 continue
+            stats["scanned"] += 1
             try:
-                _organize_one(conn, c, t, ih)
-                organized += 1
+                _organize_one(conn, c, t, ih, stats)
             except Exception as exc:
                 log.warning("115 整理失败 %s: %s", t.get("name"), exc)
+        conn.execute("INSERT OR REPLACE INTO meta(key, value) VALUES (?, ?)",
+                     ("p115:last_result", json.dumps(stats, ensure_ascii=False)))
+        conn.commit()
     finally:
         conn.close()
-    return organized
+    return stats
 
 
 def db_get_meta(conn, key: str) -> str:
@@ -415,7 +429,21 @@ def db_get_meta(conn, key: str) -> str:
     return row[0] if row else ""
 
 
-def _organize_one(conn, c, task: dict, info_hash: str) -> None:
+def last_organize_result() -> dict | None:
+    """The stored result of the last organize pass (None when never run)."""
+    conn = sqlite3.connect(settings.load()["DB_PATH"], timeout=10)
+    try:
+        raw = db_get_meta(conn, "p115:last_result")
+    finally:
+        conn.close()
+    try:
+        data = json.loads(raw)
+        return data if isinstance(data, dict) else None
+    except ValueError:
+        return None
+
+
+def _organize_one(conn, c, task: dict, info_hash: str, stats: dict) -> None:
     cfg = settings.load()
     fid = task.get("file_id") or task.get("delete_file_id")
     row = conn.execute(
@@ -424,6 +452,7 @@ def _organize_one(conn, c, task: dict, info_hash: str) -> None:
     if not fid:
         pass  # nothing to act on; only mark done
     elif row:
+        stats["organized"] += 1
         code, title = row
         old = str(task.get("name") or code)
         src_cid = None
@@ -437,7 +466,7 @@ def _organize_one(conn, c, task: dict, info_hash: str) -> None:
         # ad files riding along inside the download folder -> reject dir first
         if is_folder:
             reject = resolve_dir(c, (cfg.get("P115_REJECT_DIR") or "").strip() or "冗余")
-            _sweep_ads(c, int(fid), reject)
+            stats["ads"] += _sweep_ads(c, int(fid), reject)
         parts = old.rsplit(".", 1)
         ext = f".{parts[1]}" if len(parts) == 2 and 0 < len(parts[1]) <= 5 else ""
         new_name = _sanitize_name(f"{code} {title}")[:180] + ext
@@ -453,6 +482,7 @@ def _organize_one(conn, c, task: dict, info_hash: str) -> None:
         reject = resolve_dir(c, (cfg.get("P115_REJECT_DIR") or "").strip() or "冗余")
         try:
             check_response(c.fs_move(int(fid), reject, timeout=_TIMEOUT))
+            stats["rejected"] += 1
             log.info("115 广告任务: %s -> 冗余目录", task.get("name"))
         except Exception as exc:
             log.warning("115 移动广告任务失败 %s: %s", task.get("name"), exc)

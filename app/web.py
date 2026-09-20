@@ -689,15 +689,41 @@ def create_app() -> Flask:
         except Exception as exc:
             return jsonify({"ok": False, "error": f"获取任务失败: {exc}"}), 502
 
+    @app.post("/api/p115/mkdir")
+    def p115_mkdir():
+        """Create a folder inside the given 115 dir (dir picker)."""
+        if not p115.HAS_P115:
+            return jsonify({"ok": False, "error": "p115client 未安装"}), 503
+        if not p115.has_auth():
+            return jsonify({"ok": False, "error": "115 未登录，请先到「115 网盘」页扫码"}), 400
+        body = request.get_json(silent=True) or {}
+        try:
+            cid = max(0, int(body.get("cid", 0)))
+        except (TypeError, ValueError):
+            cid = 0
+        name = str(body.get("name", "")).strip()
+        if not name:
+            return jsonify({"ok": False, "error": "请输入目录名"}), 400
+        try:
+            fid = p115.mkdir_dir(cid, name)
+            p115.reset_dir_cache()
+        except Exception as exc:
+            return jsonify({"ok": False, "error": f"创建目录失败: {exc}"}), 502
+        return jsonify({"ok": True, "fid": fid})
+
     @app.post("/api/p115/organize")
     def p115_organize():
         if not p115.has_auth():
             return jsonify({"ok": False, "error": "115 未登录"}), 400
         try:
-            n = p115.organize_pass()
+            result = p115.organize_pass()
         except Exception as exc:
             return jsonify({"ok": False, "error": f"整理失败: {exc}"}), 502
-        return jsonify({"ok": True, "organized": n})
+        return jsonify({"ok": True, **result})
+
+    @app.get("/api/p115/organize/result")
+    def p115_organize_result():
+        return jsonify({"ok": True, "result": p115.last_organize_result()})
 
     # ---------------- update ----------------
     @app.get("/api/update/check")
@@ -817,8 +843,9 @@ def _p115_organize_loop() -> None:
             if not cfg.get("P115_AUTO_ORGANIZE") or not p115.has_auth():
                 continue
             n = p115.organize_pass()
-            if n:
-                log.info("115 自动整理完成：%d 个任务", n)
+            if n.get("organized") or n.get("ads") or n.get("rejected"):
+                log.info("115 自动整理：影片 %d · 广告 %d · 拒收 %d",
+                         n["organized"], n["ads"], n["rejected"])
         except Exception:
             log.exception("115 自动整理异常")
 
