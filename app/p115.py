@@ -72,7 +72,11 @@ _dir_cid: dict[str, tuple[int, float]] = {}
 _DIR_TTL = 10 * 60
 _qr: dict = {}
 _TIMEOUT = 10  # seconds, applied to every 115 network call
-_QR_TIMEOUT = 15  # QR endpoints: proxied routes are slower; tarpits still break out
+_QR_TIMEOUT = 15  # QR token/result endpoints
+# get/status is a 30s LONG POLL: with no state change the server holds the
+# connection for ~30s before answering {"data": {}}. A shorter timeout
+# NEVER sees the answer and misreads every poll as a network error.
+_QR_POLL_TIMEOUT = 35
 
 
 # ---------------------------------------------------------------- auth ----
@@ -241,17 +245,13 @@ def qr_poll() -> dict:
     global _client
     engine = _qr.get("engine")
     try:
-        # same session (cookiejar) as the token request is required here
+        # same session (cookiejar) as the token request is required here;
+        # must use the LONG-poll timeout (see _QR_POLL_TIMEOUT)
         data = check_response(c.login_qrcode_scan_status(
             {"uid": _qr["uid"], "time": _qr["time"], "sign": _qr["sign"]},
-            timeout=_QR_TIMEOUT, request=engine))["data"] or {}
+            timeout=_QR_POLL_TIMEOUT, request=engine))["data"] or {}
     except Exception as exc:
-        msg = str(exc)
-        # a read timeout with NO proxy configured = the classic 115 tarpit:
-        # make the actionable cause visible right on the login card
-        if "timed out" in msg and not str(settings.load().get("PROXY") or "").strip():
-            msg += "｜直连被 115 风控（收到请求但不响应）。请在「采集设置 → 代理」填入代理并保存，再重新生成二维码"
-        return {"status": "error", "message": msg}
+        return {"status": "error", "message": str(exc)}
     raw = data.get("status")
     if raw is None:
         # 115 intermittently answers {"data": {}} (IP-level rate limiting);

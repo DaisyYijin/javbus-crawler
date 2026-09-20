@@ -609,7 +609,7 @@
         <div class="row" id="p115-login-box">
           <div class="dropdown" id="p115-device"></div>
           <button class="ghost" onclick="qrStart()">生成登录二维码</button>
-          <span class="hint" style="margin:0">用 115 手机 App 扫码；「网页版」偶发 IP 异常，建议选安卓 / 苹果。若扫码总提示「二维码已过期」，是服务器 IP 被 115 风控——在「采集设置 → 代理」填入代理后重试</span>
+          <span class="hint" style="margin:0">用 115 手机 App 扫码；「网页版」偶发 IP 异常，建议选安卓 / 苹果。状态查询为 30 秒长轮询，「等待扫码」约每半分钟刷新一次属正常</span>
         </div>
         <div id="p115-qr-box" style="display:none;text-align:center;padding:14px 0">
           <img id="p115-qr-img" alt="登录二维码" style="width:210px;height:210px;border:1px solid var(--line);border-radius:10px;background:#fff">
