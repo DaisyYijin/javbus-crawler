@@ -654,14 +654,25 @@ function activatePage(page) {
   else if (qrTimer) { clearTimeout(qrTimer); qrTimer = null; }  // stop QR polling when leaving
   if (window.innerWidth <= 860) toggleMenu(false);
   window.scrollTo(0, 0);
+  if (location.hash !== '#/' + page) location.hash = '#/' + page;
 }
 document.querySelectorAll('.nav-item').forEach(btn => {
   btn.addEventListener('click', () => activatePage(btn.dataset.page));
 });
+window.addEventListener('hashchange', () => {
+  const m = location.hash.match(/^#\/([a-z0-9]+)/i);
+  if (!m || !$('page-' + m[1])) return;
+  const cur = document.querySelector('.page.active');
+  const curPage = cur ? cur.id.slice(5) : '';
+  if (m[1] !== curPage) activatePage(m[1]);
+});
 window.addEventListener('load', () => {
-  let saved = null;
-  try { saved = localStorage.getItem('jc.page'); } catch (e) {}
-  if (saved && saved !== 'dashboard') activatePage(saved);
+  const m = location.hash.match(/^#\/([a-z0-9]+)/i);
+  let target = (m && $('page-' + m[1])) ? m[1] : null;
+  if (!target) {
+    try { target = localStorage.getItem('jc.page'); } catch (e) {}
+  }
+  if (target && $('page-' + target) && target !== 'dashboard') activatePage(target);
 });
 function toggleMenu(force) {
   const open = force !== undefined ? force : !$('sidebar').classList.contains('open');
