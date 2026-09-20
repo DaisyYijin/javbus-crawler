@@ -187,6 +187,10 @@ def status() -> dict:
             "total_size": total,
             "used_size": used,
             "vip_end": int(data.get("vip_end_time") or 0),
+            # full user_info payload: the frontend heuristically picks the
+            # avatar / vip fields (names vary across 115 api generations)
+            # and can show everything in a collapsible raw panel
+            "raw": data,
         }
         _user_cache_at = time.time()
         return _user_cache

@@ -240,6 +240,9 @@
   .p115-space-bar { width: 180px; height: 8px; border-radius: 5px; background: #e8ebf1; overflow: hidden; flex: none; }
   .p115-space-bar i { display: block; height: 100%; background: var(--pri); border-radius: 5px; }
   .p115-space-bar i.hot { background: var(--err); }
+  .p115-raw-row { display: flex; gap: 12px; font-size: 12px; padding: 3px 0; border-bottom: 1px dashed var(--line); }
+  .p115-raw-row span { width: 150px; flex: none; color: var(--mut); word-break: break-all; }
+  .p115-raw-row b { font-weight: 500; word-break: break-all; }
 
   .banner { display: none; padding: 13px 16px; border-radius: var(--radius); margin-bottom: 16px; font-size: 14px; background: #fff8e6; border: 1px solid #f0d48a; }
   #upd-notes { display: none; margin-top: 10px; white-space: pre-wrap; font-size: 13px; }
@@ -643,6 +646,10 @@
           </div>
           <button class="danger" onclick="p115Logout()" style="margin-left:auto">退出 115 登录</button>
         </div>
+        <details id="p115-raw-box" style="display:none;margin-top:10px">
+          <summary style="cursor:pointer;font-size:13px;font-weight:600">账号原始数据（user_info 全部字段）</summary>
+          <div class="p115-raw-body" style="margin-top:8px"></div>
+        </details>
       </div>
       </div>
 
@@ -1447,12 +1454,17 @@ async function load115Status() {
       $('p115-user-box').style.display = '';
       $('p115-user').textContent = j.user || j.user_id;
       $('p115-device-cur').textContent = j.device || '-';
+      const raw = j.raw || {};
+      // 115 field names vary across api generations: fall back to a
+      // heuristic scan of the raw user_info payload
+      const icon = j.icon || guessAvatar(raw);
+      const vipEnd = j.vip_end || guessVipEnd(raw);
       const av = $('p115-avatar');
-      if (j.icon) { av.src = j.icon; av.style.display = ''; } else av.style.display = 'none';
+      if (icon) { av.src = icon; av.style.display = ''; } else av.style.display = 'none';
       const vip = $('p115-vip');
-      if (j.vip_end) {
-        const left = j.vip_end * 1000 - Date.now();
-        const d = new Date(j.vip_end * 1000).toLocaleDateString();
+      if (vipEnd) {
+        const left = vipEnd * 1000 - Date.now();
+        const d = new Date(vipEnd * 1000).toLocaleDateString();
         vip.textContent = left > 0 ? `VIP ${d} 到期` : `VIP 已过期（${d}）`;
         vip.className = 'pill' + (left > 0 ? ' run' : ' err');
         vip.style.display = '';
@@ -1466,6 +1478,7 @@ async function load115Status() {
         $('p115-space-text').textContent = `${fmtSize(j.used_size)} / ${fmtSize(j.total_size)}（${pct.toFixed(1)}%）`;
         sp.style.display = '';
       } else sp.style.display = 'none';
+      renderP115Raw(raw);
       load115Tasks();
     } else {
       $('p115-login-box').style.display = ''; $('p115-user-box').style.display = 'none';
@@ -1478,6 +1491,39 @@ function fmtTs(ts) {
   const d = new Date(ts * 1000);
   const p = n => String(n).padStart(2, '0');
   return `${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+// heuristic field pickers over the raw 115 user_info payload — the api
+// renames fields between generations, we match by name and value shape
+function guessAvatar(raw) {
+  for (const [k, v] of Object.entries(raw)) {
+    if (typeof v !== 'string' || !/^https?:\/\//.test(v)) continue;
+    if (/pic|icon|avatar|head|photo|face/i.test(k) || /\.(jpe?g|png|webp)(\?|$)/i.test(v))
+      return v;
+  }
+  return '';
+}
+function guessVipEnd(raw) {
+  for (const [k, v] of Object.entries(raw)) {
+    if (/vip.*(time|end|expire)|(time|end|expire).*vip/i.test(k)
+        && typeof v === 'number' && v > 1600000000 && v < 4100000000)
+      return v;
+  }
+  return 0;
+}
+function renderP115Raw(raw) {
+  const box = $('p115-raw-box');
+  if (!box) return;
+  const keys = Object.keys(raw);
+  if (!keys.length) { box.style.display = 'none'; return; }
+  box.style.display = '';
+  box.querySelector('.p115-raw-body').innerHTML = keys.map(k => {
+    let v = raw[k];
+    if (v === null || v === undefined) v = '';
+    if (typeof v === 'object') v = JSON.stringify(v);
+    v = String(v);
+    if (v.length > 120) v = v.slice(0, 120) + '…';
+    return `<div class="p115-raw-row"><span>${esc(k)}</span><b>${esc(v)}</b></div>`;
+  }).join('');
 }
 async function renderOrgBanner() {
   const el = $('p115-org-banner');
