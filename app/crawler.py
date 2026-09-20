@@ -143,6 +143,26 @@ def pick_magnet(magnets: list[dict], keywords: list[str]) -> tuple[dict | None, 
     return (magnets[0] if magnets else None), ""
 
 
+def pick_best(magnets: list, keywords: list[str]) -> list:
+    """Keep only the single best magnet for storage.
+
+    Keywords are tried left-to-right (first = highest priority); the first
+    magnet whose name contains the keyword wins. No match -> the first magnet
+    (newest). Filtering/marking should still be computed on the FULL list
+    before calling this.
+    """
+    if not magnets:
+        return []
+    for kw in keywords:
+        k = kw.strip().lower()
+        if not k:
+            continue
+        for m in magnets:
+            if k in (getattr(m, "name", "") or "").lower():
+                return [m]
+    return [magnets[0]]
+
+
 def run_job(
     cfg: dict,
     pages: str = "1",
@@ -290,10 +310,13 @@ def run_job(
                     for gcat, gname, gid in movie.genre_links:
                         db.set_meta(conn, f"genre_id:{gcat}:{gname}", gid)
 
+                    # store ONE magnet per movie: the best pick by keyword
+                    # priority (matching above used the full list on purpose)
+                    movie.magnets = pick_best(movie.magnets, keywords)
+
                     is_new = item.code not in known
-                    if refresh and magnets_fetched and not is_new:
-                        # drop links that vanished from the site so the table
-                        # stays in sync with movies.magnet_count
+                    if refresh and magnets_fetched:
+                        # keep the table in sync with what we just fetched
                         db.delete_magnets(conn, movie.code)
                     db.upsert_movie(conn, movie)
                     stats["magnets"] += db.insert_magnets(conn, movie.magnets, movie.code)
@@ -353,7 +376,9 @@ def crawl_code(cfg: dict, code: str, magnets: bool = True, stop_check=None) -> d
             if keywords:
                 movie.matched_tags = compute_matched(
                     movie.genres, [m.name for m in movie.magnets], keywords)
+            movie.magnets = pick_best(movie.magnets, keywords)
             db.upsert_movie(conn, movie)
+            db.delete_magnets(conn, movie.code)  # single-magnet storage: resync
             db.insert_magnets(conn, movie.magnets, movie.code)
             conn.commit()
             is_new = code not in known

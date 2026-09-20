@@ -28,6 +28,24 @@ def test_compute_matched_case_insensitive():
     assert crawler.compute_matched(["高清"], [], ["高清"]) == ["高清"]
 
 
+def test_pick_best_single_magnet():
+    from app.parser import Magnet
+
+    ms = [Magnet(link="magnet:?xt=urn:btih:AAA", name="1080p", size="", date=""),
+          Magnet(link="magnet:?xt=urn:btih:BBB", name="4k rip", size="", date=""),
+          Magnet(link="magnet:?xt=urn:btih:CCC", name="中文字幕", size="", date="")]
+    # keyword priority: 4k beats later keywords
+    assert crawler.pick_best(ms, ["4k", "字幕"])[0].name == "4k rip"
+    # fall through to the next keyword when the first misses
+    assert crawler.pick_best(ms, ["高清", "字幕"])[0].name == "中文字幕"
+    # no match -> first magnet (newest) wins
+    assert crawler.pick_best(ms, [])[0].name == "1080p"
+    assert crawler.pick_best(ms, ["没有命中"])[0].name == "1080p"
+    assert crawler.pick_best([], ["4k"]) == []
+    # always exactly one result
+    assert len(crawler.pick_best(ms, ["字幕"])) == 1
+
+
 def test_compute_matched_keeps_original_spelling():
     hits = crawler.compute_matched(["VR専用"], [], ["vr专用"])
     assert hits == []
