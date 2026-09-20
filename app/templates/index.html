@@ -133,6 +133,19 @@
   .tab-btn { padding: 9px 16px; border: none; background: none; border-radius: 0; border-bottom: 2px solid transparent;
     font-size: 14px; color: var(--mut); cursor: pointer; font-family: inherit; white-space: nowrap; }
   .tab-btn.active { color: var(--pri); border-bottom-color: var(--pri); font-weight: 600; }
+  /* custom dropdown: native-select look & feel, pure DOM (no native widget) */
+  .dropdown { position: relative; display: inline-block; }
+  .dropdown-toggle { padding: 9px 11px; border: 1px solid var(--line); border-radius: 9px; font-size: 14px;
+    background: #fafbfd; color: var(--txt); cursor: pointer; font-family: inherit; min-width: 130px; text-align: left; }
+  .dropdown-toggle:hover { border-color: var(--pri); }
+  .dropdown-menu { display: none; position: absolute; top: calc(100% + 4px); left: 0; z-index: 60;
+    background: #fff; border: 1px solid var(--line); border-radius: 9px; box-shadow: 0 8px 24px rgba(20,25,40,.14);
+    min-width: 100%; max-height: 264px; overflow-y: auto; padding: 4px; }
+  .dropdown-menu.open { display: block; }
+  .dropdown-item { display: block; width: 100%; text-align: left; padding: 8px 12px; border: none; background: none;
+    font-size: 13.5px; cursor: pointer; border-radius: 6px; color: var(--txt); font-family: inherit; }
+  .dropdown-item:hover { background: #f2f4f8; }
+  .dropdown-item.active { color: var(--pri); font-weight: 600; background: var(--pri-soft); }
 
   pre#log { background: #f6f7f9; color: #3a4150; font-size: 12.5px; line-height: 1.6; padding: 14px;
     border: 1px solid var(--line); border-radius: 10px; height: 60vh; overflow: auto;
@@ -490,12 +503,10 @@
       <div class="tabpane" id="tab-p115-login">
       <div class="card" id="p115-login-card">
         <h2>账号登录</h2>
-        <div class="row" id="p115-login-box" style="align-items:flex-start">
-          <div>
-            <div class="kv" style="margin-bottom:6px">登录设备：</div>
-            <div id="p115-device" class="row" style="gap:6px;flex-wrap:wrap;max-width:420px"></div>
-          </div>
-          <button class="ghost" onclick="qrStart()" style="flex:none">生成登录二维码</button>
+        <div class="row" id="p115-login-box">
+          <div class="dropdown" id="p115-device"></div>
+          <button class="ghost" onclick="qrStart()">生成登录二维码</button>
+          <span class="hint" style="margin:0">用 115 手机 App 扫码；「网页版」偶发 IP 异常，建议选安卓 / 苹果</span>
         </div>
         <div id="p115-qr-box" style="display:none;text-align:center;padding:14px 0">
           <img id="p115-qr-img" alt="登录二维码" style="width:210px;height:210px;border:1px solid var(--line);border-radius:10px;background:#fff">
@@ -1035,8 +1046,8 @@ async function load115Status() {
     }
   } catch (e) {}
 }
-// Device picker is plain DOM (no native <select> popup, which stutters on
-// some browsers/WebView). Single-select chips, zero layout cost.
+// Device picker: custom pure-DOM dropdown (native-select look, no native
+// widget — some browsers render styled <select> popups with a stutter).
 const P115_DEVICES = [
   ['android', '安卓'], ['ios', '苹果'], ['115android', '115 安卓'], ['115ios', '115 苹果'],
   ['ipad', 'iPad'], ['tv', '电视'], ['os_windows', 'Windows'], ['os_mac', 'Mac'],
@@ -1044,19 +1055,31 @@ const P115_DEVICES = [
   ['wechatmini', '微信小程序'], ['harmony', '鸿蒙'],
 ];
 let p115Device = 'android';
+function devName(k) { const f = P115_DEVICES.find(x => x[0] === k); return f ? f[1] : k; }
 function load115Devices() {
-  $('p115-device').innerHTML = P115_DEVICES.map(([k, v]) =>
-    `<button type="button" class="tag" data-dev="${k}" style="cursor:pointer">${v}</button>`).join('');
-  selectDevice(p115Device);
+  $('p115-device').innerHTML =
+    `<button type="button" class="dropdown-toggle"><span>${devName(p115Device)}</span> ▾</button>
+     <div class="dropdown-menu" id="p115-device-menu">${P115_DEVICES.map(([k, v]) =>
+       `<button type="button" class="dropdown-item${k === p115Device ? ' active' : ''}" data-dev="${k}">${v}</button>`).join('')}</div>`;
 }
 function selectDevice(k) {
   p115Device = k;
-  document.querySelectorAll('#p115-device .tag').forEach(b =>
-    b.classList.toggle('hit', b.dataset.dev === k));
+  const label = document.querySelector('#p115-device .dropdown-toggle span');
+  if (label) label.textContent = devName(k);
+  document.querySelectorAll('#p115-device .dropdown-item').forEach(b =>
+    b.classList.toggle('active', b.dataset.dev === k));
 }
-$('p115-device').addEventListener('click', e => {
-  const b = e.target.closest('[data-dev]');
-  if (b) selectDevice(b.dataset.dev);
+document.addEventListener('click', e => {
+  const item = e.target.closest('#p115-device .dropdown-item');
+  if (item) {
+    selectDevice(item.dataset.dev);
+    $('p115-device-menu').classList.remove('open');
+    return;
+  }
+  const menu = $('p115-device-menu');
+  if (!menu) return;
+  if (e.target.closest('#p115-device .dropdown-toggle')) menu.classList.toggle('open');
+  else if (!e.target.closest('#p115-device')) menu.classList.remove('open');  // outside click closes
 });
 load115Devices();
 let qrTimer = null;
