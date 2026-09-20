@@ -211,13 +211,21 @@ def qr_start(device: str) -> dict:
     if not HAS_P115:
         raise RuntimeError("p115client 未安装")
     app = device if device in DEVICES else "android"
+    # The QR token must be issued via the WEB path (/api/1.0/web/1.0/token/),
+    # per the p115client author's reference implementation. Tokens issued
+    # through an app-specific path return HTTP 200 but are never activated —
+    # the phone then rejects the QR as "二维码已过期" on scan, and get/status
+    # spins on empty data forever. The chosen device only matters for the
+    # final scan-result call (device binding of the cookie).
     c = _bare_client(app)
+    web_c = _bare_client("web")
     engine = _qr_request()
-    data = check_response(c.login_qrcode_token(app, timeout=_QR_TIMEOUT,
-                                               request=engine))["data"]
+    data = check_response(web_c.login_qrcode_token("web", timeout=_QR_TIMEOUT,
+                                                  request=engine))["data"]
     url = data.get("qrcode") or f"https://115.com/scan/dg-{data['uid']}"
     _qr.clear()
-    _qr.update(client=c, uid=str(data["uid"]), time=data["time"], sign=data["sign"],
+    _qr.update(client=c, web_client=web_c, uid=str(data["uid"]),
+               time=data["time"], sign=data["sign"],
                app=app, url=url, created=time.time(), engine=engine)
     return {"qrcode": url, "app": app}
 
@@ -240,14 +248,15 @@ def qr_svg() -> str:
 
 def qr_poll() -> dict:
     c = _qr.get("client")
+    web_c = _qr.get("web_client") or c
     if not c or not _qr.get("uid"):
         return {"status": "none"}
     global _client
     engine = _qr.get("engine")
     try:
-        # same session (cookiejar) as the token request is required here;
+        # query with the SAME web session that issued the token;
         # must use the LONG-poll timeout (see _QR_POLL_TIMEOUT)
-        data = check_response(c.login_qrcode_scan_status(
+        data = check_response(web_c.login_qrcode_scan_status(
             {"uid": _qr["uid"], "time": _qr["time"], "sign": _qr["sign"]},
             timeout=_QR_POLL_TIMEOUT, request=engine))["data"] or {}
     except Exception as exc:
