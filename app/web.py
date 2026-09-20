@@ -550,6 +550,7 @@ def create_app() -> Flask:
         conn = sqlite3.connect(cfg["DB_PATH"], timeout=10)
         try:
             catalog = None
+            status = {"censored": "", "uncensored": ""}
             try:
                 cached = db.get_meta(conn, "genre_catalog", "")
                 ts = float(db.get_meta(conn, "genre_catalog_ts", "0") or 0)
@@ -558,8 +559,9 @@ def create_app() -> Flask:
             except ValueError:
                 catalog = None
             if catalog is None:
+                fstatus = {"censored": "", "uncensored": ""}
                 try:
-                    fetched = crawler.fetch_genre_catalog(cfg)
+                    fetched, fstatus = crawler.fetch_genre_catalog(cfg)
                 except Exception:
                     fetched = {}
                 if any(fetched.values()):
@@ -568,6 +570,8 @@ def create_app() -> Flask:
                                 json.dumps(catalog, ensure_ascii=False))
                     db.set_meta(conn, "genre_catalog_ts", int(time.time()))
                     conn.commit()
+                else:
+                    status = fstatus
             if not isinstance(catalog, dict):
                 catalog = {"censored": [], "uncensored": []}
             # learned genres serve as fallback when a channel catalog is empty
@@ -581,7 +585,7 @@ def create_app() -> Flask:
             for cat in ("censored", "uncensored"):
                 if not catalog.get(cat) and learned[cat]:
                     catalog[cat] = [{"group": "已学习", "genres": learned[cat]}]
-            return jsonify({"ok": True, "items": catalog})
+            return jsonify({"ok": True, "items": catalog, "status": status})
         finally:
             conn.close()
 

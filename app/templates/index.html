@@ -739,7 +739,7 @@ async function loadGenreChips(force) {
               ${g.genres.map(x => `<span class="tag" style="cursor:pointer" data-gcat="${cat}" data-genre="${esc(String(x.id))}" title="${esc(x.name)}（${esc(String(x.id))}）">${esc(x.name)}</span>`).join('')}
             </div>
           </div>`).join('')
-        : '<span class="hint" style="margin:0">暂无（点击「刷新类别」从站点获取）</span>';
+        : `<span class="hint" style="margin:0;color:var(--danger,#e5484d)">⚠ ${esc((j.status && j.status[cat]) || '暂无（点击「刷新类别」从站点获取）')}</span>`;
     }
     syncGenreChips();
   } catch (e) {}

@@ -55,27 +55,40 @@ def looks_blocked(html: str) -> bool:
     return "driver-verify" in html or "Age Verification" in html
 
 
-def fetch_genre_catalog(cfg: dict) -> dict:
+def fetch_genre_catalog(cfg: dict) -> tuple[dict, dict]:
     """Fetch both channels' genre catalogs from the site index pages.
 
-    Returns {"censored": [{"group", "genres": [(name, id)]}], "uncensored": [...]}.
-    On failure/blocked the affected channel is an empty list (callers fall
-    back to the learned-genre cache).
+    Uses the crawl Fetcher (full browser headers via a persistent session,
+    PROXY support, retries) — bare requests get gated by the site's
+    age-verification wall.
+
+    Returns (catalog, status): catalog is {"censored": [{"group", "genres":
+    [(name, id)]}], "uncensored": [...]}; status is a per-channel
+    human-readable error string (empty on success).
     """
-    import requests as _rq
+    from .fetcher import Fetcher
 
-    from .fetcher import BROWSER_UA
-
-    base = str(cfg.get("BASE_URL") or "").rstrip("/")
+    fetcher = Fetcher(
+        base_url=cfg["BASE_URL"],
+        delay=cfg["DELAY_SECONDS"],
+        jitter=cfg["JITTER_SECONDS"],
+        max_retries=cfg["MAX_RETRIES"],
+        timeout=min(cfg["TIMEOUT"], 20),
+        proxy=(cfg.get("PROXY") or "").strip(),
+    )
     out: dict = {"censored": [], "uncensored": []}
+    status = {"censored": "", "uncensored": ""}
     for cat, path in (("censored", "/genre"), ("uncensored", "/uncensored/genre")):
-        try:
-            r = _rq.get(base + path, headers={"User-Agent": BROWSER_UA}, timeout=15)
-            if r.status_code == 200 and not looks_blocked(r.text):
-                out[cat] = parse_genre_catalog(r.text)
-        except _rq.RequestException:
-            continue
-    return out
+        html = fetcher.get(path)
+        if not html:
+            status[cat] = "无法连接站点（检查网络 / 代理设置）"
+        elif looks_blocked(html):
+            status[cat] = "站点拦截了目录页（年龄验证风控），请稍后点「刷新类别」重试"
+        else:
+            out[cat] = parse_genre_catalog(html)
+            if not out[cat]:
+                status[cat] = "目录页解析结果为空（站点结构可能变化）"
+    return out, status
 
 
 def parse_pages(spec: str) -> list[int]:

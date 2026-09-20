@@ -108,18 +108,21 @@ def test_filter_chips_endpoint(client):
 
 def test_genres_endpoint(client, monkeypatch):
     from app import crawler as _crawler
-    monkeypatch.setattr(_crawler, "fetch_genre_catalog", lambda cfg: {})
+    monkeypatch.setattr(_crawler, "fetch_genre_catalog",
+                        lambda cfg: ({}, {"censored": "无法连接站点", "uncensored": "无法连接站点"}))
     j = client.get("/api/genres").get_json()
     assert j["ok"] is True
     assert set(j["items"].keys()) == {"censored", "uncensored"}
     assert isinstance(j["items"]["censored"], list)
+    assert "无法连接站点" in j["status"]["censored"]
 
 
 def test_genres_endpoint_catalog(client, monkeypatch):
     from app import crawler as _crawler
     monkeypatch.setattr(_crawler, "fetch_genre_catalog",
-                        lambda cfg: {"censored": [{"group": "主題", "genres": [("折磨", "62")]}],
-                                     "uncensored": []})
+                        lambda cfg: ({"censored": [{"group": "主題", "genres": [("折磨", "62")]}],
+                                      "uncensored": []},
+                                     {"censored": "", "uncensored": ""}))
     j = client.get("/api/genres?refresh=1").get_json()
     assert j["items"]["censored"][0]["group"] == "主題"
     assert j["items"]["censored"][0]["genres"] == [["折磨", "62"]]  # tuples -> lists in JSON
