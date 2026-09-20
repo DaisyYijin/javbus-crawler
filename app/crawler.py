@@ -441,9 +441,16 @@ def run_job(
                         sv = parse_movie_script_vars(detail_html)
                         if sv.get("gid"):
                             frag = fetcher.get(magnet_ajax_path(sv), referer=item.url)
-                            if frag is not None:
-                                movie.magnets = parse_magnets(frag)
-                                magnets_fetched = True
+                            if frag is None:
+                                # magnet fetch failed — an empty list here would
+                                # wrongly count as "no keyword match" and make
+                                # only-mode skip (and mislog) the movie
+                                log.warning("%s: 磁力列表抓取失败，本次不入库（下次追新自动重试）",
+                                            item.code)
+                                stats["errors"] += 1
+                                continue
+                            movie.magnets = parse_magnets(frag)
+                            magnets_fetched = True
                         else:
                             log.warning("%s: 未找到 gid 参数，跳过磁力", item.code)
 
@@ -461,7 +468,10 @@ def run_job(
                         if filter_mode == "only" and not movie.matched_tags:
                             stats.setdefault("skipped", 0)
                             stats["skipped"] += 1
-                            log.info("跳过 %s（不匹配筛选: %s）", item.code, ",".join(keywords))
+                            log.info("跳过 %s（%s，不匹配筛选: %s）", item.code,
+                                     f"磁力 {len(movie.magnets)} 条" if movie.magnets
+                                     else "站点暂无磁力",
+                                     ",".join(keywords))
                             continue
 
                     # learn per-channel genre name -> site id mapping
