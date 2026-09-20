@@ -613,6 +613,7 @@
         <div id="p115-qr-box" style="display:none;text-align:center;padding:14px 0">
           <img id="p115-qr-img" alt="登录二维码" style="width:210px;height:210px;border:1px solid var(--line);border-radius:10px;background:#fff">
           <div class="hint" id="p115-qr-state" style="margin-top:8px">等待扫码…</div>
+          <div class="hint" id="p115-qr-ttl" style="margin-top:2px"></div>
         </div>
         <div id="p115-user-box" style="display:none" class="row">
           <span class="kv">已登录：<b id="p115-user"></b></span>
@@ -1493,7 +1494,24 @@ document.addEventListener('click', e => {
 });
 load115Devices();
 let qrTimer = null;
-async function qrStart() {
+// 115 login QRs live ~2 minutes; the page must refresh them BEFORE the
+// phone says "二维码已过期" — countdown + auto regen on expiry
+const QR_TTL_MS = 115 * 1000;
+let qrActive = false, qrTtlTimer = null, qrDeadline = 0, qrLastAuto = 0;
+function qrStopTimers() {
+  clearTimeout(qrTimer);
+  clearInterval(qrTtlTimer);
+  qrActive = false;
+  $('p115-qr-ttl').textContent = '';
+}
+function qrAutoRefresh(reason) {
+  if (!qrActive) return;
+  if (Date.now() - qrLastAuto < 20000) return;  // never spin: 20s floor
+  qrLastAuto = Date.now();
+  toast(reason, 'ok');
+  qrStart(true);
+}
+async function qrStart(auto) {
   try {
     const j = await (await fetch('/api/p115/qr/start', {method: 'POST', headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({device: p115Device})})).json();
@@ -1501,6 +1519,20 @@ async function qrStart() {
     $('p115-qr-box').style.display = '';
     $('p115-qr-img').src = '/api/p115/qr.svg?t=' + Date.now();
     $('p115-qr-state').textContent = '请用 115 手机 App 扫码';
+    qrActive = true;
+    clearInterval(qrTtlTimer);
+    qrDeadline = Date.now() + QR_TTL_MS;
+    qrTtlTimer = setInterval(() => {
+      const left = Math.max(0, qrDeadline - Date.now());
+      if (left <= 0) {
+        clearInterval(qrTtlTimer);
+        qrAutoRefresh('二维码已到期，自动刷新，请重新扫码');
+        return;
+      }
+      const s = Math.ceil(left / 1000);
+      $('p115-qr-ttl').textContent = `有效期剩余 ${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+    }, 1000);
+    if (auto) $('p115-qr-ttl').textContent = '';
     scheduleQrPoll(3000);
   } catch (e) { toast('✗ ' + e.message, 'err'); }
 }
@@ -1515,18 +1547,22 @@ async function qrPollTick() {
   const t0 = Date.now();
   const j = await qrPoll();
   const took = Date.now() - t0;
-  if (j.status === 'success' || j.status === 'expired' || j.status === 'canceled') return;
+  if (j.status === 'success' || j.status === 'expired' || j.status === 'canceled') {
+    if (j.status !== 'success') qrAutoRefresh('二维码已过期，已自动刷新，请重新扫码');
+    return;
+  }
   // slow 115 route (tarpit): back off so a connection isn't held nonstop
   scheduleQrPoll(j.status === 'error' || took > 3000 ? 10000 : 3000);
 }
 async function qrPoll() {
   try {
     const j = await (await fetch('/api/p115/qr/poll')).json();
-    const map = {waiting: '等待扫码…', scanned: '已扫码，请在手机上确认', expired: '二维码已过期，请重新生成',
-                 canceled: '已取消，请重新生成', none: '请先生成二维码'};
+    const map = {waiting: '等待扫码…', scanned: '已扫码，请在手机上确认', expired: '二维码已过期，正在刷新…',
+                 canceled: '已取消，正在刷新…', none: '请先生成二维码'};
     if (j.status === 'success') {
-      clearTimeout(qrTimer);
+      qrStopTimers();
       $('p115-qr-state').textContent = '✓ 登录成功';
+      $('p115-qr-box').style.display = 'none';
       toast('✓ 115 登录成功', 'ok');
       setTimeout(load115Status, 600);
       const tb = document.querySelector('#p115-tabs [data-tab="p115-tasks"]');
