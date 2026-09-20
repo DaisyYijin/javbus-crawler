@@ -219,6 +219,7 @@
       <button class="nav-item" data-page="schedule"><span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15.5 14"/></svg></span>定时任务</button>
       <button class="nav-item" data-page="data"><span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><circle cx="3.5" cy="6" r="0.5" fill="currentColor"/><circle cx="3.5" cy="12" r="0.5" fill="currentColor"/><circle cx="3.5" cy="18" r="0.5" fill="currentColor"/></svg></span>采集数据</button>
       <button class="nav-item" data-page="browse"><span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="9" cy="8" r="3.5"/><path d="M3.5 19c.8-3 3-4.5 5.5-4.5s4.7 1.5 5.5 4.5"/><circle cx="17" cy="9" r="2.5"/><path d="M15.5 13.6c2 .2 3.9 1.5 5 4.4"/></svg></span>维度浏览</button>
+      <button class="nav-item" data-page="p115"><span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z"/></svg></span>115 网盘</button>
     </nav>
     <div class="side-foot">
       <div><span class="dot" id="side-dot"></span><span id="side-state">空闲</span></div>
@@ -478,6 +479,54 @@
       </div>
     </section>
 
+    <!-- ============ 115 ============ -->
+    <section class="page" id="page-p115">
+      <div class="page-head"><h1>115 网盘</h1><span>扫码登录 · 磁力离线下载 · 完成后自动整理</span></div>
+      <div class="card" id="p115-login-card">
+        <h2>账号登录</h2>
+        <div class="row" id="p115-login-box">
+          <select id="p115-device" style="max-width:160px"></select>
+          <button class="ghost" onclick="qrStart()">生成登录二维码</button>
+          <span class="hint" style="margin:0">用 115 手机 App 扫码；「网页版」偶发 IP 异常，建议选安卓 / 苹果</span>
+        </div>
+        <div id="p115-qr-box" style="display:none;text-align:center;padding:14px 0">
+          <img id="p115-qr-img" alt="登录二维码" style="width:210px;height:210px;border:1px solid var(--line);border-radius:10px;background:#fff">
+          <div class="hint" id="p115-qr-state" style="margin-top:8px">等待扫码…</div>
+        </div>
+        <div id="p115-user-box" style="display:none" class="row">
+          <span class="kv">已登录：<b id="p115-user"></b></span>
+          <span class="kv">设备：<b id="p115-device-cur"></b></span>
+          <button class="danger" onclick="p115Logout()">退出 115 登录</button>
+        </div>
+      </div>
+      <div class="card">
+        <h2>离线任务</h2>
+        <div class="row" style="margin-bottom:12px">
+          <button class="ghost" onclick="load115Tasks()">刷新</button>
+          <button class="primary" onclick="organizeNow()">立即整理</button>
+          <span id="p115-task-msg" class="msg"></span>
+        </div>
+        <div class="table-wrap">
+        <table>
+          <thead><tr><th>名称</th><th style="width:90px">状态</th><th style="width:110px">进度</th><th style="width:100px">大小</th></tr></thead>
+          <tbody id="p115-task-rows"></tbody>
+        </table>
+        </div>
+      </div>
+      <div class="card">
+        <h2>整理设置 <small>（下载完成后重命名为「番号 标题」并移动到目标目录）</small></h2>
+        <div class="form-grid">
+          <div class="field w3"><label>目标目录 <small>P115_TARGET_DIR · 115 根目录下，不存在会自动创建</small></label><input id="c_P115_TARGET_DIR" type="text" placeholder="javbus"></div>
+          <div class="field w3"><label class="check-line"><input type="checkbox" id="c_P115_AUTO_ORGANIZE"> 启用自动整理<small>每分钟检查完成的任务 · P115_AUTO_ORGANIZE</small></label></div>
+        </div>
+        <div class="hint">整理通过任务的 info_hash 反查本库影片（番号 + 标题），仅对从本系统发送且已完成的任务生效，重复任务自动跳过。也可在采集数据页点开影片详情，用「发送到 115」手动提交。</div>
+        <div class="row save-row">
+          <button class="primary" onclick="saveConfig()">保存配置</button>
+          <span class="msg cfg-msg"></span>
+        </div>
+      </div>
+    </section>
+
     <!-- ============ about ============ -->
     <section class="page" id="page-about">
       <div class="page-head"><h1>关于 / 更新</h1></div>
@@ -555,6 +604,7 @@ function activatePage(page) {
   try { localStorage.setItem('jc.page', page); } catch (e) {}
   if (page === 'data') loadMovies(curPage);
   if (page === 'browse') loadBrowse();
+  if (page === 'p115') { load115Status(); load115Devices(); }
   if (window.innerWidth <= 860) toggleMenu(false);
   window.scrollTo(0, 0);
 }
@@ -604,11 +654,13 @@ async function saveConfig() {
   const body = {};
   ['BASE_URL','METATUBE_URL','METATUBE_TOKEN','DELAY_SECONDS','JITTER_SECONDS',
    'MAX_RETRIES','TIMEOUT','WEB_PORT','AUTO_CRAWL_INTERVAL_HOURS','AUTO_CRAWL_PAGES',
-   'TAG_FILTERS']
+   'TAG_FILTERS','P115_TARGET_DIR']
     .forEach(k => { const el = $('c_' + k); if (el) body[k] = el.value; });
   body.CATEGORY = [...document.querySelectorAll('#cat-seg .seg-btn.active')].map(b => b.dataset.cat).join(',');
   const mb = document.querySelector('#mode-seg .seg-btn.active');
   if (mb) body.TAG_FILTER_MODE = mb.dataset.mode;
+  const p115cb = $('c_P115_AUTO_ORGANIZE');
+  if (p115cb) body.P115_AUTO_ORGANIZE = p115cb.checked;
   const cb = $('c_AUTO_CRAWL_ENABLED');
   if (cb) body.AUTO_CRAWL_ENABLED = cb.checked;
   const j = await (await fetch('/api/config', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body)})).json();
@@ -882,6 +934,8 @@ $('genre-bars').addEventListener('click', e => {
   if (t) searchTag(t.dataset.search, t.dataset.searchType || 'genre');
 });
 $('movie-rows').addEventListener('click', e => {
+  const s115 = e.target.closest('[data-send115]');
+  if (s115) { sendTo115(s115.dataset.send115); return; }
   const d = e.target.closest('[data-del]');
   if (d) { deleteMovie(d.dataset.del); return; }
   const t = e.target.closest('[data-search]');
@@ -917,7 +971,7 @@ async function toggleDetail(code, tr) {
     　<b>类别</b> ${(m.genres||[]).map(g=>`<span class="tag" data-search="${esc(g)}" data-search-type="genre" style="cursor:pointer">${esc(g)}</span>`).join('')||'-'}</div>
     ${mags}
     ${samples ? `<div class="mag" style="margin-top:6px"><b>样图</b></div><div style="display:flex;flex-wrap:wrap">${samples}</div>` : ''}
-    <div class="mag"><a href="${esc(m.url)}" target="_blank">原页面 ↗</a>${SITE_BASE !== m.url.replace(/\/+$/,'') ? ` ｜ <a href="${esc(m.url.replace(/^https?:\/\/[^/]+/, SITE_BASE))}" target="_blank">本站镜像</a>` : ''} ｜ <a href="${esc((window.METATUBE_URL || '') + '/#/movie/javbus/' + encodeURIComponent(m.code))}" target="_blank" style="${window.METATUBE_URL ? '' : 'display:none'}">Metatube 查询</a> ｜ <button class="danger" data-del="${esc(m.code)}" style="padding:3px 12px;font-size:12px">删除此影片</button></div></td>`;
+    <div class="mag"><a href="${esc(m.url)}" target="_blank">原页面 ↗</a>${SITE_BASE !== m.url.replace(/\/+$/,'') ? ` ｜ <a href="${esc(m.url.replace(/^https?:\/\/[^/]+/, SITE_BASE))}" target="_blank">本站镜像</a>` : ''} ｜ <a href="${esc((window.METATUBE_URL || '') + '/#/movie/javbus/' + encodeURIComponent(m.code))}" target="_blank" style="${window.METATUBE_URL ? '' : 'display:none'}">Metatube 查询</a> ｜ <button class="ghost" data-send115="${esc(m.code)}" style="padding:3px 12px;font-size:12px">发送到 115</button> ｜ <button class="danger" data-del="${esc(m.code)}" style="padding:3px 12px;font-size:12px">删除此影片</button></div></td>`;
   tr.after(row);
 }
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -929,6 +983,96 @@ async function clearData() {
   const j = await (await fetch('/api/data/clear', {method:'POST'})).json();
   if (j.ok) { alert('已清空 ' + j.deleted + ' 部影片记录。'); loadStats(); loadMovies(1); loadGenres(); pollStatus(); }
   else alert('清空失败: ' + (j.error || '未知错误'));
+}
+
+/* ---------- 115 ---------- */
+async function load115Status() {
+  try {
+    const j = await (await fetch('/api/p115/status')).json();
+    if (!j.available) {
+      $('p115-login-box').style.display = 'none';
+      $('p115-login-card').insertAdjacentHTML('beforeend', '<div class="hint" style="color:var(--err)">p115client 未安装，容器内执行: pip install p115client</div>');
+      return;
+    }
+    if (j.logged_in) {
+      $('p115-login-box').style.display = 'none'; $('p115-qr-box').style.display = 'none';
+      $('p115-user-box').style.display = '';
+      $('p115-user').textContent = j.user || j.user_id;
+      $('p115-device-cur').textContent = j.device || '-';
+      load115Tasks();
+    } else {
+      $('p115-login-box').style.display = ''; $('p115-user-box').style.display = 'none';
+    }
+  } catch (e) {}
+}
+async function load115Devices() {
+  try {
+    const j = await (await fetch('/api/p115/devices')).json();
+    $('p115-device').innerHTML = Object.entries(j.devices || {}).map(([k, v]) => `<option value="${k}">${v}</option>`).join('');
+  } catch (e) {}
+}
+let qrTimer = null;
+async function qrStart() {
+  try {
+    const j = await (await fetch('/api/p115/qr/start', {method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({device: $('p115-device').value})})).json();
+    if (!j.ok) { toast('✗ ' + (j.error || '获取二维码失败'), 'err'); return; }
+    $('p115-qr-box').style.display = ''; $('p115-qr-img').src = j.qrcode;
+    $('p115-qr-state').textContent = '请用 115 手机 App 扫码';
+    clearInterval(qrTimer);
+    qrTimer = setInterval(qrPoll, 3000);
+  } catch (e) { toast('✗ ' + e.message, 'err'); }
+}
+async function qrPoll() {
+  try {
+    const j = await (await fetch('/api/p115/qr/poll')).json();
+    const map = {waiting: '等待扫码…', scanned: '已扫码，请在手机上确认', expired: '二维码已过期，请重新生成',
+                 canceled: '已取消，请重新生成', none: '请先生成二维码'};
+    if (j.status === 'success') {
+      clearInterval(qrTimer);
+      $('p115-qr-state').textContent = '✓ 登录成功';
+      toast('✓ 115 登录成功', 'ok');
+      setTimeout(load115Status, 600);
+    } else {
+      $('p115-qr-state').textContent = map[j.status] || (j.message || j.status);
+      if (j.status === 'expired' || j.status === 'canceled') clearInterval(qrTimer);
+    }
+  } catch (e) {}
+}
+async function p115Logout() {
+  if (!confirm('确定退出 115 登录？')) return;
+  await fetch('/api/p115/logout', {method: 'POST'});
+  load115Status();
+}
+function fmtSize(n) { n = Number(n) || 0; const u = ['B','KB','MB','GB','TB']; let i = 0; while (n >= 1024 && i < 4) { n /= 1024; i++; } return (n >= 100 || i === 0 ? n.toFixed(0) : n.toFixed(1)) + u[i]; }
+async function load115Tasks() {
+  try {
+    const r = await fetch('/api/p115/tasks');
+    if (r.status === 400) { $('p115-task-rows').innerHTML = '<tr><td colspan="4" style="color:var(--mut);text-align:center;padding:30px">未登录</td></tr>'; return; }
+    const j = await r.json();
+    if (!j.ok) { $('p115-task-msg').textContent = j.error || ''; return; }
+    $('p115-task-msg').textContent = '共 ' + (j.total ?? (j.items || []).length) + ' 个任务';
+    $('p115-task-rows').innerHTML = (j.items || []).map(t => `
+      <tr><td class="mag">${esc(t.name)}</td><td>${esc(t.status)}</td>
+      <td>${t.status === '已完成' ? '100%' : (t.percent ?? 0) + '%'}</td><td>${fmtSize(t.size)}</td></tr>`).join('')
+      || '<tr><td colspan="4" style="color:var(--mut);text-align:center;padding:30px">暂无离线任务</td></tr>';
+  } catch (e) {}
+}
+async function organizeNow() {
+  toast('正在整理已完成的任务…');
+  try {
+    const j = await (await fetch('/api/p115/organize', {method: 'POST'})).json();
+    if (j.ok) { toast('✓ 本次整理 ' + j.organized + ' 个任务', 'ok'); load115Tasks(); }
+    else toast('✗ ' + (j.error || '整理失败'), 'err');
+  } catch (e) { toast('✗ ' + e.message, 'err'); }
+}
+async function sendTo115(code) {
+  try {
+    const j = await (await fetch('/api/p115/magnet', {method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({code})})).json();
+    if (j.ok) toast('✓ 已提交离线：' + (j.name || code), 'ok');
+    else toast('✗ ' + (j.error || '提交失败'), 'err');
+  } catch (e) { toast('✗ ' + e.message, 'err'); }
 }
 
 /* ---------- update ---------- */

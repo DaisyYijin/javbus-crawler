@@ -27,6 +27,8 @@ docker compose up -d
 - **精准筛选**：关键词（顺序即优先级、大小写不敏感）匹配标签或磁力名，推荐磁力或只收命中的影片；
   常用标记快捷标签按库内磁力真实命中数动态生成，采集后自动更新
 - **MetaTube 联动**：配置服务地址 + Token，详情页一键跳转查询
+- **115 网盘**：扫码登录（可选登录设备）、影片一键发送磁力离线下载、任务监控、
+  下载完成后自动重命名「番号 标题」并移动到目标目录（基于 [p115client](https://github.com/ChenyangGao/p115client)）
 - **导出 / 清空**：全库 JSON 流式导出；一键清空数据（任务运行时拒绝）
 - **在线更新**：自动检测 GitHub 新版本，网页内一键更新
 
@@ -44,6 +46,7 @@ docker compose up -d
 │   ├── db.py               # SQLite schema、索引、upsert、多维查询
 │   ├── settings.py         # JSON 配置文件（/data/config.json）
 │   ├── taxonomy.py         # 标签归一化（统计页标准分类）
+│   ├── p115.py             # 115 网盘：扫码登录 / 磁力离线 / 任务整理
 │   ├── updater.py          # GitHub Releases 在线更新
 │   ├── selfupdate.py       # docker.sock 容器自更新
 │   └── templates/          # 单页前端（index.html / login.html）
@@ -66,6 +69,8 @@ docker compose up -d
 | `TAG_FILTERS` | 空 | 筛选关键词（逗号分隔，顺序即优先级，大小写不敏感；站点常用：字幕 / 高清 / -U 无码流出 / -UC 无码中字 / AI） |
 | `TAG_FILTER_MODE` | `mark` | `mark` 全部入库并标记 / `only` 只收命中的 |
 | `METATUBE_URL` / `METATUBE_TOKEN` | 空 | MetaTube 服务地址与 Token（详情页跳转用） |
+| `P115_TARGET_DIR` | `javbus` | 115 整理目标目录（根目录下，自动创建） |
+| `P115_AUTO_ORGANIZE` | `false` | 自动整理：每分钟检查完成并重命名+移动 |
 | `AUTO_CRAWL_ENABLED` | `false` | 定时自动采集开关 |
 | `AUTO_CRAWL_INTERVAL_HOURS` | `24` | 自动采集间隔（小时） |
 | `AUTO_CRAWL_PAGES` | `1-3` | 每次自动采集的页码范围 |
@@ -101,6 +106,10 @@ docker compose run --rm crawler --check-update
 | POST | `/api/metatube/test` | 测试 MetaTube 服务连通性 |
 | POST | `/api/site/test` | 测试站点地址连通性（返回耗时 / 拦截提示） |
 | GET | `/api/filter/chips` | 快捷标签（按库内磁力命中的标记及数量） |
+| GET/POST | `/api/p115/status` · `/api/p115/qr/start` · `/api/p115/qr/poll` | 115 登录状态 / 扫码登录 |
+| POST | `/api/p115/magnet` | 影片最优磁力发送到 115 离线下载 |
+| GET | `/api/p115/tasks` | 115 离线任务列表（监控） |
+| POST | `/api/p115/organize` | 立即整理完成的任务（重命名+移动） |
 | GET | `/api/update/check` · POST `/api/update/apply` | 检查 / 一键更新 |
 
 ## 数据表

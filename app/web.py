@@ -15,7 +15,7 @@ from datetime import datetime, timezone
 
 from flask import Flask, jsonify, render_template, request
 
-from . import crawler, db, selfupdate, settings, updater
+from . import crawler, db, p115, selfupdate, settings, updater
 from .fetcher import BROWSER_UA, StopRequested
 from .version import __version__
 
@@ -542,6 +542,90 @@ def create_app() -> Flask:
         _invalidate_stats_cache()
         return jsonify({"ok": True, "deleted": deleted})
 
+    # ---------------- 115 cloud ----------------
+    @app.get("/api/p115/status")
+    def p115_status():
+        return jsonify(p115.status())
+
+    @app.get("/api/p115/devices")
+    def p115_devices():
+        return jsonify({"devices": p115.DEVICES})
+
+    @app.post("/api/p115/qr/start")
+    def p115_qr_start():
+        if not p115.HAS_P115:
+            return jsonify({"ok": False, "error": "p115client 未安装"}), 503
+        body = request.get_json(silent=True) or {}
+        try:
+            result = p115.qr_start(str(body.get("device", "android")))
+        except Exception as exc:
+            return jsonify({"ok": False, "error": f"获取二维码失败: {exc}"}), 500
+        return jsonify({"ok": True, **result})
+
+    @app.get("/api/p115/qr/poll")
+    def p115_qr_poll():
+        result = p115.qr_poll()
+        return jsonify(result)
+
+    @app.post("/api/p115/logout")
+    def p115_logout():
+        p115.logout()
+        return jsonify({"ok": True})
+
+    @app.post("/api/p115/magnet")
+    def p115_magnet():
+        """Send a movie's best magnet (or the given hash) to 115 offline download."""
+        body = request.get_json(silent=True) or {}
+        code = str(body.get("code", "")).strip()
+        if not code:
+            return jsonify({"ok": False, "error": "缺少番号"}), 400
+        if not p115.has_auth():
+            return jsonify({"ok": False, "error": "115 未登录，请先到「115 网盘」页扫码"}), 400
+        conn = sqlite3.connect(settings.load()["DB_PATH"], timeout=10)
+        try:
+            movie = db.get_movie(conn, code)
+        finally:
+            conn.close()
+        if not movie or not movie.get("magnets"):
+            return jsonify({"ok": False, "error": "该影片没有磁力链接"}), 404
+        if body.get("hash"):
+            magnet = next((m for m in movie["magnets"] if m["hash"] == body["hash"]), None)
+        else:
+            keywords = [k for k in settings.load().get("TAG_FILTERS", "").split(",") if k.strip()]
+            magnet, _kw = crawler.pick_magnet(movie["magnets"], keywords)
+        if not magnet:
+            return jsonify({"ok": False, "error": "没有可用的磁力链接"}), 400
+        try:
+            result = p115.add_magnet(magnet["link"])
+        except Exception as exc:
+            return jsonify({"ok": False, "error": f"提交离线任务失败: {exc}"}), 502
+        log.info("已提交 115 离线任务: %s (%s)", result["name"], code)
+        return jsonify({"ok": True, **result})
+
+    @app.get("/api/p115/tasks")
+    def p115_tasks():
+        if not p115.has_auth():
+            return jsonify({"ok": False, "error": "115 未登录"}), 400
+        try:
+            page = max(1, int(request.args.get("page", 1)))
+            size = max(1, min(int(request.args.get("size", 30)), 100))
+        except ValueError:
+            page, size = 1, 30
+        try:
+            return jsonify({"ok": True, **p115.list_tasks(page, size)})
+        except Exception as exc:
+            return jsonify({"ok": False, "error": f"获取任务失败: {exc}"}), 502
+
+    @app.post("/api/p115/organize")
+    def p115_organize():
+        if not p115.has_auth():
+            return jsonify({"ok": False, "error": "115 未登录"}), 400
+        try:
+            n = p115.organize_pass()
+        except Exception as exc:
+            return jsonify({"ok": False, "error": f"整理失败: {exc}"}), 502
+        return jsonify({"ok": True, "organized": n})
+
     # ---------------- update ----------------
     @app.get("/api/update/check")
     def update_check():
@@ -651,6 +735,21 @@ def _auto_crawl_loop() -> None:
             log.exception("自动采集调度异常")
 
 
+def _p115_organize_loop() -> None:
+    """Background loop: rename+move finished 115 tasks when enabled."""
+    while True:
+        time.sleep(60)
+        try:
+            cfg = settings.load()
+            if not cfg.get("P115_AUTO_ORGANIZE") or not p115.has_auth():
+                continue
+            n = p115.organize_pass()
+            if n:
+                log.info("115 自动整理完成：%d 个任务", n)
+        except Exception:
+            log.exception("115 自动整理异常")
+
+
 def run(host: str = "0.0.0.0", port: int | None = None) -> None:
     """Serve the web UI (waitress, production WSGI)."""
     from waitress import serve
@@ -664,5 +763,6 @@ def run(host: str = "0.0.0.0", port: int | None = None) -> None:
     app = create_app()
     _startup_selfcheck()
     threading.Thread(target=_auto_crawl_loop, daemon=True).start()
+    threading.Thread(target=_p115_organize_loop, daemon=True).start()
     log.info("Web 界面: http://%s:%d （配置文件 %s）", host, port, settings.CONFIG_PATH)
     serve(app, host=host, port=port, threads=8)

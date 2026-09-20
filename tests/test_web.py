@@ -106,6 +106,14 @@ def test_filter_chips_endpoint(client):
     assert {"kw": "4K", "count": 1} in j["items"]  # seeded magnet "4k rip"
 
 
+def test_p115_endpoints_unauthenticated(client):
+    j = client.get("/api/p115/status").get_json()
+    assert j["available"] is True and j["logged_in"] is False
+    assert client.post("/api/p115/magnet", json={"code": "TEST-001"}).status_code == 400
+    assert client.get("/api/p115/tasks").status_code == 400
+    assert len(client.get("/api/p115/devices").get_json()["devices"]) > 0
+
+
 # ---------- crawl control ----------
 
 def test_crawl_start_rejects_bad_pages(client):
