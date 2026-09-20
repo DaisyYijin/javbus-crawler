@@ -386,10 +386,10 @@
     <section class="page" id="page-settings">
       <div class="page-head"><h1>采集设置</h1><span>保存后立即生效</span></div>
       <div class="tabbar" id="settings-tabs">
-        <button type="button" class="tab-btn active" data-tab="site" onclick="switchSettingsTab(this)">站点与频道</button>
-        <button type="button" class="tab-btn" data-tab="metatube" onclick="switchSettingsTab(this)">MetaTube</button>
-        <button type="button" class="tab-btn" data-tab="behavior" onclick="switchSettingsTab(this)">抓取行为</button>
-        <button type="button" class="tab-btn" data-tab="filter" onclick="switchSettingsTab(this)">精准筛选</button>
+        <button type="button" class="tab-btn active" data-tab="site" onclick="switchTab(this)">站点与频道</button>
+        <button type="button" class="tab-btn" data-tab="metatube" onclick="switchTab(this)">MetaTube</button>
+        <button type="button" class="tab-btn" data-tab="behavior" onclick="switchTab(this)">抓取行为</button>
+        <button type="button" class="tab-btn" data-tab="filter" onclick="switchTab(this)">精准筛选</button>
       </div>
       <div class="tabpane" id="tab-site">
       <div class="card">
@@ -482,6 +482,12 @@
     <!-- ============ 115 ============ -->
     <section class="page" id="page-p115">
       <div class="page-head"><h1>115 网盘</h1><span>扫码登录 · 磁力离线下载 · 完成后自动整理</span></div>
+      <div class="tabbar" id="p115-tabs">
+        <button type="button" class="tab-btn active" data-tab="p115-login" onclick="switchTab(this)">账号登录</button>
+        <button type="button" class="tab-btn" data-tab="p115-tasks" onclick="switchTab(this)">离线任务</button>
+        <button type="button" class="tab-btn" data-tab="p115-organize" onclick="switchTab(this)">整理设置</button>
+      </div>
+      <div class="tabpane" id="tab-p115-login">
       <div class="card" id="p115-login-card">
         <h2>账号登录</h2>
         <div class="row" id="p115-login-box" style="align-items:flex-start">
@@ -501,6 +507,9 @@
           <button class="danger" onclick="p115Logout()">退出 115 登录</button>
         </div>
       </div>
+      </div>
+
+      <div class="tabpane" id="tab-p115-tasks" hidden>
       <div class="card">
         <h2>离线任务</h2>
         <div class="row" style="margin-bottom:12px">
@@ -515,6 +524,9 @@
         </table>
         </div>
       </div>
+      </div>
+
+      <div class="tabpane" id="tab-p115-organize" hidden>
       <div class="card">
         <h2>整理设置 <small>（下载完成后重命名为「番号 标题」并移动到目标目录）</small></h2>
         <div class="form-grid">
@@ -527,6 +539,7 @@
           <button class="primary" onclick="saveConfig()">保存配置</button>
           <span class="msg cfg-msg"></span>
         </div>
+      </div>
       </div>
     </section>
 
@@ -625,14 +638,17 @@ function toggleMenu(force) {
   $('sidebar').classList.toggle('open', open);
   $('backdrop').classList.toggle('show', open);
 }
-function switchSettingsTab(btn) {
-  document.querySelectorAll('#settings-tabs .tab-btn').forEach(b => b.classList.toggle('active', b === btn));
-  document.querySelectorAll('#page-settings .tabpane').forEach(p => { p.hidden = p.id !== 'tab-' + btn.dataset.tab; });
-  // the test button tests whatever the active tab configures
+function switchTab(btn) {
+  const bar = btn.closest('.tabbar'), page = btn.closest('.page');
+  bar.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('active', b === btn));
+  page.querySelectorAll('.tabpane').forEach(p => { p.hidden = p.id !== 'tab-' + btn.dataset.tab; });
+  // settings page only: the test button tests whatever tab is active
   const tb = $('tab-test-btn'), tab = btn.dataset.tab;
-  if (tab === 'site') { tb.style.display = ''; tb.textContent = '测试站点连接'; }
-  else if (tab === 'metatube') { tb.style.display = ''; tb.textContent = '测试 MetaTube 连接'; }
-  else { tb.style.display = 'none'; }
+  if (tb) {
+    if (tab === 'site') { tb.style.display = ''; tb.textContent = '测试站点连接'; }
+    else if (tab === 'metatube') { tb.style.display = ''; tb.textContent = '测试 MetaTube 连接'; }
+    else { tb.style.display = 'none'; }
+  }
 }
 
 /* ---------- config ---------- */
@@ -1080,6 +1096,8 @@ async function qrPoll() {
       $('p115-qr-state').textContent = '✓ 登录成功';
       toast('✓ 115 登录成功', 'ok');
       setTimeout(load115Status, 600);
+      const tb = document.querySelector('#p115-tabs [data-tab="p115-tasks"]');
+      if (tb) switchTab(tb);  // jump to the tasks tab after login
     } else {
       $('p115-qr-state').textContent = map[j.status] || (j.message || j.status);
     }
