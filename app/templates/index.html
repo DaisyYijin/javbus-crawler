@@ -606,7 +606,7 @@ function activatePage(page) {
   if (page === 'data') loadMovies(curPage);
   if (page === 'browse') loadBrowse();
   if (page === 'p115') { load115Status(); load115Devices(); }
-  else if (qrTimer) { clearInterval(qrTimer); qrTimer = null; }  // stop QR polling when leaving
+  else if (qrTimer) { clearTimeout(qrTimer); qrTimer = null; }  // stop QR polling when leaving
   if (window.innerWidth <= 860) toggleMenu(false);
   window.scrollTo(0, 0);
 }
@@ -775,7 +775,12 @@ async function loadStats() {
     $('s-magnets').textContent = j.magnets;
   } catch (e) {}
 }
-window.addEventListener('load', () => { pollStatus(); setInterval(pollStatus, 5000); loadStats(); });
+window.addEventListener('load', () => { pollStatusLoop(); loadStats(); });
+// sequential status polling: never overlap requests (see scheduleQrPoll note)
+async function pollStatusLoop() {
+  try { await pollStatus(); } catch (e) {}
+  setTimeout(pollStatusLoop, 5000);
+}
 
 /* ---------- genre bars ---------- */
 let showAllGenres = false;
@@ -1022,9 +1027,20 @@ async function qrStart() {
     $('p115-qr-box').style.display = '';
     $('p115-qr-img').src = '/api/p115/qr.svg?t=' + Date.now();
     $('p115-qr-state').textContent = '请用 115 手机 App 扫码';
-    clearInterval(qrTimer);
-    qrTimer = setInterval(qrPoll, 3000);
+    scheduleQrPoll(3000);
   } catch (e) { toast('✗ ' + e.message, 'err'); }
+}
+// sequential self-scheduling poll: the next request only starts after the
+// previous one finishes — overlapping fetches would exhaust the browser's
+// per-origin connection pool (and the server threads) when 115 is slow
+function scheduleQrPoll(ms) {
+  clearTimeout(qrTimer);
+  qrTimer = setTimeout(qrPollTick, ms || 3000);
+}
+async function qrPollTick() {
+  const j = await qrPoll();
+  if (j.status === 'success' || j.status === 'expired' || j.status === 'canceled') return;
+  scheduleQrPoll(j.status === 'error' ? 8000 : 3000);
 }
 async function qrPoll() {
   try {
@@ -1032,13 +1048,12 @@ async function qrPoll() {
     const map = {waiting: '等待扫码…', scanned: '已扫码，请在手机上确认', expired: '二维码已过期，请重新生成',
                  canceled: '已取消，请重新生成', none: '请先生成二维码'};
     if (j.status === 'success') {
-      clearInterval(qrTimer);
+      clearTimeout(qrTimer);
       $('p115-qr-state').textContent = '✓ 登录成功';
       toast('✓ 115 登录成功', 'ok');
       setTimeout(load115Status, 600);
     } else {
       $('p115-qr-state').textContent = map[j.status] || (j.message || j.status);
-      if (j.status === 'expired' || j.status === 'canceled') clearInterval(qrTimer);
     }
   } catch (e) {}
 }

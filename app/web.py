@@ -773,4 +773,4 @@ def run(host: str = "0.0.0.0", port: int | None = None) -> None:
     threading.Thread(target=_auto_crawl_loop, daemon=True).start()
     threading.Thread(target=_p115_organize_loop, daemon=True).start()
     log.info("Web 界面: http://%s:%d （配置文件 %s）", host, port, settings.CONFIG_PATH)
-    serve(app, host=host, port=port, threads=8)
+    serve(app, host=host, port=port, threads=16)
