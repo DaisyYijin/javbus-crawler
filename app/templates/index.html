@@ -437,7 +437,7 @@
               <button type="button" class="seg-btn active" data-cat="censored" onclick="toggleCat(this)">有码</button>
               <button type="button" class="seg-btn" data-cat="uncensored" onclick="toggleCat(this)">无码</button>
             </div></div>
-          <div class="field w6"><label>类别筛选（可选 · 点击多选） <small>留空 = 采集该频道全部类别</small></label>
+          <div class="field w6"><label>类别筛选（必选 · 点击多选） <small>留空 = 不采集该频道</small></label>
             <div class="tabbar" style="margin:8px 0 10px">
               <button type="button" class="tab-btn active" data-gcat="censored" onclick="switchGenreTab(this)">有码</button>
               <button type="button" class="tab-btn" data-gcat="uncensored" onclick="switchGenreTab(this)">无码</button>
@@ -456,7 +456,7 @@
               </div>
               <div id="genre-chips-uncensored" class="row" style="gap:6px;flex-wrap:wrap"></div>
             </div>
-            <div class="hint">有码 / 无码为站点两套独立类别体系，分组默认折叠（点大标题展开）；点击标签选中 / 取消（可多选，已选数量显示在顶部计数）；组标题右侧「全选」可整组选 / 取消，顶部「全选全部」可选 / 清空整个频道；仅对上方勾选的频道生效。目录缓存一天，重新打开页面自动更新。</div></div>
+            <div class="hint">有码 / 无码为站点两套独立类别体系，分组默认折叠（点大标题展开）；点击标签选中 / 取消（可多选，已选数量显示在顶部计数）；组标题右侧「全选」可整组选 / 取消，顶部「全选全部」可选 / 清空整个频道；类别留空时该频道不会采集（日志会明确提示）。目录缓存一天，重新打开页面自动更新。</div></div>
         </div>
       </div>
 
@@ -519,7 +519,7 @@
 
     <!-- ============ schedule ============ -->
     <section class="page" id="page-schedule">
-      <div class="page-head"><h1>定时任务</h1><span>保存后立即生效 · 使用「追新」模式与采集设置中的频道</span></div>
+      <div class="page-head"><h1>定时任务</h1><span>保存后立即生效 · 使用「追新」模式与采集设置中的频道 / 类别（类别留空不会采集）</span></div>
       <div class="card">
         <h2>定时自动采集</h2>
         <div class="form-grid">
@@ -585,27 +585,27 @@
         <h2>整理设置 <small>（下载完成后重命名为「番号 标题」并移动到目标目录）</small></h2>
         <div class="row" id="p115-org-banner" style="margin:0 0 12px"></div>
         <div class="form-grid">
-          <div class="field w3"><label>下载目录（待整理） <small>P115_DOWNLOAD_DIR · 离线任务落盘处，不存在自动创建；留空用 115 默认目录</small></label>
+          <div class="field w6"><label>下载目录（待整理） <small>P115_DOWNLOAD_DIR · 离线任务落盘处，不存在自动创建；留空用 115 默认目录</small></label>
             <div class="row" style="gap:6px;flex-wrap:nowrap">
               <input id="c_P115_DOWNLOAD_DIR" type="text" placeholder="待整理" style="flex:1">
               <button type="button" class="ghost dir-pick-btn" title="从 115 目录中点选" onclick="openDirPicker('c_P115_DOWNLOAD_DIR')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg></button>
             </div></div>
-          <div class="field w3"><label>整理后目录（已整理） <small>P115_TARGET_DIR · 完成后重命名并移动到这里</small></label>
+          <div class="field w6"><label>整理后目录（已整理） <small>P115_TARGET_DIR · 完成后重命名并移动到这里</small></label>
             <div class="row" style="gap:6px;flex-wrap:nowrap">
               <input id="c_P115_TARGET_DIR" type="text" placeholder="已整理" style="flex:1">
               <button type="button" class="ghost dir-pick-btn" title="从 115 目录中点选" onclick="openDirPicker('c_P115_TARGET_DIR')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg></button>
             </div></div>
-          <div class="field w3"><label>冗余目录（广告等） <small>P115_REJECT_DIR · 整理时识别出的广告文件、疑似广告任务自动移入这里</small></label>
+          <div class="field w6"><label>冗余目录（广告等） <small>P115_REJECT_DIR · 整理时识别出的广告文件、疑似广告任务自动移入这里</small></label>
             <div class="row" style="gap:6px;flex-wrap:nowrap">
               <input id="c_P115_REJECT_DIR" type="text" placeholder="冗余" style="flex:1">
               <button type="button" class="ghost dir-pick-btn" title="从 115 目录中点选" onclick="openDirPicker('c_P115_REJECT_DIR')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg></button>
             </div></div>
-          <div class="field w3"><label class="check-line"><input type="checkbox" id="c_P115_AUTO_ORGANIZE"> 启用自动整理<small>每分钟检查完成的任务 · P115_AUTO_ORGANIZE</small></label></div>
         </div>
         <div class="hint">整理流程：下载完成 → 通过 info_hash 反查本库影片 → 重命名「番号 标题」→ 从待整理目录移动到已整理目录。文件夹内的广告文件（.url / .txt / 推广名）与未匹配到影片的疑似广告任务会自动移入冗余目录。目录可点输入框右侧文件夹图标从 115 网盘中直接选取（支持多级，不存在会自动创建）。已整理任务自动记忆去重。</div>
         <div class="row save-row">
-          <button class="primary" onclick="saveConfig()">保存配置</button>
+          <label class="check-line" style="margin:0" title="每分钟检查完成的任务并自动整理 · P115_AUTO_ORGANIZE"><input type="checkbox" id="c_P115_AUTO_ORGANIZE"> 启用自动整理</label>
           <button class="ok" type="button" onclick="organizeNow()">立即整理</button>
+          <button class="primary" onclick="saveConfig()">保存配置</button>
           <span class="msg cfg-msg"></span>
         </div>
       </div>
@@ -707,7 +707,17 @@ function activatePage(page) {
   else if (qrTimer) { clearTimeout(qrTimer); qrTimer = null; }  // stop QR polling when leaving
   if (window.innerWidth <= 860) toggleMenu(false);
   window.scrollTo(0, 0);
+  restoreTab(pg);
   if (location.hash !== '#/' + page) location.hash = '#/' + page;
+}
+function restoreTab(pg) {
+  // per-page tab persistence: refresh keeps the tab you were on
+  if (!pg) return;
+  let t = null;
+  try { t = localStorage.getItem('jc.tab:' + pg.id); } catch (e) {}
+  if (!t) return;
+  const btn = pg.querySelector(`.tabbar .tab-btn[data-tab="${CSS.escape(t)}"]`);
+  if (btn) switchTab(btn);
 }
 document.querySelectorAll('.nav-item').forEach(btn => {
   btn.addEventListener('click', () => activatePage(btn.dataset.page));
@@ -736,6 +746,8 @@ function switchTab(btn) {
   const bar = btn.closest('.tabbar'), page = btn.closest('.page');
   bar.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('active', b === btn));
   page.querySelectorAll('.tabpane').forEach(p => { p.hidden = p.id !== 'tab-' + btn.dataset.tab; });
+  // remember the tab so a refresh lands back on it (per page)
+  try { localStorage.setItem('jc.tab:' + page.id, btn.dataset.tab); } catch (e) {}
   // settings page only: the test button tests whatever tab is active
   const tb = $('tab-test-btn'), tab = btn.dataset.tab;
   if (tb) {

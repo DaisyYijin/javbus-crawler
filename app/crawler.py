@@ -172,7 +172,17 @@ def run_job(
     cats = [c.strip() for c in str(cfg.get("CATEGORY", "censored")).split(",")
             if c.strip() in sections] or ["censored"]
     genres_by_cat = {c: parse_genre_list(cfg.get(f"GENRE_{c.upper()}")) for c in sections}
-    combos = [(c, g) for c in cats for g in (genres_by_cat[c] or [""])]
+    # an empty genre list means "do not crawl this channel" (the UI requires
+    # an explicit selection); crawl-everything is no longer an implicit default
+    combos: list[tuple[str, str]] = []
+    for c in cats:
+        if not genres_by_cat[c]:
+            log.warning("类别筛选为空，跳过 %s 频道（在「采集设置 → 类别筛选」选择类别后才会采集）",
+                        "无码" if c == "uncensored" else "有码")
+            continue
+        combos.extend((c, g) for g in genres_by_cat[c])
+    if not combos:
+        raise ValueError("类别筛选为空：请先在「采集设置 → 类别筛选」中选择要采集的类别")
 
     def combo_label(c: str, g: str) -> str:
         base = "无码" if c == "uncensored" else "有码"
