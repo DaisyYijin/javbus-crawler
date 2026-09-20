@@ -263,8 +263,12 @@ def create_app() -> Flask:
         # Not logged in -> standalone login page, the main UI stays hidden.
         token = request.cookies.get(_COOKIE, "")
         if not (token and _token_valid(token)):
-            return render_template("login.html", version=__version__)
-        return render_template("index.html", version=__version__)
+            return render_template("login.html", version=__version__), 200, \
+                {"Cache-Control": "no-cache"}
+        # no-cache: the UI ships inline CSS/JS that changes every release;
+        # a stale cached page renders old styles against new data
+        return render_template("index.html", version=__version__), 200, \
+            {"Cache-Control": "no-cache"}
 
     # ---------------- config ----------------
     @app.get("/api/config")

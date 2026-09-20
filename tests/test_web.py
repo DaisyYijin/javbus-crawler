@@ -57,6 +57,13 @@ def test_anon_gets_login_page(anon):
     assert r.status_code == 200 and "登录" in r.get_data(as_text=True)
 
 
+def test_pages_sent_no_cache(anon, client):
+    # the inline-CSS/JS UI must revalidate after every release, or a stale
+    # cached page renders old styles against new data
+    assert anon.get("/").headers["Cache-Control"] == "no-cache"
+    assert client.get("/").headers["Cache-Control"] == "no-cache"
+
+
 @pytest.mark.parametrize("path", ["/api/config", "/api/movies", "/api/stats",
                                   "/api/export", "/api/browse"])
 def test_anon_api_401(anon, path):
