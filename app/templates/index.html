@@ -738,9 +738,11 @@ async function saveConfig() {
   const cb = $('c_AUTO_CRAWL_ENABLED');
   if (cb) body.AUTO_CRAWL_ENABLED = cb.checked;
   const j = await (await fetch('/api/config', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body)})).json();
+  // success is confirmed by the transient toast only; the inline slot next to
+  // the test-connection button must not carry a lingering "saved" state
   document.querySelectorAll('.cfg-msg').forEach(m => {
-    m.textContent = j.ok ? '✓ 已保存' : ('✗ ' + j.error);
-    m.className = 'msg cfg-msg ' + (j.ok ? 'ok' : 'err');
+    m.textContent = j.ok ? '' : ('✗ ' + j.error);
+    m.className = 'msg cfg-msg ' + (j.ok ? '' : 'err');
   });
   if (!j.ok) toast('保存失败: ' + (j.error || '未知错误'), 'err');
   else toast('✓ 保存成功', 'ok');
