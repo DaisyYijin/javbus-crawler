@@ -240,9 +240,6 @@
   .p115-space-bar { width: 180px; height: 8px; border-radius: 5px; background: #e8ebf1; overflow: hidden; flex: none; }
   .p115-space-bar i { display: block; height: 100%; background: var(--pri); border-radius: 5px; }
   .p115-space-bar i.hot { background: var(--err); }
-  .p115-raw-row { display: flex; gap: 12px; font-size: 12px; padding: 3px 0; border-bottom: 1px dashed var(--line); }
-  .p115-raw-row span { width: 150px; flex: none; color: var(--mut); word-break: break-all; }
-  .p115-raw-row b { font-weight: 500; word-break: break-all; }
 
   .banner { display: none; padding: 13px 16px; border-radius: var(--radius); margin-bottom: 16px; font-size: 14px; background: #fff8e6; border: 1px solid #f0d48a; }
   #upd-notes { display: none; margin-top: 10px; white-space: pre-wrap; font-size: 13px; }
@@ -646,10 +643,6 @@
           </div>
           <button class="danger" onclick="p115Logout()" style="margin-left:auto">退出 115 登录</button>
         </div>
-        <details id="p115-raw-box" style="display:none;margin-top:10px">
-          <summary style="cursor:pointer;font-size:13px;font-weight:600">账号原始数据（user_info 全部字段）</summary>
-          <div class="p115-raw-body" style="margin-top:8px"></div>
-        </details>
       </div>
       </div>
 
@@ -1478,7 +1471,6 @@ async function load115Status() {
         $('p115-space-text').textContent = `${fmtSize(j.used_size)} / ${fmtSize(j.total_size)}（${pct.toFixed(1)}%）`;
         sp.style.display = '';
       } else sp.style.display = 'none';
-      renderP115Raw(raw);
       load115Tasks();
     } else {
       $('p115-login-box').style.display = ''; $('p115-user-box').style.display = 'none';
@@ -1509,21 +1501,6 @@ function guessVipEnd(raw) {
       return v;
   }
   return 0;
-}
-function renderP115Raw(raw) {
-  const box = $('p115-raw-box');
-  if (!box) return;
-  const keys = Object.keys(raw);
-  if (!keys.length) { box.style.display = 'none'; return; }
-  box.style.display = '';
-  box.querySelector('.p115-raw-body').innerHTML = keys.map(k => {
-    let v = raw[k];
-    if (v === null || v === undefined) v = '';
-    if (typeof v === 'object') v = JSON.stringify(v);
-    v = String(v);
-    if (v.length > 120) v = v.slice(0, 120) + '…';
-    return `<div class="p115-raw-row"><span>${esc(k)}</span><b>${esc(v)}</b></div>`;
-  }).join('');
 }
 async function renderOrgBanner() {
   const el = $('p115-org-banner');
