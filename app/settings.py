@@ -17,7 +17,8 @@ DEFAULTS: dict = {
     "BASE_URL": "https://www.seedmm.bond",
     "DB_PATH": os.path.join(DATADIR, "seedmm.db"),
     "CATEGORY": "censored",           # censored | uncensored | comma-separated both
-    "GENRE": "",                      # site genre ids/slugs to crawl, e.g. "42,hd"
+    "GENRE_CENSORED": "",              # censored-site genre ids/slugs, e.g. "42,hd"
+    "GENRE_UNCENSORED": "",            # uncensored-site genre ids/slugs
     "DELAY_SECONDS": 2.0,
     "JITTER_SECONDS": 1.0,
     "MAX_RETRIES": 3,
@@ -41,7 +42,8 @@ _TYPES = {
     "BASE_URL": str,
     "DB_PATH": str,
     "CATEGORY": str,
-    "GENRE": str,
+    "GENRE_CENSORED": str,
+    "GENRE_UNCENSORED": str,
     "DELAY_SECONDS": float,
     "JITTER_SECONDS": float,
     "MAX_RETRIES": int,
@@ -106,13 +108,14 @@ def save(partial: dict) -> dict:
         if not cats or any(c not in ("censored", "uncensored") for c in cats):
             raise ValueError("CATEGORY 只支持 censored / uncensored（可逗号分隔多选）")
         clean["CATEGORY"] = ",".join(cats)
-    if "GENRE" in clean:
-        import re as _re
-        parts = [g.strip() for g in str(clean["GENRE"]).split(",") if g.strip()]
-        for g in parts:
-            if not _re.fullmatch(r"[A-Za-z0-9_-]{1,32}", g):
-                raise ValueError(f"GENRE 含无效类别标识: {g!r}（应为数字 ID 或 slug，如 42、hd）")
-        clean["GENRE"] = ",".join(parts)
+    for gkey in ("GENRE_CENSORED", "GENRE_UNCENSORED"):
+        if gkey in clean:
+            import re as _re
+            parts = [g.strip() for g in str(clean[gkey]).split(",") if g.strip()]
+            for g in parts:
+                if not _re.fullmatch(r"[A-Za-z0-9_-]{1,32}", g):
+                    raise ValueError(f"{gkey} 含无效类别标识: {g!r}（应为数字 ID 或 slug，如 42、hd）")
+            clean[gkey] = ",".join(parts)
     if "TAG_FILTER_MODE" in clean:
         mode = str(clean["TAG_FILTER_MODE"])
         if mode not in ("mark", "only", "all"):

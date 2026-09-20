@@ -82,6 +82,7 @@ def test_parse_detail_genre_links_learned():
     mv = parser.parse_detail(html, "X-1", "https://x/X-1")
     assert mv.genres == ["巨乳", "高清", "无ID类别"]
     assert mv.genre_ids == {"巨乳": "42", "高清": "hd"}
+    assert mv.genre_links == [("censored", "巨乳", "42"), ("uncensored", "高清", "hd")]
 
 
 def test_magnet_hash_uppercases():

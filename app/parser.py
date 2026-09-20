@@ -38,6 +38,7 @@ class Movie:
     actors: list[str] = field(default_factory=list)
     genres: list[str] = field(default_factory=list)
     genre_ids: dict[str, str] = field(default_factory=dict)  # name -> site genre slug/id
+    genre_links: list[tuple[str, str, str]] = field(default_factory=list)  # (channel, name, id)
     samples: list[str] = field(default_factory=list)
     magnets: list[Magnet] = field(default_factory=list)
     matched_tags: list[str] = field(default_factory=list)  # tag-filter hits
@@ -126,12 +127,15 @@ def parse_detail(html: str, code: str, url: str) -> Movie:
     ]
     movie.genres = []
     for a in soup.select("span.genre a[href]"):
+        href = a.get("href", "")
         label = a.select_one("label") or a
         name = _clean(label.get_text())
-        m = re.search(r"/genre/([A-Za-z0-9_-]+)", a.get("href", ""))
+        m = re.search(r"/genre/([A-Za-z0-9_-]+)", href)
         if name and m:
+            cat = "uncensored" if "/uncensored/genre/" in href else "censored"
             movie.genres.append(name)
             movie.genre_ids[name] = m.group(1)
+            movie.genre_links.append((cat, name, m.group(1)))
         elif name:
             movie.genres.append(name)
     if not movie.genres:  # older markup: plain labels without links

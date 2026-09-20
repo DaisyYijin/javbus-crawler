@@ -544,15 +544,20 @@ def create_app() -> Flask:
 
     @app.get("/api/genres")
     def known_genres():
-        """Genre names learned from crawled detail pages (for the GENRE picker)."""
+        """Per-channel genre lists learned from crawled detail pages."""
         conn = sqlite3.connect(settings.load()["DB_PATH"], timeout=10)
         try:
             rows = conn.execute(
                 "SELECT key, value FROM meta WHERE key LIKE 'genre_id:%'").fetchall()
         finally:
             conn.close()
-        items = sorted(({"name": k[10:], "id": v} for k, v in rows),
-                       key=lambda x: x["name"])
+        items = {"censored": [], "uncensored": []}
+        for k, v in rows:
+            parts = k.split(":", 2)
+            if len(parts) == 3 and parts[1] in items:
+                items[parts[1]].append({"name": parts[2], "id": v})
+        for lst in items.values():
+            lst.sort(key=lambda x: x["name"])
         return jsonify({"items": items})
 
     # ---------------- 115 cloud ----------------

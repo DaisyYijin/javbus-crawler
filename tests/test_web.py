@@ -108,7 +108,8 @@ def test_filter_chips_endpoint(client):
 
 def test_genres_endpoint(client):
     j = client.get("/api/genres").get_json()
-    assert isinstance(j["items"], list)
+    assert set(j["items"].keys()) == {"censored", "uncensored"}
+    assert isinstance(j["items"]["censored"], list)
 
 
 def test_p115_endpoints_unauthenticated(client):

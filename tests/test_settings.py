@@ -25,11 +25,13 @@ def test_category_invalid_rejected():
 
 
 def test_genre_validation():
-    assert settings.save({"GENRE": "42,hd"})["GENRE"] == "42,hd"
-    assert settings.save({"GENRE": " 42 , hd "})["GENRE"] == "42,hd"
-    assert settings.save({"GENRE": ""})["GENRE"] == ""
+    assert settings.save({"GENRE_CENSORED": "42,hd"})["GENRE_CENSORED"] == "42,hd"
+    assert settings.save({"GENRE_UNCENSORED": " 1 , 2 "})["GENRE_UNCENSORED"] == "1,2"
+    assert settings.save({"GENRE_CENSORED": ""})["GENRE_CENSORED"] == ""
     with pytest.raises(ValueError):
-        settings.save({"GENRE": "42,不良 id"})
+        settings.save({"GENRE_CENSORED": "42,不良 id"})
+    with pytest.raises(ValueError):
+        settings.save({"GENRE_UNCENSORED": "%%%"})
 
 
 def test_tag_filter_mode_legacy_migration():

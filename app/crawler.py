@@ -134,8 +134,8 @@ def run_job(
     sections = {"censored": "", "uncensored": "/uncensored"}
     cats = [c.strip() for c in str(cfg.get("CATEGORY", "censored")).split(",")
             if c.strip() in sections] or ["censored"]
-    genres = parse_genre_list(cfg.get("GENRE"))
-    combos = [(c, g) for c in cats for g in (genres or [""])]
+    genres_by_cat = {c: parse_genre_list(cfg.get(f"GENRE_{c.upper()}")) for c in sections}
+    combos = [(c, g) for c in cats for g in (genres_by_cat[c] or [""])]
 
     def combo_label(c: str, g: str) -> str:
         base = "无码" if c == "uncensored" else "有码"
@@ -239,9 +239,9 @@ def run_job(
                             log.info("跳过 %s（不匹配筛选: %s）", item.code, ",".join(keywords))
                             continue
 
-                    # learn genre name -> site id mapping for the filter picker
-                    for gname, gid in movie.genre_ids.items():
-                        db.set_meta(conn, f"genre_id:{gname}", gid)
+                    # learn per-channel genre name -> site id mapping
+                    for gcat, gname, gid in movie.genre_links:
+                        db.set_meta(conn, f"genre_id:{gcat}:{gname}", gid)
 
                     is_new = item.code not in known
                     if refresh and magnets_fetched and not is_new:
@@ -295,8 +295,8 @@ def crawl_code(cfg: dict, code: str, magnets: bool = True, stop_check=None) -> d
             if not movie.title:
                 continue  # shell/redirect page, try the next section
             movie.category = cat
-            for gname, gid in movie.genre_ids.items():
-                db.set_meta(conn, f"genre_id:{gname}", gid)
+            for gcat, gname, gid in movie.genre_links:
+                db.set_meta(conn, f"genre_id:{gcat}:{gname}", gid)
             if magnets:
                 sv = parse_movie_script_vars(html)
                 if sv.get("gid"):
