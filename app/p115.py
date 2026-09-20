@@ -70,6 +70,7 @@ _client_lock = threading.Lock()
 _dir_cid: dict[str, tuple[int, float]] = {}
 _DIR_TTL = 10 * 60
 _qr: dict = {}
+_dirs_diag_logged = False
 _TIMEOUT = 10  # seconds, applied to every 115 network call
 _QR_TIMEOUT = 15  # QR token/result endpoints
 # get/status is a 30s LONG POLL: with no state change the server holds the
@@ -456,9 +457,10 @@ def _find_dir(c, name: str, pid: int = 0) -> int | None:
     while True:
         items, done = _fs_page(c, pid, offset)
         for item in items:
-            fid = item.get("fid")
-            if item.get("n") == name and str(item.get("fc", "")) == "0" and fid is not None:
-                return int(fid)
+            if item.get("n") == name:
+                fid = _dir_id(item)
+                if fid is not None:
+                    return fid
         if done:
             return None
         offset += 100
@@ -490,27 +492,53 @@ def resolve_dir(c, name: str) -> int:
     return cid
 
 
+def _dir_id(item: dict) -> int | None:
+    """Directory id of a listing entry, or None when not usable.
+
+    Web-shaped entries carry the dir id in BOTH fid and cid (equal for
+    folders); bare-list shapes may only have cid.
+    """
+    if "fc" in item and str(item.get("fc")) != "0":
+        return None
+    for k in ("fid", "cid", "file_id", "id"):
+        v = item.get(k)
+        if v is not None:
+            try:
+                return int(v)
+            except (TypeError, ValueError):
+                return None
+    return None
+
+
 def list_dirs(cid: int = 0) -> list[dict]:
     """List immediate sub-directories of a 115 folder (for the dir picker)."""
     c = get_client()
     if not c:
         raise RuntimeError("115 未登录")
     out: list[dict] = []
+    sample: list = []   # keep a few raw entries for a one-shot diagnostic
     offset = 0
     while True:
         items, done = _fs_page(c, cid, offset)
+        if not sample:
+            sample = items[:2]
         for item in items:
-            if str(item.get("fc", "")) != "0":
-                continue
-            # entries without fid (e.g. the cwd itself, which carries cid
-            # instead) are not navigable sub-directories — skip them
-            fid = item.get("fid")
+            fid = _dir_id(item)
             if fid is None:
                 continue
-            out.append({"fid": int(fid), "name": item.get("n") or ""})
+            out.append({"fid": fid, "name": item.get("n") or ""})
         if done:
             break
         offset += 100
+    if not out and sample:
+        global _dirs_diag_logged
+        if not _dirs_diag_logged:
+            _dirs_diag_logged = True
+            try:
+                log.info("115 目录列表有条目但无目录被识别，条目示例: %s",
+                         json.dumps(sample, ensure_ascii=False)[:400])
+            except Exception:
+                pass
     return out
 
 
