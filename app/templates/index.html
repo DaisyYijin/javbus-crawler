@@ -3,6 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" href="/static/favicon.ico">
 <title>JavBus Crawler v{{ version }}</title>
 <style>
   :root {
@@ -34,6 +35,7 @@
   }
   .brand b { font-size: 15px; }
   .brand small { display: block; font-weight: 400; color: var(--mut); font-size: 11px; }
+  .brand img.logo, header.app img.logo { width: auto; height: 26px; border-radius: 6px; background: none; }
   nav { display: flex; flex-direction: column; gap: 2px; }
   .nav-item {
     display: flex; align-items: center; gap: 11px; padding: 10px 12px; border-radius: 8px;
@@ -162,6 +164,9 @@
   .mag a { color: var(--pri); text-decoration: none; } .mag a:hover { text-decoration: underline; }
   .tag { display: inline-block; background: #eef0f6; border-radius: 6px; padding: 1px 7px; margin: 1px 2px 1px 0; font-size: 12px; color: var(--mut); }
   .tag.hit { background: var(--pri-soft); color: var(--pri); cursor: pointer; }
+  .tag.gtag { background: #fff; border: 1px solid var(--line); color: var(--txt); font-size: 13px; padding: 3px 10px; margin: 2px; cursor: pointer; }
+  .tag.gtag:hover { border-color: var(--pri); color: var(--pri); }
+  .tag.gtag.hit { background: var(--pri); border-color: var(--pri); color: #fff; font-weight: 600; }
   .code { font-weight: 700; color: var(--pri); }
   .cat { font-size: 11px; padding: 1px 6px; border-radius: 5px; }
   .cat.censored { background: var(--pri-soft); color: var(--pri); }
@@ -212,7 +217,7 @@
 
 <header class="app">
   <button class="h-burger" onclick="toggleMenu()" aria-label="菜单">≡</button>
-  <div class="logo">J</div>
+  <img class="logo" src="/static/logo.png" alt="logo">
   <div><b>JavBus Crawler</b> <small id="hd-ver">v{{ version }}</small></div>
   <div class="h-actions">
     <button class="h-btn" onclick="activatePage('logs')">运行日志</button>
@@ -223,16 +228,16 @@
 <div class="layout">
   <aside id="sidebar">
     <div class="brand">
-      <div class="logo">J</div>
+      <img class="logo" src="/static/logo.png" alt="logo">
       <div><b>JavBus Crawler</b><small id="side-ver">v{{ version }}</small></div>
     </div>
     <nav>
       <button class="nav-item active" data-page="dashboard"><span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg></span>仪表盘</button>
+      <button class="nav-item" data-page="p115"><span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z"/></svg></span>115 网盘</button>
       <button class="nav-item" data-page="settings"><span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/></svg></span>采集设置</button>
       <button class="nav-item" data-page="schedule"><span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15.5 14"/></svg></span>定时任务</button>
       <button class="nav-item" data-page="data"><span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><circle cx="3.5" cy="6" r="0.5" fill="currentColor"/><circle cx="3.5" cy="12" r="0.5" fill="currentColor"/><circle cx="3.5" cy="18" r="0.5" fill="currentColor"/></svg></span>采集数据</button>
       <button class="nav-item" data-page="browse"><span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="9" cy="8" r="3.5"/><path d="M3.5 19c.8-3 3-4.5 5.5-4.5s4.7 1.5 5.5 4.5"/><circle cx="17" cy="9" r="2.5"/><path d="M15.5 13.6c2 .2 3.9 1.5 5 4.4"/></svg></span>维度浏览</button>
-      <button class="nav-item" data-page="p115"><span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z"/></svg></span>115 网盘</button>
     </nav>
     <div class="side-foot">
       <div><span class="dot" id="side-dot"></span><span id="side-state">空闲</span></div>
@@ -415,15 +420,19 @@
               <button type="button" class="seg-btn" data-cat="uncensored" onclick="toggleCat(this)">无码</button>
             </div></div>
           <div class="field w6"><label>类别筛选（可选 · 点击多选） <small>留空 = 采集该频道全部类别</small></label>
-            <div class="row" style="margin-bottom:8px">
-              <button class="ghost" type="button" onclick="loadGenreChips(true)" style="padding:4px 12px;font-size:12px">刷新类别</button>
-              <span class="hint" style="margin:0">类别目录直接取自站点 有碼類別 / 無碼類別 页，缓存一天</span>
+            <div class="tabbar" style="margin:8px 0 10px">
+              <button type="button" class="tab-btn active" data-gcat="censored" onclick="switchGenreTab(this)">有码</button>
+              <button type="button" class="tab-btn" data-gcat="uncensored" onclick="switchGenreTab(this)">无码</button>
             </div>
-            <div class="kv" style="margin-bottom:5px"><b>有码类别</b> <small id="genre-count-censored"></small>：</div>
-            <div id="genre-chips-censored" class="row" style="gap:6px;flex-wrap:wrap;margin-bottom:9px"></div>
-            <div class="kv" style="margin-bottom:5px"><b>无码类别</b> <small id="genre-count-uncensored"></small>：</div>
-            <div id="genre-chips-uncensored" class="row" style="gap:6px;flex-wrap:wrap"></div>
-            <div class="hint">有码 / 无码为站点两套独立类别体系，分组可折叠（点大标题展开）；点击标签选中 / 取消（可多选，选中项所在组自动展开）；仅对上方勾选的频道生效。若站点临时拦截目录页，会回退显示已学习的类别。</div></div>
+            <div class="genre-pane" id="genre-pane-censored">
+              <small class="hint" id="genre-count-censored" style="display:block;margin:0 0 6px"></small>
+              <div id="genre-chips-censored" class="row" style="gap:6px;flex-wrap:wrap"></div>
+            </div>
+            <div class="genre-pane" id="genre-pane-uncensored" hidden>
+              <small class="hint" id="genre-count-uncensored" style="display:block;margin:0 0 6px"></small>
+              <div id="genre-chips-uncensored" class="row" style="gap:6px;flex-wrap:wrap"></div>
+            </div>
+            <div class="hint">有码 / 无码为站点两套独立类别体系，分组可折叠（点大标题展开）；点击标签选中 / 取消（可多选，选中项所在组自动展开）；仅对上方勾选的频道生效。目录缓存一天，重新打开页面自动更新。</div></div>
         </div>
       </div>
 
@@ -725,27 +734,30 @@ function addKeyword(kw) {
   el.focus();
 }
 const GENRE_SEL = { censored: new Set(), uncensored: new Set() };
-async function loadGenreChips(force) {
+function switchGenreTab(btn) {
+  const field = btn.closest('.field');
+  field.querySelectorAll('.tabbar .tab-btn').forEach(b => b.classList.toggle('active', b === btn));
+  field.querySelectorAll('.genre-pane').forEach(p => p.hidden = p.id !== 'genre-pane-' + btn.dataset.gcat);
+}
+async function loadGenreChips() {
   try {
-    const r = await fetch('/api/genres' + (force ? '?refresh=1' : ''));
-    const j = await r.json();
+    const j = await (await fetch('/api/genres')).json();
     for (const cat of ['censored', 'uncensored']) {
       const groups = (j.items && j.items[cat]) || [];
       const total = groups.reduce((s, g) => s + g.genres.length, 0);
-      const box = $('genre-chips-' + cat);
       $('genre-count-' + cat).textContent = total ? `${groups.length} 组 ${total} 个分类` : '';
-      box.innerHTML = groups.length
+      $('genre-chips-' + cat).innerHTML = groups.length
         ? groups.map(g => {
             const open = g.group === '主題' || g.genres.some(x => GENRE_SEL[cat].has(String(x.id)));
             return `
           <details style="width:100%"${open ? ' open' : ''}>
             <summary style="cursor:pointer;font-size:13px;font-weight:600;margin:6px 0">${esc(g.group)} <small>(${g.genres.length})</small></summary>
             <div class="row" style="gap:6px;flex-wrap:wrap;margin:6px 0 10px">
-              ${g.genres.map(x => `<span class="tag" style="cursor:pointer" data-gcat="${cat}" data-genre="${esc(String(x.id))}" title="${esc(x.name)}（${esc(String(x.id))}）">${esc(x.name)}</span>`).join('')}
+              ${g.genres.map(x => `<span class="tag gtag" style="cursor:pointer" data-gcat="${cat}" data-genre="${esc(String(x.id))}" title="${esc(x.name)}（${esc(String(x.id))}）">${esc(x.name)}</span>`).join('')}
             </div>
           </details>`;
           }).join('')
-        : `<span class="hint" style="margin:0;color:var(--danger,#e5484d)">⚠ ${esc((j.status && j.status[cat]) || '暂无（点击「刷新类别」从站点获取）')}</span>`;
+        : `<span class="hint" style="margin:0;color:var(--err)">⚠ ${esc((j.status && j.status[cat]) || '暂无类别')}</span>`;
     }
     syncGenreChips();
   } catch (e) {}
