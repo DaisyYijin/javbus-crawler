@@ -142,6 +142,44 @@ def test_rank_magnets_matches_pick():
         assert (ranked[0]["hits"][0] if ranked[0]["hits"] else "") == kw, tb
 
 
+def test_parse_fallback():
+    assert crawler.parse_fallback("first") == "first"
+    assert crawler.parse_fallback(" LARGEST ") == "largest"
+    assert crawler.parse_fallback("none") == "none"
+    assert crawler.parse_fallback("") == "first"
+    assert crawler.parse_fallback("xxx") == "first"
+
+
+def test_magnet_fallback_strategies():
+    magnets = [
+        {"name": "a plain", "size": "1GB", "date": "2025-01-01"},
+        {"name": "b plain", "size": "8GB", "date": "2023-01-01"},
+        {"name": "c 中文", "size": "2GB", "date": "2024-01-01"},
+    ]
+    # a hit exists: the fallback never kicks in, whatever it is
+    for fb in ("first", "largest", "none"):
+        m, kw = crawler.pick_magnet(magnets, ["中文"], [], fb)
+        assert m["name"] == "c 中文" and kw == "中文", fb
+        assert crawler.pick_best(magnets, ["中文"], [], fb)[0]["name"] == "c 中文"
+    # no hit -> first: list head (newest)
+    m, kw = crawler.pick_magnet(magnets, ["高清"], [], "first")
+    assert m["name"] == "a plain" and kw == ""
+    # no hit -> largest: biggest file
+    m, _kw = crawler.pick_magnet(magnets, ["高清"], [], "largest")
+    assert m["name"] == "b plain"
+    # no hit -> none: nothing is picked, movie stored without a magnet
+    m, kw = crawler.pick_magnet(magnets, ["高清"], [], "none")
+    assert m is None and kw == ""
+    assert crawler.pick_best(magnets, ["高清"], [], "none") == []
+    # rank_magnets mirrors all of it
+    ranked = crawler.rank_magnets(magnets, ["高清"], [], "largest")
+    assert ranked[0]["best"] and ranked[0]["name"] == "b plain"
+    ranked = crawler.rank_magnets(magnets, ["高清"], [], "first")
+    assert ranked[0]["best"] and ranked[0]["name"] == "a plain"
+    ranked = crawler.rank_magnets(magnets, ["高清"], [], "none")
+    assert not any(r["best"] for r in ranked)
+
+
 def test_compute_matched_keeps_original_spelling():
     hits = crawler.compute_matched(["VR専用"], [], ["vr专用"])
     assert hits == []

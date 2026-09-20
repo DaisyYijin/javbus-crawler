@@ -540,7 +540,7 @@
               <button type="button" class="seg-btn active" data-mode="mark" onclick="setFilterMode(this)">全部入库</button>
               <button type="button" class="seg-btn" data-mode="only" onclick="setFilterMode(this)">只收命中的</button>
             </div></div>
-          <div style="flex:1;min-width:220px;max-width:340px"><label style="margin:0 0 5px" for="c_MAGNET_TIEBREAK">同级决胜 <small>关键词同分时</small></label>
+          <div style="min-width:200px;max-width:280px"><label style="margin:0 0 5px" for="c_MAGNET_TIEBREAK">同级决胜 <small>关键词同分时</small></label>
             <select id="c_MAGNET_TIEBREAK">
               <option value="size,date">大小优先，其次日期</option>
               <option value="date,size">日期优先，其次大小</option>
@@ -548,8 +548,14 @@
               <option value="date">仅看日期</option>
               <option value="">都不看</option>
             </select></div>
+          <div style="min-width:200px;max-width:280px"><label style="margin:0 0 5px" for="c_MAGNET_FALLBACK">兜底策略 <small>没命中任何关键词时</small></label>
+            <select id="c_MAGNET_FALLBACK">
+              <option value="first">取最新一条（列表第一条）</option>
+              <option value="largest">取体积最大的一条</option>
+              <option value="none">不选磁力（影片仍入库）</option>
+            </select></div>
         </div>
-        <div class="hint">优先级：命中关键词多者优先（中文+高清 > 单命中）→ 关键词靠左优先 → 同级决胜 → 取第一条。每个番号只入库一条最优磁力。</div>
+        <div class="hint">优先级：命中关键词多者优先（中文+高清 > 单命中）→ 关键词靠左优先 → 同级决胜 → 兜底策略。每个番号只入库一条最优磁力。</div>
       </div>
       <div class="card">
         <h2>优选预览 <small>（输入番号看当前配置会选中哪条磁力 · 不入库，可用未保存的关键词试验）</small></h2>
@@ -846,7 +852,7 @@ async function saveConfig() {
   const body = {};
   ['BASE_URL','METATUBE_URL','METATUBE_TOKEN','DELAY_SECONDS','JITTER_SECONDS',
    'MAX_RETRIES','TIMEOUT','WEB_PORT','AUTO_CRAWL_INTERVAL_HOURS','AUTO_CRAWL_PAGES',
-   'TAG_FILTERS','MAGNET_TIEBREAK','P115_DOWNLOAD_DIR','P115_TARGET_DIR','P115_REJECT_DIR']
+   'TAG_FILTERS','MAGNET_TIEBREAK','MAGNET_FALLBACK','P115_DOWNLOAD_DIR','P115_TARGET_DIR','P115_REJECT_DIR']
     .forEach(k => { const el = $('c_' + k); if (el) body[k] = el.value; });
   body.CATEGORY = [...document.querySelectorAll('#cat-seg .seg-btn.active')].map(b => b.dataset.cat).join(',');
   body.GENRE_CENSORED = [...GENRE_SEL.censored].join(',');
@@ -1056,7 +1062,8 @@ async function runPreview() {
   msg.textContent = ''; box.innerHTML = '';
   try {
     const r = await fetch('/api/filter/preview', {method: 'POST', headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({code, keywords: $('c_TAG_FILTERS').value, tiebreak: $('c_MAGNET_TIEBREAK').value})});
+      body: JSON.stringify({code, keywords: $('c_TAG_FILTERS').value,
+                            tiebreak: $('c_MAGNET_TIEBREAK').value, fallback: $('c_MAGNET_FALLBACK').value})});
     const j = await r.json();
     if (!r.ok || j.error) { msg.textContent = '✗ ' + (j.error || ('HTTP ' + r.status)); msg.className = 'msg err'; return; }
     msg.textContent = ''; msg.className = 'msg';
@@ -1091,7 +1098,11 @@ function renderPreview(j) {
         <td class="pv-win-flag">${m.best ? '✓ 将入选' : ''}</td>
       </tr>`).join('')}
     </tbody></table>`;
-  html += '<div class="hint" style="margin-top:8px">第 1 名即入库 / 推送 115 时会选中的磁力；调整关键词或决胜规则后可再点预览对比（无需先保存）。</div>';
+  html += '<div class="hint" style="margin-top:8px">' +
+    (j.magnets.some(m => m.best)
+      ? '第 1 名即入库 / 推送 115 时会选中的磁力；调整关键词、决胜或兜底后可再点预览对比（无需先保存）。'
+      : '没有磁力命中关键词，且兜底策略为「不选磁力」——该片将不带磁力入库。') +
+    '</div>';
   $('pv-result').innerHTML = html;
 }
 $('pv-code').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); runPreview(); } });

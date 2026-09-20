@@ -32,6 +32,7 @@ DEFAULTS: dict = {
     "TAG_FILTERS": "",                # comma-separated keywords, e.g. "字幕,高清,4K"
     "TAG_FILTER_MODE": "mark",        # all | only | mark
     "MAGNET_TIEBREAK": "size,date",   # magnet pick tiebreakers: size (bigger first), date (newer first)
+    "MAGNET_FALLBACK": "first",       # no keyword hit at all: first (newest) | largest | none
     "METATUBE_URL": "",               # e.g. http://192.168.1.10:8080
     "METATUBE_TOKEN": "",             # optional bearer token for metatube server
     "P115_DOWNLOAD_DIR": "待整理",    # 115 dir offline downloads land in
@@ -59,6 +60,7 @@ _TYPES = {
     "TAG_FILTERS": str,
     "TAG_FILTER_MODE": str,
     "MAGNET_TIEBREAK": str,
+    "MAGNET_FALLBACK": str,
     "METATUBE_URL": str,
     "METATUBE_TOKEN": str,
     "P115_DOWNLOAD_DIR": str,
@@ -156,6 +158,10 @@ def save(partial: dict) -> dict:
         from .crawler import parse_tiebreak
 
         clean["MAGNET_TIEBREAK"] = ",".join(parse_tiebreak(clean["MAGNET_TIEBREAK"]))
+    if "MAGNET_FALLBACK" in clean:
+        from .crawler import parse_fallback
+
+        clean["MAGNET_FALLBACK"] = parse_fallback(clean["MAGNET_FALLBACK"])
     if "AUTO_CRAWL_INTERVAL_HOURS" in clean and clean["AUTO_CRAWL_INTERVAL_HOURS"] <= 0:
         raise ValueError("自动采集间隔必须大于 0")
     if clean.get("AUTO_CRAWL_INTERVAL_HOURS", 0) > 24 * 30:

@@ -154,7 +154,7 @@ def known_codes(conn: sqlite3.Connection) -> set[str]:
 
 
 # ------------------------------------------------------------ web queries --
-_MOVIE_COLUMNS = "code, title, cover, release_date, duration, studio, label, series, magnet_count, matched_tags, matched_count, first_seen"
+_MOVIE_COLUMNS = "code, title, cover, release_date, duration, studio, label, series, magnet_count, matched_tags, matched_count, first_seen, category"
 
 
 def list_movies(conn: sqlite3.Connection, q: str = "", page: int = 1, size: int = 20,

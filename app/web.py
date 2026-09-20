@@ -477,9 +477,10 @@ def create_app() -> Flask:
             tiebreak = crawler.parse_tiebreak(body.get("tiebreak"))
         except ValueError:
             tiebreak = ["size", "date"]
+        fallback = crawler.parse_fallback(body.get("fallback"))
         try:
             data = crawler.fetch_code_preview(
-                settings.load(), code, keywords, tiebreak)
+                settings.load(), code, keywords, tiebreak, fallback)
         except ValueError as e:
             return jsonify({"error": str(e)}), 400
         except Exception as e:  # network / parse failures
@@ -502,7 +503,8 @@ def create_app() -> Flask:
             tiebreak = crawler.parse_tiebreak(cfg.get("MAGNET_TIEBREAK"))
         except ValueError:
             tiebreak = ["size", "date"]
-        best, kw = crawler.pick_magnet(movie.get("magnets") or [], keywords, tiebreak)
+        fallback = crawler.parse_fallback(cfg.get("MAGNET_FALLBACK"))
+        best, kw = crawler.pick_magnet(movie.get("magnets") or [], keywords, tiebreak, fallback)
         movie["best_magnet"] = best["hash"] if best else None
         movie["best_kw"] = kw
         return jsonify(movie)
@@ -741,7 +743,8 @@ def create_app() -> Flask:
                 tiebreak = crawler.parse_tiebreak(cfg.get("MAGNET_TIEBREAK"))
             except ValueError:
                 tiebreak = ["size", "date"]
-            magnet, _kw = crawler.pick_magnet(movie["magnets"], keywords, tiebreak)
+            fallback = crawler.parse_fallback(cfg.get("MAGNET_FALLBACK"))
+            magnet, _kw = crawler.pick_magnet(movie["magnets"], keywords, tiebreak, fallback)
         if not magnet:
             return jsonify({"ok": False, "error": "没有可用的磁力链接"}), 400
         try:

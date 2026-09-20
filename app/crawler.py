@@ -134,6 +134,12 @@ def parse_tiebreak(spec) -> list[str]:
     return list(dict.fromkeys(parts))
 
 
+def parse_fallback(spec) -> str:
+    """Normalize MAGNET_FALLBACK: first (newest) | largest | none."""
+    fb = str(spec or "").strip().lower()
+    return fb if fb in ("first", "largest", "none") else "first"
+
+
 _SIZE_RE = re.compile(r"([\d.]+)\s*(tb|gb|mb|kb|b)", re.I)
 _SIZE_UNITS = {"b": 1, "kb": 1024, "mb": 1024 ** 2, "gb": 1024 ** 3, "tb": 1024 ** 4}
 
@@ -183,8 +189,13 @@ def _score_key(idx: int, name: str, size, date, kws: list, tb: list) -> tuple | 
 
 def _pick_index(names: list[str], keywords: list[str],
                 tiebreak: list[str] | None = None,
-                sizes: list | None = None, dates: list | None = None) -> int | None:
-    """Rank magnet names and return the best index (None = no keyword hit)."""
+                sizes: list | None = None, dates: list | None = None,
+                fallback: str = "first") -> int | None:
+    """Rank magnet names and return the best index (None = no keyword hit).
+
+    When NOTHING matches, the fallback decides: "first" -> list head (newest),
+    "largest" -> biggest size, "none" -> return None meaning "pick nothing".
+    """
     kws = [(i, k.strip().lower()) for i, k in enumerate(keywords) if k.strip()]
     tb = tiebreak or []
     sizes = sizes or []
@@ -198,7 +209,18 @@ def _pick_index(names: list[str], keywords: list[str],
         if key is None or (best_key is not None and key >= best_key):
             continue
         best_key, best_i = key, idx
-    return best_i
+    if best_i is not None:
+        return best_i
+    if not names:
+        return None
+    if fallback == "largest":
+        li, lkey = 0, -parse_size(sizes[0] if sizes else "")
+        for idx in range(1, len(names)):
+            k = -parse_size(sizes[idx] if idx < len(sizes) else "")
+            if k < lkey:
+                li, lkey = idx, k
+        return li
+    return None if fallback == "none" else 0
 
 
 def _mfield(m, key: str) -> str:
@@ -209,14 +231,16 @@ def _mfield(m, key: str) -> str:
 
 
 def rank_magnets(magnets: list, keywords: list[str],
-                 tiebreak: list[str] | None = None) -> list[dict]:
+                 tiebreak: list[str] | None = None,
+                 fallback: str = "first") -> list[dict]:
     """Rank ALL magnets best-first, with per-magnet hit details for the UI.
 
     Same scoring as _pick_index (keyword hits > keyword order > tiebreakers >
-    list position). Unmatched magnets keep their original order after the
-    matched ones. rank 1 is always the overall winner, i.e. exactly what
-    pick_magnet/pick_best would return (including the no-hit -> first magnet
-    fallback). Each item: {name, size, date, hits, hit_count, rank, best}.
+    list position). Unmatched magnets go after the matched ones, ordered by
+    the fallback ("first" keeps list order, "largest" sorts by size desc).
+    rank 1 is the overall winner — unless nothing matched and fallback is
+    "none", in which case NO row is marked best (nothing gets picked).
+    Each item: {name, size, date, hits, hit_count, rank, best}.
     """
     if not magnets:
         return []
@@ -230,26 +254,32 @@ def rank_magnets(magnets: list, keywords: list[str],
                          [(i, k.lower()) for i, k in kws], tb) if hits else None
         entries.append({"name": name, "size": size, "date": date,
                         "hits": [k for _i, k in hits], "key": key})
-    ranked = sorted((e for e in entries if e["key"] is not None),
-                    key=lambda e: e["key"]) + \
-             [e for e in entries if e["key"] is None]
+    matched = sorted((e for e in entries if e["key"] is not None),
+                     key=lambda e: e["key"])
+    rest = [e for e in entries if e["key"] is None]
+    if not matched and fallback == "largest":
+        rest.sort(key=lambda e: -parse_size(e["size"]))
+    ranked = matched + rest
+    pick_none = not matched and fallback == "none"
     for rank, e in enumerate(ranked, 1):
         e["rank"] = rank
-        e["best"] = rank == 1
+        e["best"] = rank == 1 and not pick_none
         e["hit_count"] = len(e["hits"])
         del e["key"]
     return ranked
 
 
 def pick_magnet(magnets: list[dict], keywords: list[str],
-                tiebreak: list[str] | None = None) -> tuple[dict | None, str]:
+                tiebreak: list[str] | None = None,
+                fallback: str = "first") -> tuple[dict | None, str]:
     """Pick the single magnet to use, honouring keyword quality then priority.
 
     A magnet matching several keywords (e.g. 中文 AND 高清) beats one matching
     a single keyword; among equals the earlier keyword has priority, then the
     configured tiebreakers (size bigger-first / date newer-first), and the
     list order (newest first) breaks remaining ties. When no keyword matches
-    any magnet name, fall back to the first magnet on the list.
+    any magnet name, the fallback applies: first (list head), largest
+    (biggest size) or none (return (None, '')).
     Returns (magnet-or-None, matched-keyword-or-empty-string).
     """
     if not magnets:
@@ -257,31 +287,33 @@ def pick_magnet(magnets: list[dict], keywords: list[str],
     names = [m.get("name") or "" for m in magnets]
     i = _pick_index(names, keywords, tiebreak,
                     [m.get("size") or "" for m in magnets],
-                    [m.get("date") or "" for m in magnets])
+                    [m.get("date") or "" for m in magnets], fallback)
     if i is None:
-        return magnets[0], ""
+        return None, ""
     kws = [k.strip() for k in keywords if k.strip()]
     n = names[i].lower()
-    matched = next(k for k in kws if k.lower() in n)
+    matched = next((k for k in kws if k.lower() in n), "")
     return magnets[i], matched
 
 
 def pick_best(magnets: list, keywords: list[str],
-              tiebreak: list[str] | None = None) -> list:
+              tiebreak: list[str] | None = None,
+              fallback: str = "first") -> list:
     """Keep only the single best magnet for storage.
 
     Uses the same scoring as pick_magnet: most keyword hits first (中文+高清
     beats 中文-only), then keyword priority, then the configured tiebreakers,
-    then list order. No match -> the first magnet (newest). Filtering/marking
-    should still be computed on the FULL list before calling this.
+    then list order. No match -> the configured fallback ("none" keeps NO
+    magnet, so the movie is stored without one). Filtering/marking should
+    still be computed on the FULL list before calling this.
     """
     if not magnets:
         return []
-    names = [getattr(m, "name", "") or "" for m in magnets]
+    names = [_mfield(m, "name") for m in magnets]
     i = _pick_index(names, keywords, tiebreak,
-                    [getattr(m, "size", "") or "" for m in magnets],
-                    [getattr(m, "date", "") or "" for m in magnets])
-    return [magnets[i if i is not None else 0]]
+                    [_mfield(m, "size") for m in magnets],
+                    [_mfield(m, "date") for m in magnets], fallback)
+    return [] if i is None else [magnets[i]]
 
 
 def run_job(
@@ -421,6 +453,7 @@ def run_job(
                         tiebreak = parse_tiebreak(cfg.get("MAGNET_TIEBREAK"))
                     except ValueError:
                         tiebreak = ["size", "date"]
+                    fallback = parse_fallback(cfg.get("MAGNET_FALLBACK"))
                     filter_mode = cfg.get("TAG_FILTER_MODE", "mark")
                     if keywords:
                         movie.matched_tags = compute_matched(
@@ -437,7 +470,7 @@ def run_job(
 
                     # store ONE magnet per movie: the best pick by keyword
                     # priority + tiebreakers (matching used the full list)
-                    movie.magnets = pick_best(movie.magnets, keywords, tiebreak)
+                    movie.magnets = pick_best(movie.magnets, keywords, tiebreak, fallback)
 
                     is_new = item.code not in known
                     if refresh and magnets_fetched:
@@ -518,10 +551,11 @@ def crawl_code(cfg: dict, code: str, magnets: bool = True, stop_check=None) -> d
             tiebreak = parse_tiebreak(cfg.get("MAGNET_TIEBREAK"))
         except ValueError:
             tiebreak = ["size", "date"]
+        fallback = parse_fallback(cfg.get("MAGNET_FALLBACK"))
         if keywords:
             movie.matched_tags = compute_matched(
                 movie.genres, [m.name for m in movie.magnets], keywords)
-        movie.magnets = pick_best(movie.magnets, keywords, tiebreak)
+        movie.magnets = pick_best(movie.magnets, keywords, tiebreak, fallback)
         db.upsert_movie(conn, movie)
         db.delete_magnets(conn, movie.code)  # single-magnet storage: resync
         db.insert_magnets(conn, movie.magnets, movie.code)
@@ -536,11 +570,12 @@ def crawl_code(cfg: dict, code: str, magnets: bool = True, stop_check=None) -> d
 
 
 def fetch_code_preview(cfg: dict, code: str, keywords: list[str],
-                       tiebreak: list[str] | None = None, stop_check=None) -> dict:
+                       tiebreak: list[str] | None = None,
+                       fallback: str = "first", stop_check=None) -> dict:
     """Live-fetch a movie by code and rank its FULL magnet list (no DB writes).
 
     Used by the 精准筛选 preview: shows exactly which magnet the current
-    keyword priority + tiebreakers would pick, without storing anything.
+    keyword priority + tiebreakers + fallback would pick, without storing.
     """
     code = code.strip().upper()
     if not _CODE_RE.fullmatch(code):
@@ -553,5 +588,6 @@ def fetch_code_preview(cfg: dict, code: str, keywords: list[str],
         "title": movie.title,
         "category": movie.category,
         "genres": movie.genres,
-        "magnets": rank_magnets(movie.magnets, keywords, tiebreak),
+        "fallback": fallback,
+        "magnets": rank_magnets(movie.magnets, keywords, tiebreak, fallback),
     }
