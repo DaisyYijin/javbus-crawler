@@ -263,8 +263,17 @@ def qr_poll() -> dict:
         return {"status": "error", "message": str(exc)}
     raw = data.get("status")
     if raw is None:
-        # 115 intermittently answers {"data": {}} (IP-level rate limiting);
-        # treat as retryable "waiting" — a real scan still yields status=2
+        # 115 answers {"data": {}} a LOT (rate-limited endpoint): the status
+        # report may NEVER show the confirmation even though the phone has
+        # already accepted. Probe the result endpoint directly every ~40s —
+        # a confirmed login hands out the cookie regardless of the status feed.
+        now = time.time()
+        if now - _qr.get("last_probe", 0.0) >= 40:
+            _qr["last_probe"] = now
+            try:
+                return _qr_finish(c, engine)
+            except Exception:
+                pass  # not confirmed yet (or not scanned at all) — keep waiting
         return {"status": "waiting"}
     st = _QR_STATUS.get(raw, f"unknown({raw})")
     if st in ("expired", "canceled"):
@@ -272,6 +281,11 @@ def qr_poll() -> dict:
         return {"status": st}
     if st != "success":
         return {"status": st}
+    return _qr_finish(c, engine)
+
+
+def _qr_finish(c, engine) -> dict:
+    """Exchange a confirmed QR uid for cookies and persist the login."""
     global _client, _user_cache
     resp = check_response(c.login_qrcode_scan_result(
         _qr["uid"], app=_qr["app"], timeout=_QR_TIMEOUT, request=engine))
