@@ -159,36 +159,86 @@ def _date_ordinal(spec) -> int:
         return 0
 
 
-def _pick_index(names: list[str], keywords: list[str],
-                tiebreak: list[str] | None = None,
-                sizes: list | None = None, dates: list | None = None) -> int | None:
-    """Rank magnet names and return the best index (None = no keyword hit).
+def _score_key(idx: int, name: str, size, date, kws: list, tb: list) -> tuple | None:
+    """Composite sort key for one magnet; None when no keyword hits.
 
     Scoring: the magnet matching MORE keywords wins (中文+高清 beats 中文-only);
     ties go to the higher-priority keyword (earlier in `keywords`), then to the
     configured tiebreakers ("size": bigger first, "date": newer first), and
     finally to the earlier list position (newest first).
     """
+    n = (name or "").lower()
+    hits = [ki for ki, k in kws if k in n]
+    if not hits:
+        return None
+    key = [-len(hits), hits[0]]
+    for t in tb:
+        if t == "size":
+            key.append(-parse_size(size))
+        elif t == "date":
+            key.append(-_date_ordinal(date))
+    key.append(idx)
+    return tuple(key)
+
+
+def _pick_index(names: list[str], keywords: list[str],
+                tiebreak: list[str] | None = None,
+                sizes: list | None = None, dates: list | None = None) -> int | None:
+    """Rank magnet names and return the best index (None = no keyword hit)."""
     kws = [(i, k.strip().lower()) for i, k in enumerate(keywords) if k.strip()]
     tb = tiebreak or []
+    sizes = sizes or []
+    dates = dates or []
     best_i: int | None = None
     best_key: tuple | None = None
     for idx, name in enumerate(names):
-        n = (name or "").lower()
-        hits = [ki for ki, k in kws if k in n]
-        if not hits:
+        key = _score_key(idx, name,
+                         sizes[idx] if idx < len(sizes) else "",
+                         dates[idx] if idx < len(dates) else "", kws, tb)
+        if key is None or (best_key is not None and key >= best_key):
             continue
-        key = [-len(hits), hits[0]]
-        for t in tb:
-            if t == "size":
-                key.append(-parse_size((sizes or [])[idx] if idx < len(sizes or []) else ""))
-            elif t == "date":
-                key.append(-_date_ordinal((dates or [])[idx] if idx < len(dates or []) else ""))
-        key.append(idx)
-        key = tuple(key)
-        if best_key is None or key < best_key:
-            best_key, best_i = key, idx
+        best_key, best_i = key, idx
     return best_i
+
+
+def _mfield(m, key: str) -> str:
+    """Read a field from a magnet dict OR an attribute-style object."""
+    if isinstance(m, dict):
+        return str(m.get(key) or "")
+    return str(getattr(m, key, "") or "")
+
+
+def rank_magnets(magnets: list, keywords: list[str],
+                 tiebreak: list[str] | None = None) -> list[dict]:
+    """Rank ALL magnets best-first, with per-magnet hit details for the UI.
+
+    Same scoring as _pick_index (keyword hits > keyword order > tiebreakers >
+    list position). Unmatched magnets keep their original order after the
+    matched ones. rank 1 is always the overall winner, i.e. exactly what
+    pick_magnet/pick_best would return (including the no-hit -> first magnet
+    fallback). Each item: {name, size, date, hits, hit_count, rank, best}.
+    """
+    if not magnets:
+        return []
+    kws = [(i, k.strip()) for i, k in enumerate(keywords) if k.strip()]
+    tb = list(tiebreak or [])
+    entries = []
+    for idx, m in enumerate(magnets):
+        name, size, date = _mfield(m, "name"), _mfield(m, "size"), _mfield(m, "date")
+        hits = [(i, k) for i, k in kws if k.lower() in name.lower()]
+        key = _score_key(idx, name, size, date,
+                         [(i, k.lower()) for i, k in kws], tb) if hits else None
+        entries.append({"name": name, "size": size, "date": date,
+                        "hits": [k for _i, k in hits], "key": key})
+    ranked = sorted((e for e in entries if e["key"] is not None),
+                    key=lambda e: e["key"]) + \
+             [e for e in entries if e["key"] is None]
+    for rank, e in enumerate(ranked, 1):
+        e["rank"] = rank
+        e["best"] = rank == 1
+        e["hit_count"] = len(e["hits"])
+        del e["key"]
+    return ranked
 
 
 def pick_magnet(magnets: list[dict], keywords: list[str],
@@ -415,12 +465,30 @@ def run_job(
 _CODE_RE = re.compile(r"[0-9A-Za-z][0-9A-Za-z_-]{0,30}")
 
 
-def crawl_code(cfg: dict, code: str, magnets: bool = True, stop_check=None) -> dict:
-    """Crawl a single movie by code (tries the censored path, then /uncensored)."""
-    code = code.strip().upper()
-    if not _CODE_RE.fullmatch(code):
-        raise ValueError(f"番号格式无效: {code!r}（示例: BANK-248）")
-    fetcher = Fetcher(
+def _fetch_code_movie(fetcher: Fetcher, code: str, with_magnets: bool = True):
+    """Fetch a single movie page (censored path first, then /uncensored).
+
+    Pure fetch: no DB writes. Returns the Movie or None when not found.
+    """
+    for section, cat in (("", "censored"), ("/uncensored", "uncensored")):
+        html = fetcher.get(f"{section}/{code}")
+        if not html:
+            continue
+        movie = parse_detail(html, code, f"{fetcher.base_url}{section}/{code}")
+        if not movie.title:
+            continue  # shell/redirect page, try the next section
+        movie.category = cat
+        if with_magnets:
+            sv = parse_movie_script_vars(html)
+            if sv.get("gid"):
+                frag = fetcher.get(magnet_ajax_path(sv), referer=movie.url)
+                movie.magnets = parse_magnets(frag) if frag else []
+        return movie
+    return None
+
+
+def _make_fetcher(cfg: dict, stop_check=None) -> Fetcher:
+    return Fetcher(
         base_url=cfg["BASE_URL"],
         delay=cfg["DELAY_SECONDS"],
         jitter=cfg["JITTER_SECONDS"],
@@ -429,42 +497,61 @@ def crawl_code(cfg: dict, code: str, magnets: bool = True, stop_check=None) -> d
         proxy=(cfg.get("PROXY") or "").strip(),
         stop_check=stop_check,
     )
+
+
+def crawl_code(cfg: dict, code: str, magnets: bool = True, stop_check=None) -> dict:
+    """Crawl a single movie by code (tries the censored path, then /uncensored)."""
+    code = code.strip().upper()
+    if not _CODE_RE.fullmatch(code):
+        raise ValueError(f"番号格式无效: {code!r}（示例: BANK-248）")
+    fetcher = _make_fetcher(cfg, stop_check)
     conn = db.connect(cfg["DB_PATH"])
     try:
         known = db.known_codes(conn)
-        for section, cat in (("", "censored"), ("/uncensored", "uncensored")):
-            html = fetcher.get(f"{section}/{code}")
-            if not html:
-                continue
-            movie = parse_detail(html, code, f"{fetcher.base_url}{section}/{code}")
-            if not movie.title:
-                continue  # shell/redirect page, try the next section
-            movie.category = cat
-            for gcat, gname, gid in movie.genre_links:
-                db.set_meta(conn, f"genre_id:{gcat}:{gname}", gid)
-            if magnets:
-                sv = parse_movie_script_vars(html)
-                if sv.get("gid"):
-                    frag = fetcher.get(magnet_ajax_path(sv), referer=movie.url)
-                    movie.magnets = parse_magnets(frag) if frag else []
-            keywords = [k for k in str(cfg.get("TAG_FILTERS") or "").split(",") if k.strip()]
-            try:
-                tiebreak = parse_tiebreak(cfg.get("MAGNET_TIEBREAK"))
-            except ValueError:
-                tiebreak = ["size", "date"]
-            if keywords:
-                movie.matched_tags = compute_matched(
-                    movie.genres, [m.name for m in movie.magnets], keywords)
-            movie.magnets = pick_best(movie.magnets, keywords, tiebreak)
-            db.upsert_movie(conn, movie)
-            db.delete_magnets(conn, movie.code)  # single-magnet storage: resync
-            db.insert_magnets(conn, movie.magnets, movie.code)
-            conn.commit()
-            is_new = code not in known
-            log.info("%s %s 磁力=%d %s", "补采新增" if is_new else "补采更新",
-                     code, len(movie.magnets), movie.title[:40])
-            return {"code": code, "title": movie.title, "category": cat,
-                    "new": is_new, "magnets": len(movie.magnets)}
-        raise ValueError(f"站点上找不到 {code}（有码/无码两个频道都试过了）")
+        movie = _fetch_code_movie(fetcher, code, magnets)
+        if movie is None:
+            raise ValueError(f"站点上找不到 {code}（有码/无码两个频道都试过了）")
+        for gcat, gname, gid in movie.genre_links:
+            db.set_meta(conn, f"genre_id:{gcat}:{gname}", gid)
+        keywords = [k for k in str(cfg.get("TAG_FILTERS") or "").split(",") if k.strip()]
+        try:
+            tiebreak = parse_tiebreak(cfg.get("MAGNET_TIEBREAK"))
+        except ValueError:
+            tiebreak = ["size", "date"]
+        if keywords:
+            movie.matched_tags = compute_matched(
+                movie.genres, [m.name for m in movie.magnets], keywords)
+        movie.magnets = pick_best(movie.magnets, keywords, tiebreak)
+        db.upsert_movie(conn, movie)
+        db.delete_magnets(conn, movie.code)  # single-magnet storage: resync
+        db.insert_magnets(conn, movie.magnets, movie.code)
+        conn.commit()
+        is_new = code not in known
+        log.info("%s %s 磁力=%d %s", "补采新增" if is_new else "补采更新",
+                 code, len(movie.magnets), movie.title[:40])
+        return {"code": code, "title": movie.title, "category": movie.category,
+                "new": is_new, "magnets": len(movie.magnets)}
     finally:
         conn.close()
+
+
+def fetch_code_preview(cfg: dict, code: str, keywords: list[str],
+                       tiebreak: list[str] | None = None, stop_check=None) -> dict:
+    """Live-fetch a movie by code and rank its FULL magnet list (no DB writes).
+
+    Used by the 精准筛选 preview: shows exactly which magnet the current
+    keyword priority + tiebreakers would pick, without storing anything.
+    """
+    code = code.strip().upper()
+    if not _CODE_RE.fullmatch(code):
+        raise ValueError(f"番号格式无效: {code!r}（示例: BANK-248）")
+    movie = _fetch_code_movie(_make_fetcher(cfg, stop_check), code, True)
+    if movie is None:
+        raise ValueError(f"站点上找不到 {code}（有码/无码两个频道都试过了）")
+    return {
+        "code": code,
+        "title": movie.title,
+        "category": movie.category,
+        "genres": movie.genres,
+        "magnets": rank_magnets(movie.magnets, keywords, tiebreak),
+    }

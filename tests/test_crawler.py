@@ -95,6 +95,53 @@ def test_tiebreak_size_then_date():
     assert crawler.pick_best(ms2, ["中文", "高清"], ["size", "date"])[0].link.endswith("C2")
 
 
+def test_rank_magnets_full_order():
+    magnets = [
+        {"name": "FNS-220 HD", "size": "2GB", "date": "2024-01-01"},      # unmatched
+        {"name": "FNS-220 中文 高清", "size": "5GB", "date": "2023-06-01"},  # double hit
+        {"name": "FNS-220 中文", "size": "10GB", "date": "2025-01-01"},     # 中文 only
+        {"name": "FNS-220 高清", "size": "8GB", "date": "2024-08-08"},      # 高清 only
+    ]
+    ranked = crawler.rank_magnets(magnets, ["中文", "高清"], ["size", "date"])
+    assert [r["name"] for r in ranked] == [
+        "FNS-220 中文 高清",  # 1: double hit wins over everything
+        "FNS-220 中文",       # 2: keyword order (中文 first) beats 高清 despite size/date
+        "FNS-220 高清",       # 3
+        "FNS-220 HD",         # 4: unmatched keeps original list position
+    ]
+    assert ranked[0]["best"] is True and ranked[0]["hit_count"] == 2
+    assert ranked[0]["hits"] == ["中文", "高清"]
+    assert [r["best"] for r in ranked[1:]] == [False, False, False]
+    assert ranked[3]["hits"] == [] and ranked[3]["hit_count"] == 0
+    # all fields survive the round trip
+    assert ranked[0]["size"] == "5GB" and ranked[0]["date"] == "2023-06-01"
+
+
+def test_rank_magnets_no_match_falls_back_to_first():
+    magnets = [{"name": "x2", "size": "1GB", "date": ""},
+               {"name": "x1", "size": "9GB", "date": ""}]
+    ranked = crawler.rank_magnets(magnets, ["中文"], [])
+    assert ranked[0]["best"] is True and ranked[0]["hits"] == []
+    assert ranked[0]["name"] == "x2"          # same fallback as pick_magnet
+    assert crawler.rank_magnets([], ["中文"], []) == []
+
+
+def test_rank_magnets_matches_pick():
+    magnets = [
+        {"name": "a 高清", "size": "3GB", "date": "2024-01-01"},
+        {"name": "b 中文 高清", "size": "1GB", "date": "2022-05-05"},
+        {"name": "c 中文", "size": "6GB", "date": "2025-02-02"},
+        {"name": "d nothing", "size": "9GB", "date": "2025-12-31"},
+        {"name": "e 高清", "size": "6GB", "date": "2025-03-03"},
+    ]
+    kws = ["中文", "高清"]
+    for tb in (["size", "date"], ["date", "size"], [], ["size"], ["date"]):
+        best, kw = crawler.pick_magnet(magnets, kws, tb)
+        ranked = crawler.rank_magnets(magnets, kws, tb)
+        assert ranked[0]["name"] == best["name"], tb
+        assert (ranked[0]["hits"][0] if ranked[0]["hits"] else "") == kw, tb
+
+
 def test_compute_matched_keeps_original_spelling():
     hits = crawler.compute_matched(["VR専用"], [], ["vr专用"])
     assert hits == []

@@ -461,6 +461,32 @@ def create_app() -> Flask:
         _chips_cache.update(ts=now, data=items)
         return jsonify({"items": items})
 
+    @app.post("/api/filter/preview")
+    def filter_preview():
+        """Rank a movie's FULL live magnet list for the 精准筛选 preview card.
+
+        Body: {code, keywords (csv), tiebreak}. Nothing is written to the DB,
+        so the editor's unsaved values can be experimented with freely.
+        """
+        body = request.get_json(silent=True) or {}
+        code = str(body.get("code") or "").strip()
+        if not code:
+            return jsonify({"error": "请填写番号"}), 400
+        keywords = [k for k in str(body.get("keywords") or "").split(",") if k.strip()]
+        try:
+            tiebreak = crawler.parse_tiebreak(body.get("tiebreak"))
+        except ValueError:
+            tiebreak = ["size", "date"]
+        try:
+            data = crawler.fetch_code_preview(
+                settings.load(), code, keywords, tiebreak)
+        except ValueError as e:
+            return jsonify({"error": str(e)}), 400
+        except Exception as e:  # network / parse failures
+            log.warning("筛选预览抓取失败 %s: %s", code, e)
+            return jsonify({"error": f"抓取失败: {e}"}), 502
+        return jsonify(data)
+
     @app.get("/api/movies/<code>")
     def movie_detail(code: str):
         conn = sqlite3.connect(settings.load()["DB_PATH"], timeout=10)
