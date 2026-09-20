@@ -199,33 +199,19 @@
   .cat.unknown { background: #eef0f6; color: var(--mut); }
   .pager { display: flex; gap: 8px; align-items: center; justify-content: flex-end; margin-top: 12px; font-size: 13px; color: var(--mut); }
 
-  /* keyword priority editor (精准筛选) */
-  .kw-list { display: flex; flex-direction: column; gap: 6px; max-width: 620px; }
-  .kw-row { display: flex; align-items: center; gap: 10px; padding: 8px 12px; background: #fafbfd;
-    border: 1px solid var(--line); border-radius: 9px; }
-  .kw-row.dragging { opacity: .45; }
-  .kw-row.dragover { border-color: var(--pri); box-shadow: 0 0 0 1px var(--pri) inset; }
-  .kw-drag { cursor: grab; color: var(--mut); user-select: none; flex: none; line-height: 1; }
-  .kw-no { flex: none; width: 22px; height: 22px; border-radius: 50%; background: var(--pri-soft); color: var(--pri);
-    font-size: 12px; font-weight: 700; display: flex; align-items: center; justify-content: center; }
-  .kw-name { font-weight: 600; font-size: 14px; word-break: break-all; }
-  .kw-count { font-size: 12px; color: var(--mut); margin-left: auto; white-space: nowrap; }
-  .kw-ops { display: flex; gap: 4px; flex: none; }
-  .kw-op { padding: 3px 9px; font-size: 13px; background: #eef0f6; border-radius: 7px; }
-  .kw-op:disabled { background: #f3f4f7; }
-  .kw-del { color: var(--err); }
-
-  /* priority chain (磁力优选) */
-  .prio-chain { display: flex; align-items: stretch; gap: 6px; flex-wrap: wrap; }
-  .prio-step { flex: 1; min-width: 185px; border: 1px solid var(--line); border-radius: 9px; padding: 11px 13px;
-    display: flex; gap: 10px; background: #fafbfd; }
-  .prio-step b { font-size: 13.5px; display: block; }
-  .prio-step b small { display: inline; font-weight: 400; color: var(--mut); font-size: 10.5px; }
-  .prio-step small { color: var(--mut); font-size: 11.5px; display: block; margin-top: 3px; line-height: 1.45; }
-  .prio-step select { margin-top: 7px; padding: 6px 9px; font-size: 12.5px; width: 100%; }
-  .prio-no { flex: none; width: 22px; height: 22px; border-radius: 50%; background: var(--pri); color: #fff;
-    font-size: 12px; font-weight: 700; display: flex; align-items: center; justify-content: center; }
-  .prio-arrow { align-self: center; color: var(--mut); flex: none; }
+  /* keyword priority chips (精准筛选) */
+  .kw-flow { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; min-height: 46px;
+    padding: 9px 10px; background: #fafbfd; border: 1px dashed var(--line); border-radius: 9px; }
+  .kw-empty { font-size: 12.5px; color: var(--mut); }
+  .kw-chip { display: inline-flex; align-items: center; gap: 7px; background: var(--pri); color: #fff;
+    border-radius: 999px; padding: 4px 6px 4px 4px; font-size: 13px; font-weight: 600; cursor: grab; user-select: none; }
+  .kw-chip .n { width: 19px; height: 19px; border-radius: 50%; background: rgba(255,255,255,.22);
+    font-size: 11px; display: flex; align-items: center; justify-content: center; flex: none; }
+  .kw-chip .x { width: 18px; height: 18px; border-radius: 50%; background: rgba(255,255,255,.22);
+    display: flex; align-items: center; justify-content: center; cursor: pointer; font-size: 11px; flex: none; }
+  .kw-chip .x:hover { background: rgba(255,255,255,.45); }
+  .kw-chip.dragging { opacity: .4; }
+  .kw-chip.dragover { outline: 2px solid var(--pri); outline-offset: 1px; }
 
   /* magnet ranking preview (优选预览) */
   .pv-table { width: 100%; border-collapse: collapse; margin-top: 14px; font-size: 13px; }
@@ -541,55 +527,38 @@
 
       <div class="tabpane" id="tab-filter" hidden>
       <div class="card">
-        <h2>关键词优先级 <small>（从上到下 = 从高到低 · 拖动行或用箭头调整顺序）</small></h2>
+        <h2>精准筛选 <small>（标签从左到右 = 优先级从高到低，拖动可排序，✕ 移除）</small></h2>
         <input type="hidden" id="c_TAG_FILTERS">
-        <div class="row" style="gap:8px;margin-bottom:12px">
-          <input id="kw-input" type="text" placeholder="输入关键词，回车或点添加（如：中文 / 高清 / 4K / -UC）" style="max-width:360px">
-          <button type="button" class="ghost" onclick="kwAddFromInput()">添加</button>
-        </div>
-        <div id="kw-list" class="kw-list"></div>
-        <div class="row" style="gap:6px;margin-top:12px;flex-wrap:wrap">
-          <span class="kv">快速添加（库内磁力命中数）：</span>
+        <div id="kw-list" class="kw-flow"></div>
+        <div class="row" style="gap:6px;margin:10px 0 0;flex-wrap:wrap">
+          <input id="kw-input" type="text" placeholder="自定义关键词，回车添加" style="max-width:220px">
           <span id="kw-chips" style="display:inline-flex;gap:6px;flex-wrap:wrap"></span>
         </div>
-        <div class="hint">关键词按上面顺序即优先级；同时匹配影片标签与磁力名（大小写不敏感）。每个番号仅入库一条最优磁力。常见标记：字幕（含 ch、-C）｜ -U（无码流出，会同时命中 -UC）｜ -UC（无码+中字）｜ AI（机翻字幕）。</div>
-      </div>
-      <div class="card">
-        <h2>磁力优选 · 优先级链 <small>（从左到右依次比较，前一级分出高下就不再看后一级）</small></h2>
-        <div class="prio-chain">
-          <div class="prio-step"><span class="prio-no">1</span><div><b>命中关键词数</b><small>「中文+高清」双命中 优于 只命中「中文」或「高清」</small></div></div>
-          <span class="prio-arrow">→</span>
-          <div class="prio-step"><span class="prio-no">2</span><div><b>关键词顺序</b><small>命中数相同时，优先级列表里排前面的关键词胜出</small></div></div>
-          <span class="prio-arrow">→</span>
-          <div class="prio-step"><span class="prio-no">3</span><div><b>同级决胜 <small>MAGNET_TIEBREAK</small></b>
+        <div class="row" style="gap:16px;margin-top:14px;flex-wrap:wrap">
+          <div><label style="margin:0 0 5px">筛选模式 <small>未命中的影片</small></label>
+            <div class="seg" id="mode-seg">
+              <button type="button" class="seg-btn active" data-mode="mark" onclick="setFilterMode(this)">全部入库</button>
+              <button type="button" class="seg-btn" data-mode="only" onclick="setFilterMode(this)">只收命中的</button>
+            </div></div>
+          <div style="flex:1;min-width:220px;max-width:340px"><label style="margin:0 0 5px" for="c_MAGNET_TIEBREAK">同级决胜 <small>关键词同分时</small></label>
             <select id="c_MAGNET_TIEBREAK">
               <option value="size,date">大小优先，其次日期</option>
               <option value="date,size">日期优先，其次大小</option>
-              <option value="size">仅看大小（大者优先）</option>
-              <option value="date">仅看日期（新者优先）</option>
+              <option value="size">仅看大小</option>
+              <option value="date">仅看日期</option>
               <option value="">都不看</option>
-            </select>
-            <small>同分磁力（如都是「中文+高清」）之间的取舍：大小大者优先 / 日期新者优先</small></div></div>
-          <span class="prio-arrow">→</span>
-          <div class="prio-step"><span class="prio-no">4</span><div><b>列表位置</b><small>以上全部相同时取列表第一条（最新发布）</small></div></div>
+            </select></div>
         </div>
+        <div class="hint">优先级：命中关键词多者优先（中文+高清 > 单命中）→ 关键词靠左优先 → 同级决胜 → 取第一条。每个番号只入库一条最优磁力。</div>
       </div>
       <div class="card">
-        <h2>优选预览 <small>（输入番号，实时抓取该番号的全部磁力并按当前编辑器配置排名 · 不入库、可用未保存的关键词试验）</small></h2>
+        <h2>优选预览 <small>（输入番号看当前配置会选中哪条磁力 · 不入库，可用未保存的关键词试验）</small></h2>
         <div class="row">
           <input id="pv-code" type="text" placeholder="番号，如 FNS-220" style="max-width:200px">
-          <button type="button" class="primary" id="pv-btn" onclick="runPreview()">预览优选结果</button>
+          <button type="button" class="primary" id="pv-btn" onclick="runPreview()">预览</button>
           <span class="msg" id="pv-msg"></span>
         </div>
         <div id="pv-result"></div>
-      </div>
-      <div class="card">
-        <h2>筛选模式 <small>TAG_FILTER_MODE · 没命中关键词的影片要不要入库</small></h2>
-        <div class="seg" id="mode-seg">
-          <button type="button" class="seg-btn active" data-mode="mark" onclick="setFilterMode(this)">全部入库</button>
-          <button type="button" class="seg-btn" data-mode="only" onclick="setFilterMode(this)">只收命中的</button>
-        </div>
-        <div class="hint">「命中」= 影片标签或磁力名称包含优先级列表中任意一个关键词。不填关键词时两种模式效果相同（入库取列表第一条磁力）。</div>
       </div>
 
       </div>
@@ -911,22 +880,12 @@ function kwSync() {
 }
 function kwRender() {
   const box = $('kw-list');
-  if (!KW_STATE.length) {
-    box.innerHTML = '<div class="hint" style="margin:4px 0">暂无关键词 —— 不做筛选，入库时直接取列表第一条磁力。</div>';
-    return;
-  }
-  box.innerHTML = KW_STATE.map((kw, i) => `
-    <div class="kw-row" draggable="true" data-i="${i}">
-      <span class="kw-drag" title="拖动调整优先级">⠿</span>
-      <span class="kw-no" title="优先级 ${i + 1}">${i + 1}</span>
-      <span class="kw-name">${esc(kw)}</span>
-      <span class="kw-count">${KW_COUNTS[kw.toLowerCase()] ? '库内命中 ' + KW_COUNTS[kw.toLowerCase()] : ''}</span>
-      <span class="kw-ops">
-        <button type="button" class="kw-op" data-mv="-1" title="上移（提高优先级）" ${i === 0 ? 'disabled' : ''}>↑</button>
-        <button type="button" class="kw-op" data-mv="1" title="下移（降低优先级）" ${i === KW_STATE.length - 1 ? 'disabled' : ''}>↓</button>
-        <button type="button" class="kw-op kw-del" data-del title="移除">✕</button>
-      </span>
-    </div>`).join('');
+  box.innerHTML = KW_STATE.length
+    ? KW_STATE.map((kw, i) => {
+        const n = KW_COUNTS[kw.toLowerCase()] || 0;
+        return `<span class="kw-chip" draggable="true" data-i="${i}" title="优先级 ${i + 1}${n ? ` · 库内命中 ${n} 条` : ''} · 拖动排序"><span class="n">${i + 1}</span>${esc(kw)}<span class="x" data-del title="移除">✕</span></span>`;
+      }).join('')
+    : '<span class="kw-empty">点下方标签或输入关键词添加（不添加 = 不筛选）</span>';
 }
 function kwAdd(kw) {
   kw = String(kw || '').trim();
@@ -948,45 +907,42 @@ function kwAddFromInput() {
 }
 $('kw-input').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); kwAddFromInput(); } });
 $('kw-list').addEventListener('click', e => {
-  const row = e.target.closest('.kw-row');
-  if (!row) return;
-  const i = +row.dataset.i;
-  if (e.target.closest('[data-del]') !== null) KW_STATE.splice(i, 1);
-  else if (e.target.closest('[data-mv]') !== null) {
-    const j = i + (+e.target.closest('[data-mv]').dataset.mv);
-    if (j < 0 || j >= KW_STATE.length) return;
-    [KW_STATE[i], KW_STATE[j]] = [KW_STATE[j], KW_STATE[i]];
-  } else return;
-  kwSync();
+  if (!e.target.closest('[data-del]')) return;
+  const chip = e.target.closest('.kw-chip');
+  if (chip) { KW_STATE.splice(+chip.dataset.i, 1); kwSync(); }
 });
-(() => {   // drag & drop reorder
+(() => {   // drag & drop reorder inside the chip flow
   let dragI = -1;
   const list = $('kw-list');
   list.addEventListener('dragstart', e => {
-    const row = e.target.closest('.kw-row');
-    if (!row) return;
-    dragI = +row.dataset.i;
-    row.classList.add('dragging');
+    const chip = e.target.closest('.kw-chip');
+    if (!chip) return;
+    dragI = +chip.dataset.i;
+    chip.classList.add('dragging');
     e.dataTransfer.effectAllowed = 'move';
   });
   list.addEventListener('dragend', e => {
-    e.target.closest('.kw-row')?.classList.remove('dragging');
-    list.querySelectorAll('.kw-row').forEach(r => r.classList.remove('dragover'));
+    e.target.closest('.kw-chip')?.classList.remove('dragging');
+    list.querySelectorAll('.kw-chip').forEach(c => c.classList.remove('dragover'));
     dragI = -1;
   });
   list.addEventListener('dragover', e => {
     e.preventDefault();
-    const row = e.target.closest('.kw-row');
-    list.querySelectorAll('.kw-row').forEach(r => r.classList.toggle('dragover', r === row && r !== list.children[dragI]));
+    const chip = e.target.closest('.kw-chip');
+    list.querySelectorAll('.kw-chip').forEach(c => c.classList.toggle('dragover', c === chip));
   });
   list.addEventListener('drop', e => {
     e.preventDefault();
-    const row = e.target.closest('.kw-row');
-    if (!row || dragI < 0) return;
-    const to = +row.dataset.i;
-    if (to === dragI) return;
+    if (dragI < 0) return;
+    const chip = e.target.closest('.kw-chip');
     const [moved] = KW_STATE.splice(dragI, 1);
-    KW_STATE.splice(to, 0, moved);
+    let to = chip ? +chip.dataset.i : KW_STATE.length;
+    if (chip) {
+      if (to > dragI) to -= 1;
+      const r = chip.getBoundingClientRect();
+      if (e.clientX > r.left + r.width / 2) to += 1;
+    }
+    KW_STATE.splice(Math.max(0, Math.min(KW_STATE.length, to)), 0, moved);
     kwSync();
   });
 })();
@@ -1112,13 +1068,10 @@ async function runPreview() {
   }
 }
 function renderPreview(j) {
-  const kws = KW_STATE.length ? KW_STATE : [];
-  const tbName = {'size,date': '大小优先，其次日期', 'date,size': '日期优先，其次大小',
-                  'size': '仅看大小', 'date': '仅看日期', '': '都不看'}[$('c_MAGNET_TIEBREAK').value] || '';
   let html = `<div class="kv-line" style="margin:14px 0 0">
     <b class="code">${esc(j.code)}</b> ${esc(j.title || '')}
     <span class="cat ${esc(j.category || 'unknown')}">${j.category === 'uncensored' ? '无码' : '有码'}</span>
-    &nbsp;·&nbsp;磁力 ${j.magnets.length} 条 &nbsp;·&nbsp;关键词: ${kws.length ? esc(kws.join(' → ')) : '<i>（未设置）</i>'} &nbsp;·&nbsp;决胜: ${esc(tbName)}
+    · 磁力 ${j.magnets.length} 条
   </div>`;
   if (!j.magnets.length) {
     $('pv-result').innerHTML = html + '<div class="pv-empty">该番号没有磁力链接。</div>';
@@ -1138,8 +1091,7 @@ function renderPreview(j) {
         <td class="pv-win-flag">${m.best ? '✓ 将入选' : ''}</td>
       </tr>`).join('')}
     </tbody></table>`;
-  const unmatched = j.magnets.filter(m => !m.hits.length).length;
-  html += `<div class="hint" style="margin-top:8px">${unmatched ? `${unmatched} 条未命中关键词，排在命中之后；` : ''}第 1 名即当前配置入库 / 推送 115 时会选中的磁力。修改上方关键词顺序或决胜规则后再点预览即可对比效果（无需先保存）。</div>`;
+  html += '<div class="hint" style="margin-top:8px">第 1 名即入库 / 推送 115 时会选中的磁力；调整关键词或决胜规则后可再点预览对比（无需先保存）。</div>';
   $('pv-result').innerHTML = html;
 }
 $('pv-code').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); runPreview(); } });
