@@ -164,16 +164,57 @@ def _bare_client(app: str):
     return P115Client("UID=0; CID=0; SEID=0; KID=0", app=app, console_qrcode=False)
 
 
+def _qr_request():
+    """A `requests`-backed request engine for the QR endpoints.
+
+    115 risk-controls qrcodeapi.115.com by client IP: datacenter IPs get
+    tokens that are DOA (the phone instantly says 二维码已过期) and the
+    status endpoint gets tarpitted. p115client's default engine supports
+    no proxy, so we hand it one built on `requests` honouring the
+    configured PROXY; without PROXY it behaves like a direct connection.
+    """
+    import requests as rq
+
+    proxy = str(settings.load().get("PROXY") or "").strip()
+    session = rq.Session()
+    if proxy:
+        session.proxies = {"http": proxy, "https": proxy}
+
+    def request(url: str, method: str = "GET", *, params=None, data=None,
+                json=None, files=None, headers=None, follow_redirects=True,
+                raise_for_status=False, stream=False, cookies=None,
+                parse=None, async_=False, **kw):
+        resp = session.request(method, url, params=params, data=data, json=json,
+                               files=files, headers=headers,
+                               allow_redirects=follow_redirects, cookies=cookies,
+                               timeout=kw.get("timeout") or 10, stream=stream)
+        if raise_for_status:
+            resp.raise_for_status()
+        if callable(parse):
+            out = parse(resp, resp.content)
+            resp.close()
+            return out
+        if parse is False:
+            out = resp.content
+            resp.close()
+            return out
+        return resp
+
+    return request
+
+
 def qr_start(device: str) -> dict:
     if not HAS_P115:
         raise RuntimeError("p115client 未安装")
     app = device if device in DEVICES else "android"
     c = _bare_client(app)
-    data = check_response(c.login_qrcode_token(app, timeout=_QR_TIMEOUT))["data"]
+    engine = _qr_request()
+    data = check_response(c.login_qrcode_token(app, timeout=_QR_TIMEOUT,
+                                               request=engine))["data"]
     url = data.get("qrcode") or f"https://115.com/scan/dg-{data['uid']}"
     _qr.clear()
     _qr.update(client=c, uid=str(data["uid"]), time=data["time"], sign=data["sign"],
-               app=app, url=url, created=time.time())
+               app=app, url=url, created=time.time(), engine=engine)
     return {"qrcode": url, "app": app}
 
 
@@ -198,11 +239,12 @@ def qr_poll() -> dict:
     if not c or not _qr.get("uid"):
         return {"status": "none"}
     global _client
+    engine = _qr.get("engine")
     try:
         # same session (cookiejar) as the token request is required here
         data = check_response(c.login_qrcode_scan_status(
             {"uid": _qr["uid"], "time": _qr["time"], "sign": _qr["sign"]},
-            timeout=_QR_TIMEOUT))["data"] or {}
+            timeout=_QR_TIMEOUT, request=engine))["data"] or {}
     except Exception as exc:
         return {"status": "error", "message": str(exc)}
     raw = data.get("status")
@@ -218,7 +260,7 @@ def qr_poll() -> dict:
         return {"status": st}
     global _client, _user_cache
     resp = check_response(c.login_qrcode_scan_result(
-        _qr["uid"], app=_qr["app"], timeout=_QR_TIMEOUT))
+        _qr["uid"], app=_qr["app"], timeout=_QR_TIMEOUT, request=engine))
     cookies = "; ".join(f"{x['name']}={x['value']}"
                         for x in resp["data"]["cookie"])
     _save_auth(cookies, _qr["app"])

@@ -469,6 +469,7 @@
         <h2>站点与频道</h2>
         <div class="form-grid">
           <div class="field w4"><label>站点地址 <small>BASE_URL</small></label><input id="c_BASE_URL" type="text"></div>
+          <div class="field w2"><label>代理 <small>PROXY · 可选，留空直连</small></label><input id="c_PROXY" type="text" placeholder="http://127.0.0.1:7890"></div>
           <div class="field"><label>采集频道 <small>CATEGORY · 可多选，两种都会采</small></label>
             <div class="seg" id="cat-seg">
               <button type="button" class="seg-btn active" data-cat="censored" onclick="toggleCat(this)">有码</button>
@@ -608,7 +609,7 @@
         <div class="row" id="p115-login-box">
           <div class="dropdown" id="p115-device"></div>
           <button class="ghost" onclick="qrStart()">生成登录二维码</button>
-          <span class="hint" style="margin:0">用 115 手机 App 扫码；「网页版」偶发 IP 异常，建议选安卓 / 苹果</span>
+          <span class="hint" style="margin:0">用 115 手机 App 扫码；「网页版」偶发 IP 异常，建议选安卓 / 苹果。若扫码总提示「二维码已过期」，是服务器 IP 被 115 风控——在「采集设置 → 代理」填入代理后重试</span>
         </div>
         <div id="p115-qr-box" style="display:none;text-align:center;padding:14px 0">
           <img id="p115-qr-img" alt="登录二维码" style="width:210px;height:210px;border:1px solid var(--line);border-radius:10px;background:#fff">
@@ -851,7 +852,7 @@ async function loadConfig() {
 }
 async function saveConfig() {
   const body = {};
-  ['BASE_URL','METATUBE_URL','METATUBE_TOKEN','DELAY_SECONDS','JITTER_SECONDS',
+  ['BASE_URL','PROXY','METATUBE_URL','METATUBE_TOKEN','DELAY_SECONDS','JITTER_SECONDS',
    'MAX_RETRIES','TIMEOUT','WEB_PORT','AUTO_CRAWL_INTERVAL_HOURS','AUTO_CRAWL_PAGES',
    'TAG_FILTERS','MAGNET_TIEBREAK','MAGNET_FALLBACK','P115_DOWNLOAD_DIR','P115_TARGET_DIR','P115_REJECT_DIR']
     .forEach(k => { const el = $('c_' + k); if (el) body[k] = el.value; });
