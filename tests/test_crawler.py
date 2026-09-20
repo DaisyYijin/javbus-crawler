@@ -46,6 +46,25 @@ def test_pick_best_single_magnet():
     assert len(crawler.pick_best(ms, ["字幕"])) == 1
 
 
+def test_pick_prefers_multi_keyword_match():
+    """A magnet hitting BOTH keywords (中文+高清) outranks single-keyword hits,
+    no matter its position in the list."""
+    from app.parser import Magnet
+
+    ms = [Magnet(link="magnet:?xt=urn:btih:A1", name="中文字幕 720p", size="", date=""),
+          Magnet(link="magnet:?xt=urn:btih:A2", name="高清 1080p 无字", size="", date=""),
+          Magnet(link="magnet:?xt=urn:btih:A3", name="高清 中文字幕 1080p", size="", date="")]
+    assert crawler.pick_best(ms, ["中文", "高清"])[0].name == "高清 中文字幕 1080p"
+    # dict flavour (web/115 path) agrees and reports the priority keyword
+    dicts = [{"name": m.name} for m in ms]
+    m, kw = crawler.pick_magnet(dicts, ["中文", "高清"])
+    assert m["name"] == "高清 中文字幕 1080p" and kw == "中文"
+    # single-keyword ties still respect keyword priority: 中文-only beats 高清-only
+    m, kw = crawler.pick_magnet([{"name": "高清 无字"}, {"name": "中文 无码"}],
+                                ["中文", "高清"])
+    assert m["name"] == "中文 无码" and kw == "中文"
+
+
 def test_compute_matched_keeps_original_spelling():
     hits = crawler.compute_matched(["VR専用"], [], ["vr专用"])
     assert hits == []

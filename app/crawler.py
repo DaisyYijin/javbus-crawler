@@ -124,43 +124,61 @@ def compute_matched(tags: list[str], magnet_names: list[str], keywords: list[str
     return hits
 
 
-def pick_magnet(magnets: list[dict], keywords: list[str]) -> tuple[dict | None, str]:
-    """Pick the single magnet to use, honouring keyword priority.
+def _pick_index(names: list[str], keywords: list[str]) -> int | None:
+    """Rank magnet names and return the best index (None = no keyword hit).
 
-    `keywords` are tried left-to-right (first = highest priority); the first
-    magnet whose name contains the keyword wins.  When no keyword matches any
-    magnet name, fall back to the first magnet on the list (newest first).
+    Scoring: the magnet matching MORE keywords wins (中文+高清 beats 中文-only);
+    ties go to the higher-priority keyword (earlier in `keywords`), then to
+    the earlier list position (newest first).
+    """
+    kws = [(i, k.strip().lower()) for i, k in enumerate(keywords) if k.strip()]
+    best_i: int | None = None
+    best_key: tuple | None = None
+    for idx, name in enumerate(names):
+        n = (name or "").lower()
+        hits = [ki for ki, k in kws if k in n]
+        if not hits:
+            continue
+        key = (-len(hits), hits[0], idx)
+        if best_key is None or key < best_key:
+            best_key, best_i = key, idx
+    return best_i
+
+
+def pick_magnet(magnets: list[dict], keywords: list[str]) -> tuple[dict | None, str]:
+    """Pick the single magnet to use, honouring keyword quality then priority.
+
+    A magnet matching several keywords (e.g. 中文 AND 高清) beats one matching
+    a single keyword; among equals the earlier keyword has priority, and the
+    list order (newest first) breaks remaining ties. When no keyword matches
+    any magnet name, fall back to the first magnet on the list.
     Returns (magnet-or-None, matched-keyword-or-empty-string).
     """
-    for kw in keywords:
-        k = kw.strip()
-        if not k:
-            continue
-        kl = k.lower()
-        for m in magnets:
-            if kl in (m.get("name") or "").lower():
-                return m, k
-    return (magnets[0] if magnets else None), ""
+    if not magnets:
+        return None, ""
+    names = [m.get("name") or "" for m in magnets]
+    i = _pick_index(names, keywords)
+    if i is None:
+        return magnets[0], ""
+    kws = [k.strip() for k in keywords if k.strip()]
+    n = names[i].lower()
+    matched = next(k for k in kws if k.lower() in n)
+    return magnets[i], matched
 
 
 def pick_best(magnets: list, keywords: list[str]) -> list:
     """Keep only the single best magnet for storage.
 
-    Keywords are tried left-to-right (first = highest priority); the first
-    magnet whose name contains the keyword wins. No match -> the first magnet
-    (newest). Filtering/marking should still be computed on the FULL list
-    before calling this.
+    Uses the same scoring as pick_magnet: most keyword hits first (中文+高清
+    beats 中文-only), then keyword priority, then list order. No match -> the
+    first magnet (newest). Filtering/marking should still be computed on the
+    FULL list before calling this.
     """
     if not magnets:
         return []
-    for kw in keywords:
-        k = kw.strip().lower()
-        if not k:
-            continue
-        for m in magnets:
-            if k in (getattr(m, "name", "") or "").lower():
-                return [m]
-    return [magnets[0]]
+    names = [getattr(m, "name", "") or "" for m in magnets]
+    i = _pick_index(names, keywords)
+    return [magnets[i if i is not None else 0]]
 
 
 def run_job(
