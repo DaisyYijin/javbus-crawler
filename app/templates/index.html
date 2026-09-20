@@ -167,6 +167,8 @@
   .tag.gtag { background: #fff; border: 1px solid var(--line); color: var(--txt); font-size: 13px; padding: 3px 10px; margin: 2px; cursor: pointer; }
   .tag.gtag:hover { border-color: var(--pri); color: var(--pri); }
   .tag.gtag.hit { background: var(--pri); border-color: var(--pri); color: #fff; font-weight: 600; }
+  .gsel-btn { font-size: 12px; color: var(--pri); cursor: pointer; user-select: none; white-space: nowrap; background: none; border: none; padding: 0; font-family: inherit; }
+  .gsel-btn:hover { text-decoration: underline; }
   .code { font-weight: 700; color: var(--pri); }
   .cat { font-size: 11px; padding: 1px 6px; border-radius: 5px; }
   .cat.censored { background: var(--pri-soft); color: var(--pri); }
@@ -425,14 +427,20 @@
               <button type="button" class="tab-btn" data-gcat="uncensored" onclick="switchGenreTab(this)">无码</button>
             </div>
             <div class="genre-pane" id="genre-pane-censored">
-              <small class="hint" id="genre-count-censored" style="display:block;margin:0 0 6px"></small>
+              <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin:0 0 6px">
+                <small class="hint" id="genre-count-censored" style="margin:0"></small>
+                <button type="button" class="gsel-btn" id="genre-all-censored" data-gcat="censored" style="display:none" onclick="toggleAllGenreSel(this)">全选全部</button>
+              </div>
               <div id="genre-chips-censored" class="row" style="gap:6px;flex-wrap:wrap"></div>
             </div>
             <div class="genre-pane" id="genre-pane-uncensored" hidden>
-              <small class="hint" id="genre-count-uncensored" style="display:block;margin:0 0 6px"></small>
+              <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin:0 0 6px">
+                <small class="hint" id="genre-count-uncensored" style="margin:0"></small>
+                <button type="button" class="gsel-btn" id="genre-all-uncensored" data-gcat="uncensored" style="display:none" onclick="toggleAllGenreSel(this)">全选全部</button>
+              </div>
               <div id="genre-chips-uncensored" class="row" style="gap:6px;flex-wrap:wrap"></div>
             </div>
-            <div class="hint">有码 / 无码为站点两套独立类别体系，分组可折叠（点大标题展开）；点击标签选中 / 取消（可多选，选中项所在组自动展开）；仅对上方勾选的频道生效。目录缓存一天，重新打开页面自动更新。</div></div>
+            <div class="hint">有码 / 无码为站点两套独立类别体系，分组可折叠（点大标题展开）；点击标签选中 / 取消（可多选，选中项所在组自动展开）；组标题右侧「全选」可整组选 / 取消，顶部「全选全部」可选 / 清空整个频道；仅对上方勾选的频道生效。目录缓存一天，重新打开页面自动更新。</div></div>
         </div>
       </div>
 
@@ -731,10 +739,11 @@ async function saveConfig() {
   if (cb) body.AUTO_CRAWL_ENABLED = cb.checked;
   const j = await (await fetch('/api/config', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body)})).json();
   document.querySelectorAll('.cfg-msg').forEach(m => {
-    m.textContent = j.ok ? '' : ('✗ ' + j.error);
-    m.className = 'msg cfg-msg ' + (j.ok ? '' : 'err');
+    m.textContent = j.ok ? '✓ 已保存' : ('✗ ' + j.error);
+    m.className = 'msg cfg-msg ' + (j.ok ? 'ok' : 'err');
   });
   if (!j.ok) toast('保存失败: ' + (j.error || '未知错误'), 'err');
+  else toast('✓ 保存成功', 'ok');
 }
 function addKeyword(kw) {
   const el = $('c_TAG_FILTERS');
@@ -758,11 +767,11 @@ async function loadGenreChips() {
       const total = groups.reduce((s, g) => s + g.genres.length, 0);
       $('genre-count-' + cat).textContent = total ? `${groups.length} 组 ${total} 个分类` : '';
       $('genre-chips-' + cat).innerHTML = groups.length
-        ? groups.map(g => {
+        ? groups.map((g, gi) => {
             const open = g.group === '主題' || g.genres.some(x => GENRE_SEL[cat].has(String(x.id)));
             return `
-          <details style="width:100%"${open ? ' open' : ''}>
-            <summary style="cursor:pointer;font-size:13px;font-weight:600;margin:6px 0">${esc(g.group)} <small>(${g.genres.length})</small></summary>
+          <details style="width:100%" data-gidx="${gi}"${open ? ' open' : ''}>
+            <summary style="cursor:pointer;font-size:13px;font-weight:600;margin:6px 0">${esc(g.group)} <small>(${g.genres.length})</small> <button type="button" class="gsel-btn" data-gcat="${cat}" data-gidx="${gi}" style="float:right;font-weight:400;margin-left:8px" onclick="event.preventDefault();toggleGroupGenres(this)">全选</button></summary>
             <div class="row" style="gap:6px;flex-wrap:wrap;margin:6px 0 10px">
               ${g.genres.map(x => `<span class="tag gtag" style="cursor:pointer" data-gcat="${cat}" data-genre="${esc(String(x.id))}" title="${esc(x.name)}（${esc(String(x.id))}）">${esc(x.name)}</span>`).join('')}
             </div>
@@ -776,6 +785,36 @@ async function loadGenreChips() {
 function syncGenreChips() {
   document.querySelectorAll('[data-genre]').forEach(el =>
     el.classList.toggle('hit', GENRE_SEL[el.dataset.gcat].has(el.dataset.genre)));
+  syncSelButtons();
+}
+function toggleGroupGenres(btn) {
+  const cat = btn.dataset.gcat;
+  const chips = document.querySelectorAll(`#genre-chips-${cat} details[data-gidx="${btn.dataset.gidx}"] .gtag`);
+  const all = chips.length && [...chips].every(c => GENRE_SEL[cat].has(c.dataset.genre));
+  chips.forEach(c => all ? GENRE_SEL[cat].delete(c.dataset.genre) : GENRE_SEL[cat].add(c.dataset.genre));
+  syncGenreChips();
+}
+function toggleAllGenreSel(btn) {
+  const cat = btn.dataset.gcat;
+  const chips = document.querySelectorAll(`#genre-chips-${cat} .gtag`);
+  const all = chips.length && [...chips].every(c => GENRE_SEL[cat].has(c.dataset.genre));
+  chips.forEach(c => all ? GENRE_SEL[cat].delete(c.dataset.genre) : GENRE_SEL[cat].add(c.dataset.genre));
+  syncGenreChips();
+}
+function syncSelButtons() {
+  for (const cat of ['censored', 'uncensored']) {
+    const chips = document.querySelectorAll(`#genre-chips-${cat} .gtag`);
+    const master = $('genre-all-' + cat);
+    if (master) {
+      master.style.display = chips.length ? '' : 'none';
+      master.textContent = chips.length && [...chips].every(c => GENRE_SEL[cat].has(c.dataset.genre)) ? '取消全部' : '全选全部';
+    }
+    document.querySelectorAll(`#genre-chips-${cat} details`).forEach(d => {
+      const gc = d.querySelectorAll('.gtag');
+      const b = d.querySelector('.gsel-btn');
+      if (b) b.textContent = gc.length && [...gc].every(c => GENRE_SEL[cat].has(c.dataset.genre)) ? '取消全选' : '全选';
+    });
+  }
 }
 document.addEventListener('click', e => {
   const t = e.target.closest('[data-genre]');
