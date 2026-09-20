@@ -456,7 +456,7 @@
               </div>
               <div id="genre-chips-uncensored" class="row" style="gap:6px;flex-wrap:wrap"></div>
             </div>
-            <div class="hint">有码 / 无码为站点两套独立类别体系，分组可折叠（点大标题展开）；点击标签选中 / 取消（可多选，选中项所在组自动展开）；组标题右侧「全选」可整组选 / 取消，顶部「全选全部」可选 / 清空整个频道；仅对上方勾选的频道生效。目录缓存一天，重新打开页面自动更新。</div></div>
+            <div class="hint">有码 / 无码为站点两套独立类别体系，分组默认折叠（点大标题展开）；点击标签选中 / 取消（可多选，已选数量显示在顶部计数）；组标题右侧「全选」可整组选 / 取消，顶部「全选全部」可选 / 清空整个频道；仅对上方勾选的频道生效。目录缓存一天，重新打开页面自动更新。</div></div>
         </div>
       </div>
 
@@ -801,6 +801,7 @@ function addKeyword(kw) {
   el.focus();
 }
 const GENRE_SEL = { censored: new Set(), uncensored: new Set() };
+const GENRE_TOTALS = { censored: null, uncensored: null };
 function switchGenreTab(btn) {
   const field = btn.closest('.field');
   field.querySelectorAll('.tabbar .tab-btn').forEach(b => b.classList.toggle('active', b === btn));
@@ -812,12 +813,11 @@ async function loadGenreChips() {
     for (const cat of ['censored', 'uncensored']) {
       const groups = (j.items && j.items[cat]) || [];
       const total = groups.reduce((s, g) => s + g.genres.length, 0);
-      $('genre-count-' + cat).textContent = total ? `${groups.length} 组 ${total} 个分类` : '';
+      GENRE_TOTALS[cat] = total ? { groups: groups.length, total } : null;
       $('genre-chips-' + cat).innerHTML = groups.length
         ? groups.map((g, gi) => {
-            const open = g.group === '主題' || g.genres.some(x => GENRE_SEL[cat].has(String(x.id)));
             return `
-          <details style="width:100%" data-gidx="${gi}"${open ? ' open' : ''}>
+          <details style="width:100%" data-gidx="${gi}">
             <summary style="cursor:pointer;font-size:13px;font-weight:600;margin:6px 0">${esc(g.group)} <small>(${g.genres.length})</small> <button type="button" class="gsel-btn" data-gcat="${cat}" data-gidx="${gi}" style="float:right;font-weight:400;margin-left:8px" onclick="event.preventDefault();toggleGroupGenres(this)">全选</button></summary>
             <div class="row" style="gap:6px;flex-wrap:wrap;margin:6px 0 10px">
               ${g.genres.map(x => `<span class="tag gtag" style="cursor:pointer" data-gcat="${cat}" data-genre="${esc(String(x.id))}" title="${esc(x.name)}（${esc(String(x.id))}）">${esc(x.name)}</span>`).join('')}
@@ -851,6 +851,9 @@ function toggleAllGenreSel(btn) {
 function syncSelButtons() {
   for (const cat of ['censored', 'uncensored']) {
     const chips = document.querySelectorAll(`#genre-chips-${cat} .gtag`);
+    const sel = GENRE_SEL[cat].size;
+    const t = GENRE_TOTALS[cat];
+    $('genre-count-' + cat).textContent = t ? `${t.groups} 组 ${t.total} 个分类${sel ? ` · 已选 ${sel}` : ''}` : '';
     const master = $('genre-all-' + cat);
     if (master) {
       master.style.display = chips.length ? '' : 'none';
