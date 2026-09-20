@@ -419,11 +419,11 @@
               <button class="ghost" type="button" onclick="loadGenreChips(true)" style="padding:4px 12px;font-size:12px">刷新类别</button>
               <span class="hint" style="margin:0">类别目录直接取自站点 有碼類別 / 無碼類別 页，缓存一天</span>
             </div>
-            <div class="kv" style="margin-bottom:5px"><b>有码类别</b>：</div>
+            <div class="kv" style="margin-bottom:5px"><b>有码类别</b> <small id="genre-count-censored"></small>：</div>
             <div id="genre-chips-censored" class="row" style="gap:6px;flex-wrap:wrap;margin-bottom:9px"></div>
-            <div class="kv" style="margin-bottom:5px"><b>无码类别</b>：</div>
+            <div class="kv" style="margin-bottom:5px"><b>无码类别</b> <small id="genre-count-uncensored"></small>：</div>
             <div id="genre-chips-uncensored" class="row" style="gap:6px;flex-wrap:wrap"></div>
-            <div class="hint">按大标题分组展示站点全部类别，点击标签选中 / 取消（可多选）；仅对上方勾选的频道生效。若站点临时拦截目录页，会回退显示已学习的类别。</div></div>
+            <div class="hint">有码 / 无码为站点两套独立类别体系，分组可折叠（点大标题展开）；点击标签选中 / 取消（可多选，选中项所在组自动展开）；仅对上方勾选的频道生效。若站点临时拦截目录页，会回退显示已学习的类别。</div></div>
         </div>
       </div>
 
@@ -731,14 +731,20 @@ async function loadGenreChips(force) {
     const j = await r.json();
     for (const cat of ['censored', 'uncensored']) {
       const groups = (j.items && j.items[cat]) || [];
-      $('genre-chips-' + cat).innerHTML = groups.length
-        ? groups.map(g => `
-          <div style="width:100%">
-            <div class="kv" style="margin:4px 0">${esc(g.group)}</div>
-            <div class="row" style="gap:6px;flex-wrap:wrap">
+      const total = groups.reduce((s, g) => s + g.genres.length, 0);
+      const box = $('genre-chips-' + cat);
+      $('genre-count-' + cat).textContent = total ? `${groups.length} 组 ${total} 个分类` : '';
+      box.innerHTML = groups.length
+        ? groups.map(g => {
+            const open = g.group === '主題' || g.genres.some(x => GENRE_SEL[cat].has(String(x.id)));
+            return `
+          <details style="width:100%"${open ? ' open' : ''}>
+            <summary style="cursor:pointer;font-size:13px;font-weight:600;margin:6px 0">${esc(g.group)} <small>(${g.genres.length})</small></summary>
+            <div class="row" style="gap:6px;flex-wrap:wrap;margin:6px 0 10px">
               ${g.genres.map(x => `<span class="tag" style="cursor:pointer" data-gcat="${cat}" data-genre="${esc(String(x.id))}" title="${esc(x.name)}（${esc(String(x.id))}）">${esc(x.name)}</span>`).join('')}
             </div>
-          </div>`).join('')
+          </details>`;
+          }).join('')
         : `<span class="hint" style="margin:0;color:var(--danger,#e5484d)">⚠ ${esc((j.status && j.status[cat]) || '暂无（点击「刷新类别」从站点获取）')}</span>`;
     }
     syncGenreChips();
