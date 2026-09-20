@@ -1012,12 +1012,18 @@ async function load115Status() {
     }
   } catch (e) {}
 }
-async function load115Devices() {
-  try {
-    const j = await (await fetch('/api/p115/devices')).json();
-    $('p115-device').innerHTML = Object.entries(j.devices || {}).map(([k, v]) => `<option value="${k}">${v}</option>`).join('');
-  } catch (e) {}
+// Device list is a stable constant — embedded client-side so the dropdown
+// renders instantly with zero server/network dependency.
+const P115_DEVICES = [
+  ['android', '安卓'], ['ios', '苹果'], ['115android', '115 安卓'], ['115ios', '115 苹果'],
+  ['ipad', 'iPad'], ['tv', '电视'], ['os_windows', 'Windows'], ['os_mac', 'Mac'],
+  ['os_linux', 'Linux'], ['web', '网页版'], ['alipaymini', '支付宝小程序'],
+  ['wechatmini', '微信小程序'], ['harmony', '鸿蒙'],
+];
+function load115Devices() {
+  $('p115-device').innerHTML = P115_DEVICES.map(([k, v]) => `<option value="${k}">${v}</option>`).join('');
 }
+load115Devices();
 let qrTimer = null;
 async function qrStart() {
   try {
@@ -1038,9 +1044,12 @@ function scheduleQrPoll(ms) {
   qrTimer = setTimeout(qrPollTick, ms || 3000);
 }
 async function qrPollTick() {
+  const t0 = Date.now();
   const j = await qrPoll();
+  const took = Date.now() - t0;
   if (j.status === 'success' || j.status === 'expired' || j.status === 'canceled') return;
-  scheduleQrPoll(j.status === 'error' ? 8000 : 3000);
+  // slow 115 route (tarpit): back off so a connection isn't held nonstop
+  scheduleQrPoll(j.status === 'error' || took > 3000 ? 10000 : 3000);
 }
 async function qrPoll() {
   try {

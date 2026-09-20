@@ -69,6 +69,7 @@ _user_cache: dict | None = None
 _dir_cid: dict[str, int] = {}
 _qr: dict = {}
 _TIMEOUT = 10  # seconds, applied to every 115 network call
+_QR_TIMEOUT = 5  # QR endpoints: break tarpits faster to free the thread sooner
 
 
 # ---------------------------------------------------------------- auth ----
@@ -165,7 +166,7 @@ def qr_start(device: str) -> dict:
         raise RuntimeError("p115client 未安装")
     app = device if device in DEVICES else "android"
     c = _bare_client(app)
-    data = check_response(c.login_qrcode_token(app, timeout=_TIMEOUT))["data"]
+    data = check_response(c.login_qrcode_token(app, timeout=_QR_TIMEOUT))["data"]
     url = data.get("qrcode") or f"https://115.com/scan/dg-{data['uid']}"
     _qr.clear()
     _qr.update(client=c, uid=str(data["uid"]), time=data["time"], sign=data["sign"],
@@ -198,7 +199,7 @@ def qr_poll() -> dict:
         # same session (cookiejar) as the token request is required here
         data = check_response(c.login_qrcode_scan_status(
             {"uid": _qr["uid"], "time": _qr["time"], "sign": _qr["sign"]},
-            timeout=_TIMEOUT))["data"] or {}
+            timeout=_QR_TIMEOUT))["data"] or {}
     except Exception as exc:
         return {"status": "error", "message": str(exc)}
     raw = data.get("status")
@@ -214,7 +215,7 @@ def qr_poll() -> dict:
         return {"status": st}
     global _client, _user_cache
     resp = check_response(c.login_qrcode_scan_result(
-        _qr["uid"], app=_qr["app"], timeout=_TIMEOUT))
+        _qr["uid"], app=_qr["app"], timeout=_QR_TIMEOUT))
     cookies = "; ".join(f"{x['name']}={x['value']}"
                         for x in resp["data"]["cookie"])
     _save_auth(cookies, _qr["app"])
