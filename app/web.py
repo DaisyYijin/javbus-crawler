@@ -710,7 +710,10 @@ def create_app() -> Flask:
 
     @app.get("/api/p115/qr/poll")
     def p115_qr_poll():
-        result = p115.qr_poll()
+        try:
+            result = p115.qr_poll()
+        except Exception as exc:  # never leak a 500 into the polling loop
+            result = {"status": "error", "message": str(exc)}
         return jsonify(result)
 
     @app.post("/api/p115/logout")

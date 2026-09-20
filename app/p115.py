@@ -284,13 +284,32 @@ def qr_poll() -> dict:
     return _qr_finish(c, engine)
 
 
+def _cookies_str(raw) -> str:
+    """Normalize the scan-result cookie field into "k=v; k=v" form.
+
+    115 has been observed returning it as a list of dicts
+    ([{"name": "UID", "value": "1"}, ...]) AND as a plain list of
+    "k=v" strings; accept dict / list[dict] / list[str] alike.
+    """
+    if isinstance(raw, dict):
+        return "; ".join(f"{k}={v}" for k, v in raw.items())
+    parts = []
+    for x in raw or []:
+        if isinstance(x, dict):
+            parts.append(f"{x.get('name')}={x.get('value')}")
+        else:
+            parts.append(str(x))
+    return "; ".join(p for p in parts if p and "=" in p)
+
+
 def _qr_finish(c, engine) -> dict:
     """Exchange a confirmed QR uid for cookies and persist the login."""
     global _client, _user_cache
     resp = check_response(c.login_qrcode_scan_result(
         _qr["uid"], app=_qr["app"], timeout=_QR_TIMEOUT, request=engine))
-    cookies = "; ".join(f"{x['name']}={x['value']}"
-                        for x in resp["data"]["cookie"])
+    cookies = _cookies_str(resp["data"].get("cookie"))
+    if not cookies:
+        raise ValueError(f"扫码结果中没有 cookie: {resp.get('data')}")
     _save_auth(cookies, _qr["app"])
     _qr.clear()
     _client = None

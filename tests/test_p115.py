@@ -11,6 +11,20 @@ def test_devices_table():
     assert "web" in p115.DEVICES
 
 
+def test_cookies_str_all_shapes():
+    # list of dicts (documented shape)
+    assert p115._cookies_str([{"name": "UID", "value": "1"},
+                              {"name": "CID", "value": "2"}]) == "UID=1; CID=2"
+    # list of "k=v" strings (shape observed in production)
+    assert p115._cookies_str(["UID=1", "CID=2"]) == "UID=1; CID=2"
+    # plain dict
+    assert p115._cookies_str({"UID": "1", "CID": "2"}) == "UID=1; CID=2"
+    # junk is dropped, empty stays empty
+    assert p115._cookies_str(["junk", "UID=1"]) == "UID=1"
+    assert p115._cookies_str([]) == ""
+    assert p115._cookies_str(None) == ""
+
+
 def test_sanitize_name():
     s = p115._sanitize_name('a<b>c:d"e/f\\g|h?i*j')
     for ch in '<>:"/\\|?*':
