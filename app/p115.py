@@ -72,7 +72,7 @@ _dir_cid: dict[str, tuple[int, float]] = {}
 _DIR_TTL = 10 * 60
 _qr: dict = {}
 _TIMEOUT = 10  # seconds, applied to every 115 network call
-_QR_TIMEOUT = 5  # QR endpoints: break tarpits faster to free the thread sooner
+_QR_TIMEOUT = 15  # QR endpoints: proxied routes are slower; tarpits still break out
 
 
 # ---------------------------------------------------------------- auth ----
@@ -246,7 +246,12 @@ def qr_poll() -> dict:
             {"uid": _qr["uid"], "time": _qr["time"], "sign": _qr["sign"]},
             timeout=_QR_TIMEOUT, request=engine))["data"] or {}
     except Exception as exc:
-        return {"status": "error", "message": str(exc)}
+        msg = str(exc)
+        # a read timeout with NO proxy configured = the classic 115 tarpit:
+        # make the actionable cause visible right on the login card
+        if "timed out" in msg and not str(settings.load().get("PROXY") or "").strip():
+            msg += "｜直连被 115 风控（收到请求但不响应）。请在「采集设置 → 代理」填入代理并保存，再重新生成二维码"
+        return {"status": "error", "message": msg}
     raw = data.get("status")
     if raw is None:
         # 115 intermittently answers {"data": {}} (IP-level rate limiting);
