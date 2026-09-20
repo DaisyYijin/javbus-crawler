@@ -484,10 +484,12 @@
       <div class="page-head"><h1>115 网盘</h1><span>扫码登录 · 磁力离线下载 · 完成后自动整理</span></div>
       <div class="card" id="p115-login-card">
         <h2>账号登录</h2>
-        <div class="row" id="p115-login-box">
-          <select id="p115-device" style="max-width:160px"></select>
-          <button class="ghost" onclick="qrStart()">生成登录二维码</button>
-          <span class="hint" style="margin:0">用 115 手机 App 扫码；「网页版」偶发 IP 异常，建议选安卓 / 苹果</span>
+        <div class="row" id="p115-login-box" style="align-items:flex-start">
+          <div>
+            <div class="kv" style="margin-bottom:6px">登录设备：</div>
+            <div id="p115-device" class="row" style="gap:6px;flex-wrap:wrap;max-width:420px"></div>
+          </div>
+          <button class="ghost" onclick="qrStart()" style="flex:none">生成登录二维码</button>
         </div>
         <div id="p115-qr-box" style="display:none;text-align:center;padding:14px 0">
           <img id="p115-qr-img" alt="登录二维码" style="width:210px;height:210px;border:1px solid var(--line);border-radius:10px;background:#fff">
@@ -731,10 +733,15 @@ async function startCrawl() {
 }
 async function stopCrawl() { await fetch('/api/crawl/stop', {method:'POST'}); }
 
-let lastDepths = {}, wasRunning = false;
+let lastDepths = {}, wasRunning = false, _lastStatusSig = '';
 async function pollStatus() {
   try {
     const j = await (await fetch('/api/crawl/status')).json();
+    // skip ALL DOM writes when nothing changed — keeps the main thread idle
+    const tail = j.log_tail || [];
+    const sig = JSON.stringify([j.running, j.error, j.stats, j.finished_at, j.depths, tail.length, tail[tail.length - 1]]);
+    if (sig === _lastStatusSig) return;
+    _lastStatusSig = sig;
     const st = $('crawl-state'), dot = $('side-dot'), ss = $('side-state');
     if (j.running) {
       st.textContent = '运行中'; st.className = 'pill run';
@@ -1012,23 +1019,35 @@ async function load115Status() {
     }
   } catch (e) {}
 }
-// Device list is a stable constant — embedded client-side so the dropdown
-// renders instantly with zero server/network dependency.
+// Device picker is plain DOM (no native <select> popup, which stutters on
+// some browsers/WebView). Single-select chips, zero layout cost.
 const P115_DEVICES = [
   ['android', '安卓'], ['ios', '苹果'], ['115android', '115 安卓'], ['115ios', '115 苹果'],
   ['ipad', 'iPad'], ['tv', '电视'], ['os_windows', 'Windows'], ['os_mac', 'Mac'],
   ['os_linux', 'Linux'], ['web', '网页版'], ['alipaymini', '支付宝小程序'],
   ['wechatmini', '微信小程序'], ['harmony', '鸿蒙'],
 ];
+let p115Device = 'android';
 function load115Devices() {
-  $('p115-device').innerHTML = P115_DEVICES.map(([k, v]) => `<option value="${k}">${v}</option>`).join('');
+  $('p115-device').innerHTML = P115_DEVICES.map(([k, v]) =>
+    `<button type="button" class="tag" data-dev="${k}" style="cursor:pointer">${v}</button>`).join('');
+  selectDevice(p115Device);
 }
+function selectDevice(k) {
+  p115Device = k;
+  document.querySelectorAll('#p115-device .tag').forEach(b =>
+    b.classList.toggle('hit', b.dataset.dev === k));
+}
+$('p115-device').addEventListener('click', e => {
+  const b = e.target.closest('[data-dev]');
+  if (b) selectDevice(b.dataset.dev);
+});
 load115Devices();
 let qrTimer = null;
 async function qrStart() {
   try {
     const j = await (await fetch('/api/p115/qr/start', {method: 'POST', headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({device: $('p115-device').value})})).json();
+      body: JSON.stringify({device: p115Device})})).json();
     if (!j.ok) { toast('✗ ' + (j.error || '获取二维码失败'), 'err'); return; }
     $('p115-qr-box').style.display = '';
     $('p115-qr-img').src = '/api/p115/qr.svg?t=' + Date.now();
