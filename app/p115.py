@@ -603,6 +603,12 @@ def track_add(code: str, info_hash: str, link: str, name: str = "",
            "tried": sorted({h.upper() for h in (tried or set())} | {ih})}
     conn = sqlite3.connect(settings.load()["DB_PATH"], timeout=10)
     try:
+        # a fresh submission invalidates any done/fail marks a previous
+        # attempt of the same magnet left behind — a stale p115:done made
+        # organize_pass release the slot instantly (and the serial gate
+        # believe the movie was organized) without doing anything
+        conn.execute("DELETE FROM meta WHERE key IN (?, ?)",
+                     (f"p115:done:{ih}", f"p115:fail:{ih}"))
         conn.execute("INSERT OR REPLACE INTO meta(key, value) VALUES (?, ?)",
                      (_TRACK_PREFIX + ih, json.dumps(rec, ensure_ascii=False)))
         conn.commit()
@@ -1207,9 +1213,39 @@ def _lookup_movie(conn, code: str | None):
     return row
 
 
+def _org_fail_bump(conn, info_hash: str, label: str, why: str) -> None:
+    """Count one failed organize attempt; release the slot (with a done
+    mark) after _ORG_MAX_FAILS so a poison task can't wedge the serial
+    pipeline forever."""
+    fails = _to_int(db_get_meta(conn, f"p115:fail:{info_hash}")) + 1
+    conn.execute("INSERT OR REPLACE INTO meta(key, value) VALUES (?, ?)",
+                 (f"p115:fail:{info_hash}", str(fails)))
+    if fails >= _ORG_MAX_FAILS:
+        log.error("115 整理: %s 连续失败 %d 次，放行任务（不再自动重试）",
+                  label, fails)
+        conn.execute("INSERT OR REPLACE INTO meta(key, value) VALUES (?, '1')",
+                     (f"p115:done:{info_hash}",))
+    else:
+        log.info("115 整理: %s %s，稍后重试（%d/%d）", label, why, fails,
+                 _ORG_MAX_FAILS)
+    conn.commit()
+    if fails >= _ORG_MAX_FAILS:
+        track_del(info_hash)
+
+
 def _organize_one(conn, c, task: dict, info_hash: str, stats: dict) -> None:
     cfg = settings.load()
     fid = task.get("file_id") or task.get("delete_file_id")
+    if not fid:
+        # Finished but the list entry carries no file reference yet (the
+        # file_id field lags behind the status flip). Faking a done mark
+        # here released the slot while nothing had landed — the serial
+        # gate then believed the movie was organized. Retry instead: the
+        # 60s organize loop re-runs this until the reference shows up (or
+        # _ORG_MAX_FAILS releases the task for good).
+        _org_fail_bump(conn, info_hash, str(task.get("name") or ""),
+                       "暂无文件信息")
+        return
     row = conn.execute(
         "SELECT m.code, m.title FROM magnets g JOIN movies m ON m.code = g.code "
         "WHERE g.hash = ?", (info_hash,)).fetchone()
@@ -1218,9 +1254,7 @@ def _organize_one(conn, c, task: dict, info_hash: str, stats: dict) -> None:
         # pulling the code out of the task name — covers variants like
         # 'aaa-100-ch xxx.mp4' — then verify it against our library
         row = _lookup_movie(conn, extract_code(task.get("name")))
-    if not fid:
-        pass  # nothing to act on; only mark done
-    elif row:
+    if row:
         code, title = row
         title = metatube_title(code) or title
         old = str(task.get("name") or code)
@@ -1249,23 +1283,8 @@ def _organize_one(conn, c, task: dict, info_hash: str, stats: dict) -> None:
                                   reject, stats, target_path=target_name,
                                   prefer_name=base)
         if not handled:
-            # listing throttled -> info incomplete; retry on a later pass,
-            # but give up after _ORG_MAX_FAILS so a poison task can't hold
-            # the serial download slot forever
-            fails = _to_int(db_get_meta(conn, f"p115:fail:{info_hash}")) + 1
-            conn.execute("INSERT OR REPLACE INTO meta(key, value) VALUES (?, ?)",
-                         (f"p115:fail:{info_hash}", str(fails)))
-            conn.commit()
-            if fails >= _ORG_MAX_FAILS:
-                log.error("115 整理: %s 连续失败 %d 次，放行任务（不再自动重试）",
-                          old, fails)
-                conn.execute("INSERT OR REPLACE INTO meta(key, value) VALUES (?, '1')",
-                             (f"p115:done:{info_hash}",))
-                conn.commit()
-                track_del(info_hash)
-            else:
-                log.info("115 整理: %s 列表受限，稍后重试（%d/%d）",
-                         old, fails, _ORG_MAX_FAILS)
+            # listing throttled -> info incomplete; retry on a later pass
+            _org_fail_bump(conn, info_hash, old, "列表受限")
             return
         # organized/rejected/skipped counters are kept by the sweep itself
     elif looks_ad(task.get("name")):

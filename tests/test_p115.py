@@ -418,6 +418,47 @@ def test_watch_pass_vanished_old_task_releases_with_gaveup(monkeypatch):
         conn.close()
 
 
+def test_track_add_clears_stale_done_marker():
+    """重新提交同一磁力时，上一轮尝试留下的 done/fail 标记必须作废——
+    过期 done 曾让 organize_pass 见标记即放行、串行门误信「已整理」。"""
+    import sqlite3
+
+    from app import db, settings
+    db.connect(settings.load()["DB_PATH"]).close()
+    conn = sqlite3.connect(settings.load()["DB_PATH"], timeout=10)
+    try:
+        conn.execute("INSERT OR REPLACE INTO meta(key, value) VALUES "
+                     "('p115:done:STALE1', '1')")
+        conn.commit()
+    finally:
+        conn.close()
+    assert p115.is_done("STALE1") is True
+    p115.track_add("AAA-100", "STALE1", "magnet:?xt=urn:btih:stale1", "t.mp4")
+    assert p115.is_done("STALE1") is False  # stale proof invalidated
+    assert set(p115.track_records()) == {"STALE1"}
+    p115.track_del("STALE1")
+
+
+def test_organize_missing_fid_retries_then_gives_up(monkeypatch):
+    """完成的任务在列表里还没带 file_id（字段滞后于状态翻转）：不能打假
+    done 直接放行（串行门会误信「已整理」而目录没动），应按失败计数重试，
+    5 次后才终结放行。"""
+    from app import db, settings
+    db.connect(settings.load()["DB_PATH"]).close()
+    p115.track_add("AAA-100", "NOFID1", "magnet:?xt=urn:btih:nofid1", "t.mp4")
+    monkeypatch.setattr(p115, "get_client", lambda refresh=False:
+                        _FakeWatchClient([
+                            {"info_hash": "nofid1", "status": 2,
+                             "percentDone": 100, "name": "t.mp4"}]))
+    for _ in range(4):  # attempts 1-4: hold the slot, no fake done
+        p115.organize_pass()
+        assert set(p115.track_records()) == {"NOFID1"}
+        assert p115.is_done("NOFID1") is False
+    p115.organize_pass()  # 5th failure -> give up and release
+    assert p115.track_records() == {}
+    assert p115.is_done("NOFID1") is True  # terminal mark for the serial gate
+
+
 def test_gaveup_codes_and_done_mark_release_slot(monkeypatch):
     import json as _json
     import sqlite3
@@ -428,14 +469,21 @@ def test_gaveup_codes_and_done_mark_release_slot(monkeypatch):
         conn.execute("INSERT OR REPLACE INTO meta(key, value) VALUES "
                      "('p115:gaveup:dead01', ?)",
                      (_json.dumps({"code": "GUV-001", "reason": "x"}),))
+        conn.commit()
+    finally:
+        conn.close()
+    assert p115.gaveup_codes() == {"GUV-001"}
+    # a finished download still holding its slot is released by the done
+    # mark (stamped after track_add — real order — e.g. when track_del
+    # failed on a locked db right after organize succeeded)
+    p115.track_add("GUV-001", "DONEDL", "magnet:?xt=urn:btih:donedl", "t.mp4")
+    conn = sqlite3.connect(settings.load()["DB_PATH"], timeout=10)
+    try:
         conn.execute("INSERT OR REPLACE INTO meta(key, value) VALUES "
                      "('p115:done:DONEDL', '1')")
         conn.commit()
     finally:
         conn.close()
-    assert p115.gaveup_codes() == {"GUV-001"}
-    # a finished download still holding its slot is released by the done mark
-    p115.track_add("GUV-001", "DONEDL", "magnet:?xt=urn:btih:donedl", "t.mp4")
     monkeypatch.setattr(p115, "get_client", lambda refresh=False:
                         _FakeWatchClient([
                             {"info_hash": "donedl", "status": 2,

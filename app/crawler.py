@@ -515,6 +515,8 @@ def _serial_settle(cfg: dict, code: str, stop_check=None) -> None:
                     and not p115.is_done(ih_last):
                 state = "任务记录消失但未见整理完成，继续等待"
             else:
+                log.info("%s: 本部下载与整理已结束（已归档或任务终结），"
+                         "继续采集下一部", code)
                 return
         elif code in p115.gaveup_codes():
             log.info("%s: 磁力全部失败，继续采集下一部", code)
