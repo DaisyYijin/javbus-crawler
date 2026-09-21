@@ -840,6 +840,50 @@ def create_app() -> Flask:
                 out[name] = {"error": str(exc)}
         return jsonify(out)
 
+    @app.get("/api/p115/del-debug")
+    def p115_del_debug():
+        """Diagnostic: try del-task variants on ONE hash, keep files, and
+        report which variant actually removes the record."""
+        h = (request.args.get("hash") or "").strip()
+        if not h:
+            return jsonify({"error": "missing ?hash="}), 400
+        if not p115.has_auth():
+            return jsonify({"error": "not logged in"}), 400
+        c = p115.get_client()
+        import time as _t
+
+        def find_raw():
+            resp = p115.check_response(c.clouddownload_task_list(
+                {"page": 1, "page_size": 100}, timeout=p115._TIMEOUT))
+            for t in resp.get("tasks") or []:
+                if str(t.get("info_hash") or "").upper() == h.upper():
+                    return t
+            return None
+
+        task = find_raw()
+        if not task:
+            return jsonify({"error": "task not found in list"}), 404
+        raw_hash = task.get("info_hash") or ""
+        out = {"raw_info_hash": raw_hash, "raw_case": "upper" if raw_hash.isupper() else "lower", "steps": []}
+        for label, payload in (
+            ("exact_case", raw_hash),
+            ("flag0", {"hash[0]": raw_hash, "flag": 0}),
+            ("upper", h.upper()),
+        ):
+            step = {"variant": label, "hash_sent": payload}
+            try:
+                step["resp"] = c.clouddownload_task_del([payload], timeout=p115._TIMEOUT)
+            except Exception as exc:
+                step["resp"] = {"error": str(exc)}
+            _t.sleep(2)
+            gone = find_raw() is None
+            step["removed"] = gone
+            out["steps"].append(step)
+            if gone:
+                break
+        return jsonify(out)
+
+
     @app.post("/api/p115/organize")
     def p115_organize():
         if not p115.has_auth():
