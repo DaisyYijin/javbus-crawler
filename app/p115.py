@@ -14,7 +14,9 @@ import sqlite3
 import threading
 import time
 
-from . import settings
+import requests
+
+from . import crawler, parser, settings
 
 log = logging.getLogger("seedmm.p115")
 
@@ -422,8 +424,12 @@ def _map_task_status(raw) -> str:
         return "未知"
 
 
-def del_tasks(info_hashes: list[str]) -> int:
-    """Remove offline-task records from the 115 list (files are kept)."""
+def del_tasks(info_hashes: list[str], *, purge_files: bool = False) -> int:
+    """Remove offline-task records from the 115 list.
+
+    purge_files=True also deletes the downloaded files (used when swapping
+    a dead magnet, so half-downloaded junk doesn't pile up in the dir).
+    """
     c = get_client()
     if not c:
         raise RuntimeError("115 未登录")
@@ -436,12 +442,305 @@ def del_tasks(info_hashes: list[str]) -> int:
     # batch in groups of 20 to keep the form payload modest
     for i in range(0, len(hashes), 20):
         batch = hashes[i:i + 20]
+        payload: dict = {f"hash[{j}]": h for j, h in enumerate(batch)}
+        if purge_files:
+            payload["flag"] = 1
         try:
-            check_response(c.clouddownload_task_del(batch, timeout=_TIMEOUT))
+            check_response(c.clouddownload_task_del(payload, timeout=_TIMEOUT))
             deleted += len(batch)
         except Exception as exc:
             log.warning("115 删除任务记录失败 %s…: %s", batch[0], exc)
     return deleted
+
+
+# -------------------------------------------------------- download watch ----
+_TRACK_PREFIX = "p115:track:"
+
+_EXT_STRIP_RE = re.compile(
+    r"\.(?:MP4|MKV|AVI|WMV|MOV|TS|M2TS|M2V|ISO|RMVB|RM|FLV|MPG|MPG4|DIVX|H264|SRT|ASS|JPG|PNG|NFO|TXT|URL|HTML?)$", re.I)
+# trailing quality/edition decorations: -C -CH -UCD -CD1 -4K -1080P ...
+_TAIL_TOKEN_RE = re.compile(
+    r"[-_. ](?:CD\d{1,2}|PART\d{1,2}|C|CH|UC|UCD|UNCENSORED|LEAK|4K|8K|1080P|720P|2160P)$", re.I)
+_CODE_FC2_RE = re.compile(r"\bFC2[-_ ]?PPV[-_ ]?(\d{6,9})\b", re.I)
+# AAA-100 / T28-619 / 259LUXU-1234 / 300MIUM-703 (numeric prefixes glue to
+# the letters on either side: letters+digits like T28 or digits+letters like
+# 259LUXU both count as a label)
+_CODE_DASH_RE = re.compile(
+    r"\b((?:\d{1,3})?[A-Z]{2,10}(?:\d{1,4})?|[A-Z]\d{1,4})[-_ ](\d{2,5})\b")
+_CODE_PLAIN_RE = re.compile(r"\b([A-Z]{2,8})(\d{2,5})\b")
+
+
+def extract_code(text) -> str | None:
+    """Pull a normalized jav code out of a free-form task/file name.
+
+    Handles the usual variants: 'aaa-100-ch' (-C/-CH/-UCD/-CD1/-4K tails),
+    'AAA100' (no dash), 'T28-619' / '259LUXU-1234' (numeric prefixes) and
+    'FC2-PPV-1234567'. Returns e.g. 'AAA-100', or None when nothing looks
+    like a code. The caller still verifies the result against the DB.
+    """
+    s = str(text or "").upper()
+    if not s:
+        return None
+    s = _EXT_STRIP_RE.sub("", s)
+    for _ in range(4):
+        stripped = _TAIL_TOKEN_RE.sub("", s).rstrip()
+        if stripped == s:
+            break
+        s = stripped
+    m = _CODE_FC2_RE.search(s)
+    if m:
+        return f"FC2-PPV-{m.group(1)}"
+    m = _CODE_DASH_RE.search(s)
+    if m:
+        return f"{m.group(1)}-{m.group(2)}"
+    m = _CODE_PLAIN_RE.search(s)
+    if m:
+        return f"{m.group(1)}-{m.group(2)}"
+    return None
+
+
+def metatube_title(code: str) -> str | None:
+    """Look a code up on the configured MetaTube server; None when unset/miss.
+
+    Used at organize time: MetaTube's title usually beats the scraped one
+    (proper punctuation, episode tagging, etc.).
+    """
+    cfg = settings.load()
+    base = str(cfg.get("METATUBE_URL") or "").strip().rstrip("/")
+    if not base:
+        return None
+    token = str(cfg.get("METATUBE_TOKEN") or "").strip()
+    headers = {"Authorization": f"Bearer {token}"} if token else {}
+    try:
+        r = requests.get(f"{base}/v1/movies/javbus/{code}", headers=headers, timeout=8)
+        if r.status_code != 200:
+            return None
+        data = (r.json() or {}).get("data") or {}
+    except Exception:
+        return None
+    title = str(data.get("title") or "").strip()
+    return title or None
+
+
+def track_add(code: str, info_hash: str, link: str, name: str = "",
+              *, tried: set[str] | None = None, retries: int = 0) -> None:
+    """Remember a submitted download so the watch loop can monitor it."""
+    ih = (info_hash or "").upper()
+    if not ih:
+        return
+    rec = {"code": code, "link": link, "name": name,
+           "submitted_at": int(time.time()),
+           "last_prog_at": int(time.time()), "last_percent": -1,
+           "retries": retries,
+           "tried": sorted({h.upper() for h in (tried or set())} | {ih})}
+    conn = sqlite3.connect(settings.load()["DB_PATH"], timeout=10)
+    try:
+        conn.execute("INSERT OR REPLACE INTO meta(key, value) VALUES (?, ?)",
+                     (_TRACK_PREFIX + ih, json.dumps(rec, ensure_ascii=False)))
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def track_records() -> dict[str, dict]:
+    """All tracked downloads keyed by upper info_hash."""
+    conn = sqlite3.connect(settings.load()["DB_PATH"], timeout=10)
+    try:
+        rows = conn.execute(
+            "SELECT key, value FROM meta WHERE key LIKE ?",
+            (_TRACK_PREFIX + "%",)).fetchall()
+    finally:
+        conn.close()
+    out: dict[str, dict] = {}
+    for key, raw in rows:
+        try:
+            data = json.loads(raw)
+        except ValueError:
+            continue
+        if isinstance(data, dict):
+            out[key[len(_TRACK_PREFIX):].upper()] = data
+    return out
+
+
+def _track_update(ih: str, **fields) -> None:
+    conn = sqlite3.connect(settings.load()["DB_PATH"], timeout=10)
+    try:
+        row = conn.execute("SELECT value FROM meta WHERE key = ?",
+                           (_TRACK_PREFIX + ih,)).fetchone()
+        if not row:
+            return
+        try:
+            rec = json.loads(row[0])
+        except ValueError:
+            return
+        rec.update(fields)
+        conn.execute("UPDATE meta SET value = ? WHERE key = ?",
+                     (json.dumps(rec, ensure_ascii=False), _TRACK_PREFIX + ih))
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def track_del(ih: str) -> None:
+    conn = sqlite3.connect(settings.load()["DB_PATH"], timeout=10)
+    try:
+        conn.execute("DELETE FROM meta WHERE key = ?", (_TRACK_PREFIX + ih,))
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def magnet_candidates(code: str, exclude: set[str]) -> dict | None:
+    """Best remaining magnet for a code, skipping already-tried hashes.
+
+    Live-fetches the full magnet list from the site (the DB keeps only the
+    single best magnet per code, so a re-pick needs fresh candidates); falls
+    back to the stored magnet when the site is unreachable.
+    """
+    cfg = settings.load()
+    exclude = {h.upper() for h in exclude}
+    left: list[dict] = []
+    try:
+        movie = crawler._fetch_code_movie(crawler._make_fetcher(cfg), code, True)
+    except Exception as exc:
+        log.info("换磁力：实时抓取 %s 磁力失败，回退本库: %s", code, exc)
+        movie = None
+    if movie:
+        for m in movie.magnets:
+            h = (parser.magnet_hash(m.link) or "").upper()
+            if h and h not in exclude:
+                left.append({"hash": h, "link": m.link, "name": m.name,
+                             "size": m.size, "date": m.date})
+    if not left:
+        conn = sqlite3.connect(cfg["DB_PATH"], timeout=10)
+        try:
+            for h, link, name, size, date in conn.execute(
+                    "SELECT hash, link, name, size, date FROM magnets WHERE code = ?",
+                    (code,)):
+                if (h or "").upper() not in exclude:
+                    left.append({"hash": (h or "").upper(), "link": link,
+                                 "name": name, "size": size, "date": date})
+        finally:
+            conn.close()
+    if not left:
+        return None
+    keywords = [k for k in str(cfg.get("TAG_FILTERS") or "").split(",") if k.strip()]
+    try:
+        tiebreak = crawler.parse_tiebreak(cfg.get("MAGNET_TIEBREAK"))
+    except ValueError:
+        tiebreak = ["size", "date"]
+    fallback = crawler.parse_fallback(cfg.get("MAGNET_FALLBACK"))
+    best, _kw = crawler.pick_magnet(left, keywords, tiebreak, fallback)
+    return best
+
+
+def _swap_magnet(ih: str, rec: dict, max_retries: int) -> str:
+    """Retry a dead download with the next-best magnet ('swapped'|'gaveup')."""
+    code = str(rec.get("code") or "")
+    tried = {h.upper() for h in (rec.get("tried") or [])} | {ih}
+    retries = int(rec.get("retries") or 0)
+
+    def giveup(reason: str) -> str:
+        track_del(ih)
+        conn = sqlite3.connect(settings.load()["DB_PATH"], timeout=10)
+        try:
+            conn.execute("INSERT OR REPLACE INTO meta(key, value) VALUES (?, ?)",
+                         (f"p115:gaveup:{ih}", json.dumps(
+                             {"code": code, "reason": reason, "at": int(time.time())},
+                             ensure_ascii=False)))
+            conn.commit()
+        finally:
+            conn.close()
+        log.warning("115 放弃下载 %s（%s）: 共尝试 %d 个磁力", code, reason, retries + 1)
+        return "gaveup"
+
+    if retries >= max_retries:
+        return giveup("重试次数用尽")
+    m = magnet_candidates(code, tried)
+    if not m:
+        return giveup("没有更多候选磁力")
+    try:
+        res = add_magnet(m["link"])
+    except Exception as exc:
+        # keep the old track record: the next round will retry the swap
+        log.warning("换磁力：%s 提交新磁力失败，保留旧任务下轮重试: %s", code, exc)
+        return "swapped"
+    try:
+        del_tasks([ih], purge_files=True)
+    except Exception as exc:
+        log.info("换磁力：删除旧任务 %s 失败（忽略）: %s", ih, exc)
+    track_del(ih)
+    track_add(code, res.get("info_hash") or m["hash"], m["link"], res.get("name") or "",
+              tried=tried | {m["hash"]}, retries=retries + 1)
+    log.info("115 换磁力 %s: %.8s -> %.8s（第 %d 次重试）",
+             code, ih, m["hash"], retries + 1)
+    return "swapped"
+
+
+def watch_pass() -> dict:
+    """One monitoring round over tracked downloads.
+
+    Finished -> forget (the organize pass picks it up); failed/stalled too
+    long -> swap to the next magnet; when the P115_AUTO_ORGANIZE switch is
+    on, a finished batch is organized right away.
+    """
+    cfg = settings.load()
+    stats = {"checked": 0, "done": 0, "swapped": 0, "gaveup": 0, "organized": 0}
+    recs = track_records()
+    if not recs or not has_auth():
+        return stats
+    c = get_client()
+    if not c:
+        return stats
+    tasks: dict[str, dict] = {}
+    for page in range(1, 6):
+        resp = check_response(c.clouddownload_task_list(
+            {"page": page, "page_size": 50}, timeout=_TIMEOUT))
+        batch = resp.get("tasks") or []
+        for t in batch:
+            ih = (t.get("info_hash") or "").upper()
+            if ih:
+                tasks[ih] = t
+        if page * 50 >= int(resp.get("count", len(batch))):
+            break
+    now = int(time.time())
+    stall_s = max(1, int(cfg.get("P115_DL_STALL_MIN", 30))) * 60
+    max_retries = max(0, int(cfg.get("P115_DL_MAX_RETRIES", 3)))
+    organize = False
+    for ih, rec in recs.items():
+        stats["checked"] += 1
+        t = tasks.get(ih)
+        if not t:  # vanished from the list (cleared manually) -> stop tracking
+            track_del(ih)
+            continue
+        try:
+            status = int(t.get("status"))
+        except (TypeError, ValueError):
+            status = 0
+        if status == 2:  # finished
+            track_del(ih)
+            stats["done"] += 1
+            organize = True
+        elif status in (-1, -2):  # failed / canceled
+            stats[_swap_magnet(ih, rec, max_retries)] += 1
+        else:  # waiting / downloading -> stall detection
+            pct = t.get("percentDone") or 0
+            if pct != rec.get("last_percent"):
+                _track_update(ih, last_percent=pct, last_prog_at=now)
+            elif now - int(rec.get("last_prog_at") or rec.get("submitted_at") or now) > stall_s:
+                log.info("115 任务卡住 %s: %s %.8s 超过 %d 分钟无进度，换磁力",
+                         rec.get("code"), rec.get("name"), ih, stall_s // 60)
+                stats[_swap_magnet(ih, rec, max_retries)] += 1
+    if organize and cfg.get("P115_AUTO_ORGANIZE"):
+        try:
+            r = organize_pass()
+            stats["organized"] = int(r.get("organized") or 0)
+            if stats["organized"] or r.get("ads") or r.get("rejected"):
+                log.info("115 下载完成后自动整理：影片 %d · 广告 %d · 拒收 %d",
+                         stats["organized"], r.get("ads") or 0, r.get("rejected") or 0)
+        except Exception:
+            log.exception("115 下载完成后整理失败")
+    return stats
 
 
 # ------------------------------------------------------------ organize ----
@@ -683,11 +982,20 @@ def _organize_one(conn, c, task: dict, info_hash: str, stats: dict) -> None:
     row = conn.execute(
         "SELECT m.code, m.title FROM magnets g JOIN movies m ON m.code = g.code "
         "WHERE g.hash = ?", (info_hash,)).fetchone()
+    if not row:
+        # hash lookup missed (magnet rescraped / entry purged): fall back to
+        # pulling the code out of the task name — covers variants like
+        # 'aaa-100-ch xxx.mp4' — then verify it against our library
+        guessed = extract_code(task.get("name"))
+        if guessed:
+            row = conn.execute("SELECT code, title FROM movies WHERE code = ?",
+                               (guessed,)).fetchone()
     if not fid:
         pass  # nothing to act on; only mark done
     elif row:
         stats["organized"] += 1
         code, title = row
+        title = metatube_title(code) or title
         old = str(task.get("name") or code)
         src_cid = None
         try:
@@ -702,7 +1010,8 @@ def _organize_one(conn, c, task: dict, info_hash: str, stats: dict) -> None:
             reject = resolve_dir(c, (cfg.get("P115_REJECT_DIR") or "").strip() or "冗余")
             stats["ads"] += _sweep_ads(c, int(fid), reject)
         parts = old.rsplit(".", 1)
-        ext = f".{parts[1]}" if len(parts) == 2 and 0 < len(parts[1]) <= 5 else ""
+        ext = f".{parts[1]}" if (not is_folder and len(parts) == 2
+                                 and 0 < len(parts[1]) <= 5) else ""
         new_name = _sanitize_name(f"{code} {title}")[:180] + ext
         if new_name and new_name != old:
             check_response(c.fs_rename((int(fid), new_name), timeout=_TIMEOUT))

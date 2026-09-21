@@ -754,6 +754,11 @@ def create_app() -> Flask:
             result = p115.add_magnet(magnet["link"])
         except Exception as exc:
             return jsonify({"ok": False, "error": f"提交离线任务失败: {exc}"}), 502
+        try:
+            p115.track_add(code, result.get("info_hash") or magnet.get("hash"),
+                           magnet["link"], result.get("name") or "")
+        except Exception:
+            log.exception("记录下载追踪失败 %s", code)
         log.info("已提交 115 离线任务: %s (%s)", result["name"], code)
         return jsonify({"ok": True, **result})
 
@@ -1023,6 +1028,19 @@ def _p115_organize_loop() -> None:
             log.exception("115 自动整理异常")
 
 
+def _p115_watch_loop() -> None:
+    """Background loop: monitor tracked downloads; swap dead/stalled magnets."""
+    while True:
+        time.sleep(15)
+        try:
+            n = p115.watch_pass()
+            if n.get("swapped") or n.get("gaveup"):
+                log.info("115 下载监测：换磁力 %d · 放弃 %d · 完成 %d",
+                         n["swapped"], n["gaveup"], n["done"])
+        except Exception:
+            log.exception("115 下载监测异常")
+
+
 def run(host: str = "0.0.0.0", port: int | None = None) -> None:
     """Serve the web UI (waitress, production WSGI)."""
     from waitress import serve
@@ -1037,5 +1055,6 @@ def run(host: str = "0.0.0.0", port: int | None = None) -> None:
     _startup_selfcheck()
     threading.Thread(target=_auto_crawl_loop, daemon=True).start()
     threading.Thread(target=_p115_organize_loop, daemon=True).start()
+    threading.Thread(target=_p115_watch_loop, daemon=True).start()
     log.info("Web 界面: http://%s:%d （配置文件 %s）", host, port, settings.CONFIG_PATH)
     serve(app, host=host, port=port, threads=16)

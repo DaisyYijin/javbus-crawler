@@ -38,7 +38,9 @@ DEFAULTS: dict = {
     "P115_DOWNLOAD_DIR": "待整理",    # 115 dir offline downloads land in
     "P115_TARGET_DIR": "已整理",      # 115 dir completed downloads move into
     "P115_REJECT_DIR": "冗余",        # 115 dir ad/spam files get swept into
-    "P115_AUTO_ORGANIZE": False,      # background loop: rename+move finished tasks
+    "P115_AUTO_ORGANIZE": True,       # organize finished downloads automatically
+    "P115_DL_STALL_MIN": 30,          # minutes without progress -> swap magnet
+    "P115_DL_MAX_RETRIES": 3,         # magnet swaps before giving up
 }
 
 # Types allowed per key, for validation on save.
@@ -67,6 +69,8 @@ _TYPES = {
     "P115_TARGET_DIR": str,
     "P115_REJECT_DIR": str,
     "P115_AUTO_ORGANIZE": bool,
+    "P115_DL_STALL_MIN": int,
+    "P115_DL_MAX_RETRIES": int,
 }
 
 _lock = threading.RLock()  # reentrant: save() holds it and calls load()

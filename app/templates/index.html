@@ -655,7 +655,6 @@
         <div class="row" style="margin-bottom:12px">
           <button class="ghost" onclick="load115Tasks()">刷新</button>
           <button class="ghost" onclick="clear115DoneTasks()">清理已完成记录</button>
-          <button class="primary" onclick="organizeNow()">立即整理</button>
           <span id="p115-task-msg" class="msg"></span>
         </div>
         <div class="seg" id="p115-task-seg" style="margin-bottom:10px">
@@ -698,11 +697,14 @@
               <input id="c_P115_REJECT_DIR" type="text" placeholder="冗余" style="flex:1">
               <button type="button" class="ghost dir-pick-btn" title="从 115 目录中点选" onclick="openDirPicker('c_P115_REJECT_DIR')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg></button>
             </div></div>
+          <div class="field w3"><label>卡住判定（分钟） <small>P115_DL_STALL_MIN · 下载中超过该时长无进度视为卡住，自动换磁力</small></label>
+            <input id="c_P115_DL_STALL_MIN" type="number" min="1" max="720" placeholder="30"></div>
+          <div class="field w3"><label>换磁力次数上限 <small>P115_DL_MAX_RETRIES · 超过后放弃该影片的下载</small></label>
+            <input id="c_P115_DL_MAX_RETRIES" type="number" min="0" max="20" placeholder="3"></div>
         </div>
-        <div class="hint">整理流程：下载完成 → 通过 info_hash 反查本库影片 → 重命名「番号 标题」→ 从待整理目录移动到已整理目录。文件夹内的广告文件（.url / .txt / 推广名）与未匹配到影片的疑似广告任务会自动移入冗余目录。目录可点输入框右侧文件夹图标从 115 网盘中直接选取（支持多级，不存在会自动创建）。已整理任务自动记忆去重。</div>
+        <div class="hint">全自动流水线：提交磁力 → 每 15 秒监测下载（卡住超时 / 下载失败自动换下一个磁力重试，可设次数上限）→ 下载完成 → 通过 info_hash 反查（失败时从任务名智能识别番号，支持 aaa-100-ch 等变体）→ 调 MetaTube（已配置时）优化剧名 → 重命名为「番号 剧名」（文件与目录同步）→ 移动到已整理目录。文件夹内广告文件与疑似广告任务自动移入冗余目录。目录可点输入框右侧文件夹图标从 115 网盘中直接选取。已整理任务自动记忆去重。</div>
         <div class="row save-row">
-          <label class="switch" style="margin:0" title="每分钟检查完成的任务并自动整理 · P115_AUTO_ORGANIZE"><input type="checkbox" id="c_P115_AUTO_ORGANIZE"><span class="track"></span><span>启用自动整理</span></label>
-          <button class="ok" type="button" onclick="organizeNow()">立即整理</button>
+          <label class="switch" style="margin:0" title="下载完成后自动重命名并移动 · P115_AUTO_ORGANIZE"><input type="checkbox" id="c_P115_AUTO_ORGANIZE"><span class="track"></span><span>启用自动整理</span></label>
           <button class="primary" onclick="saveConfig()">保存配置</button>
           <span class="msg cfg-msg"></span>
         </div>
@@ -885,7 +887,8 @@ async function saveConfig() {
   const body = {};
   ['BASE_URL','PROXY','METATUBE_URL','METATUBE_TOKEN','DELAY_SECONDS','JITTER_SECONDS',
    'MAX_RETRIES','TIMEOUT','WEB_PORT','AUTO_CRAWL_INTERVAL_HOURS','AUTO_CRAWL_PAGES',
-   'TAG_FILTERS','MAGNET_TIEBREAK','MAGNET_FALLBACK','P115_DOWNLOAD_DIR','P115_TARGET_DIR','P115_REJECT_DIR']
+   'TAG_FILTERS','MAGNET_TIEBREAK','MAGNET_FALLBACK','P115_DOWNLOAD_DIR','P115_TARGET_DIR','P115_REJECT_DIR',
+   'P115_DL_STALL_MIN','P115_DL_MAX_RETRIES']
     .forEach(k => { const el = $('c_' + k); if (el) body[k] = el.value; });
   body.CATEGORY = [...document.querySelectorAll('#cat-seg .seg-btn.active')].map(b => b.dataset.cat).join(',');
   body.GENRE_CENSORED = [...GENRE_SEL.censored].join(',');
@@ -1740,19 +1743,6 @@ async function clear115DoneTasks() {
       body: JSON.stringify({hashes})})).json();
     if (j.ok) { toast(`✓ 已清理 ${j.deleted} 条记录`, 'ok'); load115Tasks(1); }
     else toast('✗ ' + (j.error || '清理失败'), 'err');
-  } catch (e) { toast('✗ ' + e.message, 'err'); }
-}
-async function organizeNow() {
-  if (!p115LoggedIn) { toast('115 未登录，请先到「账号登录」页扫码', 'err'); return; }
-  toast('正在整理已完成的任务…');
-  try {
-    const j = await (await fetch('/api/p115/organize', {method: 'POST'})).json();
-    if (j.ok) {
-      toast(`✓ 整理完成：影片 ${j.organized || 0} · 清理广告 ${j.ads || 0} · 拒收任务 ${j.rejected || 0}`, 'ok');
-      load115Tasks();
-      renderOrgBanner();
-    }
-    else toast('✗ ' + (j.error || '整理失败'), 'err');
   } catch (e) { toast('✗ ' + e.message, 'err'); }
 }
 async function sendTo115(code) {
