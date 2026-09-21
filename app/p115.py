@@ -1376,13 +1376,22 @@ def _sweep_file(conn, c, fid: int, name: str, size: int,
             stats["rejected"] += 1
             log.info("115 整理: %s -> 冗余目录", name)
             return True
+    # 115 offline tasks name a single-file download after the magnet's dn=
+    # ('fit-008ch' — no extension). Renaming that to a bare 'CODE Title'
+    # produced an extensionless file sharing its parent dir's EXACT name
+    # (已整理/X/X, unplayable and indistinguishable from double nesting).
+    # The file already passed the ad gates and carries a library code, so
+    # default the missing extension to .mp4.
+    if base and not ext:
+        ext = ".mp4"
     new = base + ext if base else ""
     if new and new != name and new.rstrip():
         check_response(c.fs_rename((fid, new), timeout=_TIMEOUT))
         log.info("115 重命名: %s -> %s", name, new)
         name = new
     if not base:
-        base = name[:-len(ext)] if ext else name
+        base = (name[:-len(ext)]
+                if ext and name.lower().endswith(ext) else name)
     tgt = target
     if target_path and base:
         tgt = resolve_dir(c, f"{target_path}/{base}")

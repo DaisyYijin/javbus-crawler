@@ -652,6 +652,26 @@ def test_sweep_file_feature_and_junk(monkeypatch):
         conn.close()
 
 
+def test_sweep_file_extensionless_download_gets_mp4(monkeypatch):
+    """单文件离线任务以磁力 dn= 命名（无扩展名，如 fit-008ch）：命中库内
+    番号时必须补 .mp4 再归档——裸名会让文件与父目录同名（已整理/X/X），
+    既像双层嵌套又无法播放。"""
+    conn = _sweep_db(monkeypatch, movies=[("FIT-008", "初撮り")])
+    try:
+        fake = _FakeSweepClient({})
+        monkeypatch.setattr(p115, "resolve_dir", lambda c, p: 777)
+        stats = {"organized": 0, "rejected": 0}
+        handled = p115._sweep_file(conn, fake, 9, "fit-008ch", 2 * GIB,
+                                   10, 20, stats, target_path="已整理",
+                                   prefer_name="FIT-008 初撮り")
+        assert handled is True
+        assert fake.renames == [(9, "FIT-008 初撮り.mp4")]  # .mp4 appended
+        assert fake.moves == [(9, 777)]
+        assert stats["organized"] == 1
+    finally:
+        conn.close()
+
+
 def test_sweep_folder_single_feature(monkeypatch):
     conn = _sweep_db(monkeypatch, movies=[("MIDA-790", "下海")])
     try:
