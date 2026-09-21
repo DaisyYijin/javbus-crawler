@@ -1,9 +1,11 @@
 """Shared crawl engine used by both the CLI and the web UI."""
 from __future__ import annotations
 
+import json
 import logging
 import random
 import re
+import threading
 import time
 from types import SimpleNamespace
 from urllib.parse import urlencode
@@ -49,6 +51,36 @@ def listing_path(section: str, genre: str, page: int) -> str:
     if genre:
         return f"{section}/genre/{genre}/{page}"
     return f"{section}/page/{page}"
+
+
+def genre_name_map(conn) -> dict[tuple[str, str], str]:
+    """(channel, site-genre-id) -> display name, for human-readable labels.
+
+    Sources: the cached site catalog (genre_catalog_v2, authoritative) plus
+    the mappings learned while crawling detail pages (genre_id:<cat>:<name>
+    rows) — together they cover ids the cached catalog no longer lists.
+    """
+    out: dict[tuple[str, str], str] = {}
+    try:
+        catalog = json.loads(db.get_meta(conn, "genre_catalog_v2", "") or "{}")
+    except ValueError:
+        catalog = {}
+    for cat in ("censored", "uncensored"):
+        for grp in (catalog.get(cat) or []):
+            for g in (grp.get("genres") or []):
+                gid, name = str(g.get("id") or ""), str(g.get("name") or "")
+                if gid and name:
+                    out.setdefault((cat, gid), name)
+    try:
+        rows = conn.execute(
+            "SELECT key, value FROM meta WHERE key LIKE 'genre_id:%'").fetchall()
+    except Exception:
+        rows = []
+    for key, gid in rows:
+        parts = key.split(":", 2)
+        if len(parts) == 3 and str(gid).strip():
+            out.setdefault((parts[1], str(gid)), parts[2])
+    return out
 
 
 def looks_blocked(html: str) -> bool:
@@ -320,6 +352,16 @@ def pick_best(magnets: list, keywords: list[str],
 
 _QUEUED_PREFIX = "dl:queued:"
 
+# serial pipeline: one download (through organize) at a time. The crawl
+# thread and the organize loop's retry_queued can both try to grab the free
+# slot at the same moment — this lock makes the check-and-submit atomic.
+_SUBMIT_LOCK = threading.Lock()
+_SERIAL_POLL_S = 15          # how often the settle loop re-checks the pipeline
+_SERIAL_WAIT_MAX_S = 6 * 3600  # hard cap so a wedged pipeline can't hang a crawl
+# auto_download outcomes that mean "this movie is (or will be) in the
+# pipeline" — run_job must hold the crawl until it settles
+_AUTO_WAIT = {"submitted", "tracked", "busy", "cooldown"}
+
 
 def _queued_update(cfg: dict, code: str, queued: bool) -> None:
     """Persist (or drop) a "wants download, serial slot busy" mark.
@@ -341,32 +383,34 @@ def _queued_update(cfg: dict, code: str, queued: bool) -> None:
         log.debug("dl:queued 标记更新失败 %s", code, exc_info=True)
 
 
-def auto_download(cfg: dict, movie) -> None:
+def auto_download(cfg: dict, movie) -> str:
     """AUTO_DOWNLOAD: submit the stored best magnet of a movie to 115.
 
     Best-effort: never raises, so a 115 failure cannot break the crawl.
-    When the serial pipeline (or the cooldown) blocks the submit, a
-    dl:queued:{code} mark is persisted so retry_queued() can pick the
-    movie back up once the slot frees.
+    Returns what happened so a caller in wait mode knows whether this movie
+    is now in the pipeline: "off"/"skip" nothing pending, "submitted" just
+    submitted, "tracked" already downloading, "busy"/"cooldown" the serial
+    slot or the interval gate deferred it (a dl:queued:{code} mark is
+    persisted so retry_queued() can pick the movie back up once it frees).
     """
     if not cfg.get("AUTO_DOWNLOAD") or not getattr(movie, "magnets", None):
-        return
+        return "off"
     from . import p115  # deferred: p115 imports this module at load time
 
     try:
         if not p115.has_auth():
             log.info("%s: 自动云下载已开启但 115 未登录，跳过", movie.code)
-            return
+            return "skip"
         recs = p115.track_records()
         if any(r.get("code") == movie.code for r in recs.values()):
             _queued_update(cfg, movie.code, False)  # tracked: mark served
             log.info("%s: 已有云下载任务，跳过重复提交", movie.code)
-            return
+            return "tracked"
         if recs:  # serial pipeline: one download (through organize) at a time
             _queued_update(cfg, movie.code, True)
             log.info("%s: 上一个云下载还未完成整理，稍后自动提交（串行）",
                      movie.code)
-            return
+            return "busy"
         interval = max(0, int(cfg.get("P115_DL_INTERVAL_MIN", 0))) * 60
         if interval:  # cooldown after the last movie landed in the library
             wait = interval - (int(time.time()) - p115.last_release_at())
@@ -374,21 +418,124 @@ def auto_download(cfg: dict, movie) -> None:
                 _queued_update(cfg, movie.code, True)
                 log.info("%s: 上一部整理完成后冷却中，约 %d 分钟后自动提交（串行间隔）",
                          movie.code, wait // 60 + 1)
-                return
+                return "cooldown"
         if movie.code in p115.gaveup_codes():
             _queued_update(cfg, movie.code, False)  # dead magnets: stop retrying
             log.info("%s: 该番号磁力已全部失败过，跳过", movie.code)
-            return
-        m = movie.magnets[0]
-        log.info("开始云下载: %s (%s)", movie.code, m.name[:60])
-        result = p115.add_magnet(m.link)
-        p115.track_add(movie.code, result.get("info_hash") or magnet_hash(m.link),
-                       m.link, result.get("name") or "")
-        _queued_update(cfg, movie.code, False)
-        log.info("已提交 115 离线任务: %s (%s)",
-                 result.get("name") or m.name, movie.code)
+            return "skip"
+        with _SUBMIT_LOCK:
+            # re-check under the lock: retry_queued (organize loop) may have
+            # grabbed the slot for this or another code between the checks
+            # above and here
+            recs = p115.track_records()
+            if any(r.get("code") == movie.code for r in recs.values()):
+                _queued_update(cfg, movie.code, False)
+                return "tracked"
+            if recs:
+                _queued_update(cfg, movie.code, True)
+                return "busy"
+            m = movie.magnets[0]
+            log.info("开始云下载: %s (%s)", movie.code, m.name[:60])
+            result = p115.add_magnet(m.link)
+            p115.track_add(movie.code, result.get("info_hash") or magnet_hash(m.link),
+                           m.link, result.get("name") or "")
+            _queued_update(cfg, movie.code, False)
+            log.info("已提交 115 离线任务: %s (%s)",
+                     result.get("name") or m.name, movie.code)
+            return "submitted"
     except Exception:
         log.exception("%s: 自动云下载失败（不影响采集入库）", movie.code)
+        return "skip"
+
+
+def _stored_movie(cfg: dict, code: str):
+    """Rebuild the SimpleNamespace auto_download expects from the DB row,
+    or None when the movie/its magnets are gone."""
+    try:
+        conn = db.connect(cfg["DB_PATH"])
+        try:
+            stored = db.get_movie(conn, code)
+        finally:
+            conn.close()
+    except Exception:
+        log.exception("%s: 读取入库记录失败", code)
+        return None
+    if not stored or not stored.get("magnets"):
+        return None
+    return SimpleNamespace(
+        code=code,
+        magnets=[SimpleNamespace(link=m["link"], name=m.get("name") or "")
+                 for m in stored["magnets"]])
+
+
+def _serial_settle(cfg: dict, code: str, stop_check=None) -> None:
+    """Hold the crawl until `code` has been through download AND organize.
+
+    The pipeline rule the user asked for: collect one movie, wait until it
+    landed in the 115 library, then collect the next. Every terminal path
+    in p115 (organized, organize give-up, magnets exhausted, task vanished,
+    organize disabled) releases the track record, so "code gone from
+    track_records" is the settle signal. Raises StopRequested when the user
+    stops the crawl; gives up after _SERIAL_WAIT_MAX_S so a wedged pipeline
+    cannot stall a crawl forever.
+    """
+    from . import p115  # deferred: p115 imports this module at load time
+
+    deadline = time.time() + _SERIAL_WAIT_MAX_S
+    seen = False      # our code entered the pipeline at least once
+    gone = 0          # consecutive polls with the record absent (after seen)
+    attempts = 0      # consecutive failed (re)submits in the free-slot branch
+    last = ""
+    while time.time() < deadline:
+        if stop_check is not None and stop_check():
+            raise StopRequested()
+        recs = p115.track_records()
+        state = ""
+        if any(r.get("code") == code for r in recs.values()):
+            seen = True
+            gone = 0
+            state = "云下载/整理进行中"
+        elif seen:
+            # the record left the pipeline — but _swap_magnet briefly deletes
+            # then re-adds it while switching magnets, so require two clean
+            # polls before declaring the pipeline done with this code
+            gone += 1
+            if gone >= 2:
+                return
+            state = "整理刚完成，确认槽位释放"
+        elif code in p115.gaveup_codes():
+            log.info("%s: 磁力全部失败，继续采集下一部", code)
+            return
+        elif recs:
+            state = "串行槽被其他下载占用"
+        else:
+            interval = max(0, int(cfg.get("P115_DL_INTERVAL_MIN", 0))) * 60
+            wait = interval - (int(time.time()) - p115.last_release_at())
+            if wait > 0:
+                state = f"串行间隔冷却中（约 {wait // 60 + 1} 分钟）"
+            else:
+                # slot free but our movie not tracked: the first
+                # auto_download hit busy/cooldown — submit the stored record
+                stored = _stored_movie(cfg, code)
+                if stored is None:
+                    log.warning("%s: 入库记录或磁力丢失，跳过串行等待", code)
+                    return
+                status = auto_download(cfg, stored)
+                if status in ("submitted", "tracked"):
+                    attempts = 0
+                    state = "已顺延提交，等待下载整理"
+                else:
+                    attempts += 1
+                    if attempts >= 20:  # ~5 min of failures: stop hogging
+                        log.error("%s: 串行提交反复失败，继续采集下一部", code)
+                        return
+                    state = f"提交未成功（{status}），稍后重试"
+        if state and state != last:
+            log.info("%s: %s，整理完毕后继续下一部", code, state)
+        last = state
+        time.sleep(_SERIAL_POLL_S)
+    log.error("%s: 等待云下载+整理超过 %d 小时，放弃等待继续采集",
+              code, _SERIAL_WAIT_MAX_S // 3600)
 
 
 def retry_queued(cfg: dict) -> int:
@@ -419,21 +566,12 @@ def retry_queued(cfg: dict) -> int:
     submitted = 0
     for code in codes:
         try:
-            conn = db.connect(cfg["DB_PATH"])
-            try:
-                stored = db.get_movie(conn, code)
-            finally:
-                conn.close()
-            if not stored or not stored.get("magnets"):
+            stored = _stored_movie(cfg, code)
+            if stored is None:
                 _queued_update(cfg, code, False)  # movie gone: drop the mark
                 continue
-            # auto_download expects attribute access; adapt the stored dict
-            movie = SimpleNamespace(
-                code=code,
-                magnets=[SimpleNamespace(link=m["link"], name=m.get("name") or "")
-                         for m in stored["magnets"]])
             before = {r.get("code") for r in p115.track_records().values()}
-            auto_download(cfg, movie)  # re-runs serial/cooldown guards
+            auto_download(cfg, stored)  # re-runs serial/cooldown guards
             if code not in before and code in {
                     r.get("code") for r in p115.track_records().values()}:
                 submitted += 1
@@ -484,14 +622,20 @@ def run_job(
     if not combos:
         raise ValueError("类别筛选为空：请先在「采集设置 → 类别筛选」中选择要采集的类别")
 
+    gnames: dict[tuple[str, str], str] = {}  # populated once conn is open
+
     def combo_label(c: str, g: str) -> str:
         base = "无码" if c == "uncensored" else "有码"
-        return f"{base}/类别{g}" if g else base
+        if not g:
+            return base
+        name = gnames.get((c, g))
+        return f"{base}/{name}" if name else f"{base}/类别{g}"
 
     def depth_key(c: str, g: str) -> str:
         return f"max_page:{c}:{g}" if g else f"max_page:{c}"
 
     conn = db.connect(cfg["DB_PATH"])
+    gnames.update(genre_name_map(conn))
     known = db.known_codes(conn)
     depths = {depth_key(c, g): int(db.get_meta(conn, depth_key(c, g), "0") or 0)
               for c, g in combos}
@@ -655,7 +799,10 @@ def run_job(
                         log.warning("%s: 单条处理失败，跳过该影片 (%s)",
                                     item.code, item.url, exc_info=True)
                         continue
-                    auto_download(cfg, movie)
+                    if auto_download(cfg, movie) in _AUTO_WAIT:
+                        # one movie at a time: hold the crawl until this
+                        # download finished organizing, then collect the next
+                        _serial_settle(cfg, movie.code, stop_check)
     except StopRequested:
         stats["stopped"] = True
         log.warning("采集已被用户停止")

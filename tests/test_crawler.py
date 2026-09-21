@@ -419,3 +419,247 @@ def test_run_job_stop_interrupts_immediately(monkeypatch, tmp_path):
     assert stats["stopped"] is True
     assert state["detail_calls"] == 1  # 第一部即中断，无级联
     assert stats["errors"] == 0        # 不计入单条错误
+
+
+# ---- v0.10.71: 类别中文标签 + 采集与云下载串行对齐 ----
+
+def _full_movie(code, magnets=None):
+    """A movie object complete enough for db.upsert_movie / run_job."""
+    import types
+
+    return types.SimpleNamespace(
+        code=code, url=f"https://x.example/{code}", title=f"T {code}",
+        cover="", release_date="", duration="", director="", studio="",
+        label="", series="", actors=[], genres=[], samples=[],
+        magnets=magnets if magnets is not None else [],
+        matched_tags=[], matched_count=0, category="censored", genre_links=[])
+
+
+def test_genre_name_map_merges_catalog_and_learned(tmp_path):
+    """cached site catalog wins; learned genre_id:* rows fill the gaps."""
+    import json
+
+    from app import db
+
+    conn = db.connect(str(tmp_path / "t.db"))
+    db.set_meta(conn, "genre_catalog_v2", json.dumps({
+        "censored": [{"group": "g", "genres": [
+            {"name": "中文字幕", "id": "sub"}, {"name": "高清", "id": "hd"}]}],
+        "uncensored": [],
+    }, ensure_ascii=False))
+    conn.execute("INSERT INTO meta(key, value) VALUES (?, ?)",
+                 ("genre_id:censored:巨乳", "big"))
+    conn.execute("INSERT INTO meta(key, value) VALUES (?, ?)",
+                 ("genre_id:censored:字幕B", "sub"))  # stale learned row
+    conn.commit()
+    m = crawler.genre_name_map(conn)
+    assert m[("censored", "sub")] == "中文字幕"   # catalog beats the stale row
+    assert m[("censored", "hd")] == "高清"
+    assert m[("censored", "big")] == "巨乳"        # learned fills catalog gaps
+    assert ("uncensored", "sub") not in m          # channel-scoped
+    conn.close()
+
+
+def test_genre_name_map_survives_bad_catalog(tmp_path):
+    from app import db
+
+    conn = db.connect(str(tmp_path / "t.db"))
+    db.set_meta(conn, "genre_catalog_v2", "not-json{")
+    conn.execute("INSERT INTO meta(key, value) VALUES (?, ?)",
+                 ("genre_id:uncensored:女优", "actress"))
+    conn.commit()
+    m = crawler.genre_name_map(conn)
+    assert m == {("uncensored", "actress"): "女优"}
+    conn.close()
+
+
+def test_stored_movie_rebuilds_from_db(tmp_path):
+    from types import SimpleNamespace
+
+    from app import db
+
+    db_path = str(tmp_path / "t.db")
+    conn = db.connect(db_path)
+    m = SimpleNamespace(link="magnet:?xt=urn:btih:X", name="n", size="1GB",
+                        date="2025-01-01")
+    db.upsert_movie(conn, _full_movie("FIT-008", [m]))
+    db.insert_magnets(conn, [m], "FIT-008")
+    conn.commit()
+    conn.close()
+
+    mv = crawler._stored_movie({"DB_PATH": db_path}, "FIT-008")
+    assert mv is not None and mv.code == "FIT-008"
+    assert mv.magnets[0].link == "magnet:?xt=urn:btih:X"
+    assert mv.magnets[0].name == "n"
+    assert crawler._stored_movie({"DB_PATH": db_path}, "NOPE-000") is None
+
+
+def test_auto_download_reports_status(monkeypatch):
+    """每个分支都有可判别的返回值——run_job 依赖它决定是否阻塞等整理。"""
+    import time as time_mod
+    from types import SimpleNamespace
+
+    from app import p115
+
+    mv = _movie("FIT-008", [
+        SimpleNamespace(link="magnet:?xt=urn:btih:X", name="n")])
+    monkeypatch.setattr(crawler, "_queued_update", lambda *a: None)
+
+    assert crawler.auto_download({"AUTO_DOWNLOAD": False}, mv) == "off"
+    assert crawler.auto_download(
+        {"AUTO_DOWNLOAD": True}, _movie("FIT-008", [])) == "off"
+
+    monkeypatch.setattr(p115, "has_auth", lambda: False)
+    assert crawler.auto_download({"AUTO_DOWNLOAD": True}, mv) == "skip"
+
+    monkeypatch.setattr(p115, "has_auth", lambda: True)
+    monkeypatch.setattr(p115, "track_records",
+                        lambda: {"IH1": {"code": "FIT-008"}})
+    assert crawler.auto_download({"AUTO_DOWNLOAD": True}, mv) == "tracked"
+
+    monkeypatch.setattr(p115, "track_records",
+                        lambda: {"IH0": {"code": "OTHER-1"}})
+    assert crawler.auto_download({"AUTO_DOWNLOAD": True}, mv) == "busy"
+
+    monkeypatch.setattr(p115, "track_records", lambda: {})
+    monkeypatch.setattr(p115, "last_release_at", lambda: int(time_mod.time()))
+    assert crawler.auto_download(
+        {"AUTO_DOWNLOAD": True, "P115_DL_INTERVAL_MIN": 30}, mv) == "cooldown"
+
+    monkeypatch.setattr(p115, "gaveup_codes", lambda: {"FIT-008"})
+    assert crawler.auto_download({"AUTO_DOWNLOAD": True}, mv) == "skip"
+    monkeypatch.setattr(p115, "gaveup_codes", lambda: set())
+
+    monkeypatch.setattr(p115, "add_magnet",
+                        lambda link: {"info_hash": "IH9", "name": "seed"})
+    monkeypatch.setattr(p115, "track_add", lambda *a: None)
+    assert crawler.auto_download({"AUTO_DOWNLOAD": True}, mv) == "submitted"
+
+    def boom(link):
+        raise RuntimeError("115 down")
+
+    monkeypatch.setattr(p115, "add_magnet", boom)
+    assert crawler.auto_download({"AUTO_DOWNLOAD": True}, mv) == "skip"
+
+
+def test_serial_settle_returns_after_double_confirm(monkeypatch):
+    """_swap_magnet 换磁力时会短暂删除记录再重加：消失必须连续两轮确认，
+    一轮就返回会把「换磁力中」误判成「整理完毕」。"""
+    from app import p115
+
+    seq = [{"IH1": {"code": "FIT-008"}},   # poll 1: tracked
+           {},                              # poll 2: gone once (swap window)
+           {},                              # poll 3: gone twice -> settled
+           {"IH1": {"code": "FIT-008"}}]    # must never be reached
+    monkeypatch.setattr(p115, "track_records", lambda: seq.pop(0))
+    monkeypatch.setattr(p115, "gaveup_codes", lambda: set())
+    monkeypatch.setattr(p115, "last_release_at", lambda: 0)
+    monkeypatch.setattr(crawler, "_SERIAL_POLL_S", 0)
+    crawler._serial_settle({"P115_DL_INTERVAL_MIN": 0}, "FIT-008")
+    assert len(seq) == 1  # settled exactly at the second clean poll
+
+
+def test_serial_settle_stop_request(monkeypatch):
+    from app import p115
+    from app.fetcher import StopRequested
+
+    monkeypatch.setattr(p115, "track_records", lambda: {})
+    monkeypatch.setattr(p115, "gaveup_codes", lambda: set())
+    monkeypatch.setattr(crawler, "_SERIAL_POLL_S", 0)
+    with pytest.raises(StopRequested):
+        crawler._serial_settle({}, "FIT-008", stop_check=lambda: True)
+
+
+def test_serial_settle_gaveup_releases(monkeypatch):
+    from app import p115
+
+    polls = []
+    monkeypatch.setattr(p115, "track_records",
+                        lambda: polls.append(1) or {})
+    monkeypatch.setattr(p115, "gaveup_codes", lambda: {"FIT-008"})
+    monkeypatch.setattr(crawler, "_SERIAL_POLL_S", 0)
+    monkeypatch.setattr(crawler, "_SERIAL_WAIT_MAX_S", 0.05)
+    crawler._serial_settle({}, "FIT-008")
+    assert polls == [1]  # released on the first poll, no waiting
+
+
+def test_serial_settle_resubmits_when_slot_frees(monkeypatch, tmp_path):
+    """首轮 auto_download 撞上 busy 的影片：串行等待循环发现槽位空闲后，
+    从数据库重建入库记录并顺延提交，然后等到它整理完毕才放行。"""
+    from types import SimpleNamespace
+
+    from app import db, p115
+
+    db_path = str(tmp_path / "t.db")
+    conn = db.connect(db_path)
+    m = SimpleNamespace(link="magnet:?xt=urn:btih:X", name="n", size="1GB",
+                        date="")
+    db.upsert_movie(conn, _full_movie("FIT-008", [m]))
+    db.insert_magnets(conn, [m], "FIT-008")
+    conn.commit()
+    conn.close()
+
+    seq = [{"IH0": {"code": "OTHER-1"}},   # poll 1: busy with another movie
+           {},                              # poll 2: slot free -> resubmit
+           {"IH9": {"code": "FIT-008"}},    # poll 3: ours is tracked now
+           {},                              # poll 4: gone once
+           {},                              # poll 5: gone twice -> settled
+           {"IH9": {"code": "FIT-008"}}]    # must never be reached
+    monkeypatch.setattr(p115, "track_records", lambda: seq.pop(0))
+    monkeypatch.setattr(p115, "gaveup_codes", lambda: set())
+    monkeypatch.setattr(p115, "last_release_at", lambda: 0)
+    monkeypatch.setattr(crawler, "_SERIAL_POLL_S", 0)
+    monkeypatch.setattr(crawler, "_SERIAL_WAIT_MAX_S", 0.05)
+    resub = []
+
+    def fake_auto(cfg, movie):
+        resub.append(movie.code)
+        return "submitted"
+
+    monkeypatch.setattr(crawler, "auto_download", fake_auto)
+    crawler._serial_settle(
+        {"DB_PATH": db_path, "P115_DL_INTERVAL_MIN": 0}, "FIT-008")
+    assert resub == ["FIT-008"]  # resubmitted from the rebuilt DB record
+    assert len(seq) == 1  # settled at the second clean poll; sentinel intact
+
+
+def test_run_job_waits_for_pipeline_between_movies(monkeypatch, tmp_path):
+    """入库后 auto_download 说「在管道里」就阻塞到整理完毕；返回 submitted
+    则（错误地）不再等待——这里验证的是等待与否完全由返回值驱动。"""
+    import types
+
+    cfg = {"DB_PATH": str(tmp_path / "t.db"), "BASE_URL": "https://x.example",
+           "DELAY_SECONDS": 0, "JITTER_SECONDS": 0, "MAX_RETRIES": 1,
+           "TIMEOUT": 5, "CATEGORY": "censored", "GENRE_CENSORED": "42"}
+
+    items = [types.SimpleNamespace(code="AAA-001", url="https://x.example/1"),
+             types.SimpleNamespace(code="AAA-002", url="https://x.example/2")]
+    monkeypatch.setattr(crawler, "parse_list", lambda html, base: items)
+    monkeypatch.setattr(crawler, "looks_blocked", lambda html: False)
+    monkeypatch.setattr(
+        crawler, "parse_detail",
+        lambda html, code, url: _full_movie(code))
+
+    waits = []
+    monkeypatch.setattr(
+        crawler, "_serial_settle",
+        lambda cfg, code, stop_check=None: waits.append(code))
+    monkeypatch.setattr(
+        crawler, "auto_download",
+        lambda cfg, movie: "busy" if movie.code == "AAA-001" else "off")
+
+    class FakeFetcher:
+        base_url = "https://x.example"
+        delay = 0
+
+        def __init__(self, *a, **k):
+            pass
+
+        def get(self, path, referer=None):
+            return "<html>detail</html>" if "/page/" not in path \
+                else "<html>listing</html>"
+
+    monkeypatch.setattr(crawler, "Fetcher", FakeFetcher)
+    stats = crawler.run_job(cfg, pages="1", magnets=True)
+    assert stats["new"] == 2 and stats["errors"] == 0
+    assert waits == ["AAA-001"]  # busy -> hold the crawl; off -> straight on
