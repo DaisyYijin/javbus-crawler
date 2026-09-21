@@ -1,4 +1,6 @@
 """115 集成的离线测试（无网络、无真实账号）。"""
+import logging
+
 from app import p115
 
 
@@ -565,6 +567,46 @@ def test_sweep_existing_end_to_end(monkeypatch):
         st = p115.sweep_status()
         assert st["running"] is False
         assert st["result"]["organized"] == 1
+    finally:
+        conn.close()
+
+
+def test_sweep_existing_logs_start_and_finish(monkeypatch, caplog):
+    conn = _sweep_db(monkeypatch)
+    try:
+        fake = _FakeSweepClient({
+            900: [{"n": "推广.txt", "fid": 903, "s": 88, "fc": "1"}],
+        })
+        monkeypatch.setattr(p115, "get_client", lambda *a, **k: fake)
+        monkeypatch.setattr(p115, "_fs_page", lambda c, cid, off, limit=100:
+                            (fake.listings.get(cid, []), True))
+        table = {"待整理": 900, "已整理": 910, "冗余": 920}
+        monkeypatch.setattr(p115, "resolve_dir", lambda c, p: table[str(p)])
+        with caplog.at_level(logging.INFO, logger="seedmm.p115"):
+            stats = p115.sweep_existing(sleep_s=0)
+        assert stats["rejected"] == 1
+        texts = [r.getMessage() for r in caplog.records]
+        assert any(t.startswith("115 开始整理") for t in texts)
+        assert any("115 整理完成" in t and "冗余 1" in t for t in texts)
+    finally:
+        conn.close()
+
+
+def test_sweep_existing_empty_listing_logged(monkeypatch, caplog):
+    conn = _sweep_db(monkeypatch)
+    try:
+        fake = _FakeSweepClient({900: []})  # throttled: listing comes back empty
+        monkeypatch.setattr(p115, "get_client", lambda *a, **k: fake)
+        monkeypatch.setattr(p115, "_fs_page", lambda c, cid, off, limit=100:
+                            (fake.listings.get(cid, []), True))
+        table = {"待整理": 900, "已整理": 910, "冗余": 920}
+        monkeypatch.setattr(p115, "resolve_dir", lambda c, p: table[str(p)])
+        with caplog.at_level(logging.INFO, logger="seedmm.p115"):
+            stats = p115.sweep_existing(sleep_s=0)
+        assert stats["scanned"] == 0
+        texts = [r.getMessage() for r in caplog.records]
+        assert any("列表为空" in t for t in texts)
+        assert any("115 整理完成" in t and "扫描 0" in t for t in texts)
     finally:
         conn.close()
 

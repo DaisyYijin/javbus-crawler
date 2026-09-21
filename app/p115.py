@@ -1296,6 +1296,7 @@ def sweep_existing(sleep_s: float = _SWEEP_LIST_GAP, max_folders: int = 0) -> di
     _sweep_state.update(running=True, started_at=stats["at"], finished_at=0)
     conn = None
     try:
+        log.info("115 开始整理（目录扫描）…")
         c = get_client()
         if not c:
             raise RuntimeError("115 未登录")
@@ -1305,7 +1306,11 @@ def sweep_existing(sleep_s: float = _SWEEP_LIST_GAP, max_folders: int = 0) -> di
         target_name = (cfg.get("P115_TARGET_DIR") or "").strip() or "已整理"
         target = resolve_dir(c, target_name)
         reject = resolve_dir(c, (cfg.get("P115_REJECT_DIR") or "").strip() or "冗余")
-        for item in _sweep_list(c, dl, sleep_s):
+        items = _sweep_list(c, dl, sleep_s)
+        if not items:
+            # throttled first listing: say so instead of failing silently
+            log.info("115 整理: 下载目录列表为空（可能限流），本次跳过")
+        for item in items:
             if max_folders and stats["scanned"] >= max_folders:
                 break
             ifid = _item_fid(item)
@@ -1334,6 +1339,10 @@ def sweep_existing(sleep_s: float = _SWEEP_LIST_GAP, max_folders: int = 0) -> di
         stats["at"] = int(time.time())
         stats["duration_s"] = int(time.time() - t0)
         _sweep_state.update(running=False, finished_at=stats["at"])
+        # always log the outcome, even an all-skipped (throttled) pass
+        log.info("115 整理完成: 扫描 %d · 影片 %d · 冗余 %d · 跳过 %d · 错误 %d · 耗时 %d 秒",
+                 stats["scanned"], stats["organized"], stats["rejected"],
+                 stats["skipped"], stats["errors"], stats["duration_s"])
         try:
             conn = sqlite3.connect(settings.load()["DB_PATH"], timeout=30)
             try:
