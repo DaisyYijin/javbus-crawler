@@ -250,3 +250,87 @@ def test_pick_magnet_prefers_priority_over_position():
             {"name": "fns-248ch 高清 字幕", "hash": "ch"}]
     best, kw = crawler.pick_magnet(mags, ["字幕", "-U"])
     assert best["hash"] == "ch" and kw == "字幕"
+
+
+def _movie(code, magnets):
+    import types
+
+    return types.SimpleNamespace(code=code, magnets=magnets)
+
+
+def test_auto_download_noop_when_disabled_or_no_magnet(monkeypatch):
+    from app import p115
+
+    calls = []
+    monkeypatch.setattr(p115, "has_auth", lambda: True)
+    monkeypatch.setattr(p115, "add_magnet", lambda link: calls.append(link))
+    crawler.auto_download({"AUTO_DOWNLOAD": False}, _movie("FIT-008", [
+        {"link": "magnet:?xt=urn:btih:X", "name": "n"}]))
+    crawler.auto_download({}, _movie("FIT-008", [
+        {"link": "magnet:?xt=urn:btih:X", "name": "n"}]))
+    crawler.auto_download({"AUTO_DOWNLOAD": True}, _movie("FIT-008", []))
+    assert calls == []
+
+
+def test_auto_download_skips_without_115_auth(monkeypatch):
+    from app import p115
+
+    monkeypatch.setattr(p115, "has_auth", lambda: False)
+    calls = []
+    monkeypatch.setattr(p115, "add_magnet", lambda link: calls.append(link))
+    crawler.auto_download({"AUTO_DOWNLOAD": True}, _movie("FIT-008", [
+        {"link": "magnet:?xt=urn:btih:X", "name": "n"}]))
+    assert calls == []
+
+
+def test_auto_download_skips_code_already_tracked(monkeypatch):
+    from app import p115
+
+    monkeypatch.setattr(p115, "has_auth", lambda: True)
+    monkeypatch.setattr(p115, "track_records",
+                        lambda: {"IH1": {"code": "FIT-008", "name": "x"}})
+    calls = []
+    monkeypatch.setattr(p115, "add_magnet", lambda link: calls.append(link))
+    crawler.auto_download({"AUTO_DOWNLOAD": True}, _movie("FIT-008", [
+        {"link": "magnet:?xt=urn:btih:X", "name": "n"}]))
+    assert calls == []
+
+
+def test_auto_download_submits_and_tracks(monkeypatch):
+    from app import p115
+    from app.parser import Magnet
+
+    monkeypatch.setattr(p115, "has_auth", lambda: True)
+    monkeypatch.setattr(p115, "track_records",
+                        lambda: {"IH0": {"code": "ABC-1", "name": "other"}})
+    submitted = {}
+
+    def fake_add(link):
+        submitted["link"] = link
+        return {"info_hash": "IH9", "name": "seed name"}
+
+    def fake_track(code, ih, link, name):
+        submitted.update(code=code, ih=ih, track_link=link, track_name=name)
+
+    monkeypatch.setattr(p115, "add_magnet", fake_add)
+    monkeypatch.setattr(p115, "track_add", fake_track)
+    mv = _movie("FIT-008", [Magnet(link="magnet:?xt=urn:btih:K9&dn=fit-008ch",
+                                   name="fit-008ch 高清 字幕", size="5.23GB")])
+    crawler.auto_download({"AUTO_DOWNLOAD": True}, mv)
+    assert submitted["link"] == "magnet:?xt=urn:btih:K9&dn=fit-008ch"
+    assert submitted["code"] == "FIT-008" and submitted["ih"] == "IH9"
+    assert submitted["track_name"] == "seed name"
+
+
+def test_auto_download_swallows_115_errors(monkeypatch):
+    from app import p115
+
+    monkeypatch.setattr(p115, "has_auth", lambda: True)
+    monkeypatch.setattr(p115, "track_records", lambda: {})
+
+    def boom(link):
+        raise RuntimeError("115 down")
+
+    monkeypatch.setattr(p115, "add_magnet", boom)
+    crawler.auto_download({"AUTO_DOWNLOAD": True}, _movie("FIT-008", [
+        {"link": "magnet:?xt=urn:btih:X", "name": "n"}]))

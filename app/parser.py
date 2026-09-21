@@ -190,9 +190,10 @@ def parse_magnets(html: str) -> list[Magnet]:
             continue
         seen.add(h)
         tds = row.select("td")
+        name = _clean(tds[0].get_text(" ")) if tds else _clean(link_el.get_text())
         magnets.append(Magnet(
             link=link,
-            name=_clean(link_el.get_text()) or h,
+            name=name or h,
             size=_clean(tds[1].get_text()) if len(tds) > 1 else "",
             date=_clean(tds[2].get_text()) if len(tds) > 2 else "",
         ))

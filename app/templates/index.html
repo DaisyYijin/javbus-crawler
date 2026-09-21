@@ -570,8 +570,9 @@
               <option value="largest">取体积最大的一条</option>
               <option value="none">不选磁力（影片仍入库）</option>
             </select></div>
+          <label class="switch" style="margin:0;align-self:flex-end" title="采集入库后自动把选中的磁力提交到 115 离线下载（每番号只提交一次）· AUTO_DOWNLOAD"><input type="checkbox" id="c_AUTO_DOWNLOAD"><span class="track"></span><span>自动云下载</span></label>
         </div>
-        <div class="hint">优先级：命中关键词多者优先（中文+高清 > 单命中）→ 关键词靠左优先 → 同级决胜 → 兜底策略。每个番号只入库一条最优磁力。</div>
+        <div class="hint">优先级：命中关键词多者优先（中文+高清 > 单命中）→ 关键词靠左优先 → 同级决胜 → 兜底策略。每个番号只入库一条最优磁力。「只收命中的」模式下未命中的影片按兜底策略保留（选"不选磁力"则跳过）；开启自动云下载后入库即提交 115。</div>
       </div>
       <div class="card">
         <h2>优选预览 <small>（输入番号看当前配置会选中哪条磁力 · 不入库，可用未保存的关键词试验）</small></h2>
@@ -910,6 +911,8 @@ async function saveConfig() {
   if (mb) body.TAG_FILTER_MODE = mb.dataset.mode;
   const p115cb = $('c_P115_AUTO_ORGANIZE');
   if (p115cb) body.P115_AUTO_ORGANIZE = p115cb.checked;
+  const adcb = $('c_AUTO_DOWNLOAD');
+  if (adcb) body.AUTO_DOWNLOAD = adcb.checked;
   const cb = $('c_AUTO_CRAWL_ENABLED');
   if (cb) body.AUTO_CRAWL_ENABLED = cb.checked;
   // the masked token sentinel must never be sent back: drop the key so the

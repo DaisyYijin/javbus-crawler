@@ -32,7 +32,8 @@ DEFAULTS: dict = {
     "TAG_FILTERS": "",                # comma-separated keywords, e.g. "字幕,高清,4K"
     "TAG_FILTER_MODE": "mark",        # all | only | mark
     "MAGNET_TIEBREAK": "size,date",   # magnet pick tiebreakers: size (bigger first), date (newer first)
-    "MAGNET_FALLBACK": "first",       # no keyword hit at all: first (newest) | largest | none
+    "MAGNET_FALLBACK": "largest",     # no keyword hit at all: first (newest) | largest | none
+    "AUTO_DOWNLOAD": False,           # auto-submit the picked magnet to 115 after crawl
     "METATUBE_URL": "",               # e.g. http://192.168.1.10:8080
     "METATUBE_TOKEN": "",             # optional bearer token for metatube server
     "P115_DOWNLOAD_DIR": "待整理",    # 115 dir offline downloads land in
@@ -63,6 +64,7 @@ _TYPES = {
     "TAG_FILTER_MODE": str,
     "MAGNET_TIEBREAK": str,
     "MAGNET_FALLBACK": str,
+    "AUTO_DOWNLOAD": bool,
     "METATUBE_URL": str,
     "METATUBE_TOKEN": str,
     "P115_DOWNLOAD_DIR": str,

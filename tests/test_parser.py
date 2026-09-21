@@ -110,3 +110,14 @@ def test_parse_genre_catalog():
 def test_magnet_hash_uppercases():
     assert parser.magnet_hash("magnet:?xt=urn:btih:AbCd1234&dn=x") == "ABCD1234"
     assert parser.magnet_hash("not a magnet link") is None
+
+
+def test_parse_magnets_includes_badge_links_in_name():
+    """seedmm renders 高清/字幕 as sibling <a> badges inside the same <td>
+    (FIT-008): the name must include them or keyword matching fails."""
+    html = """<table id="magnet-table">
+    <tr><td><a href="magnet:?xt=urn:btih:BADGE001">fit-008ch </a><a class="btn btn-mini-new btn-primary disabled">高清</a><a class="btn btn-mini-new btn-warning disabled">字幕</a></td><td>5.23GB</td><td>2026-04-01</td></tr>
+    <tr><td><a href="magnet:?xt=urn:btih:BADGE002">fit-008 </a><a class="btn btn-mini-new btn-primary disabled">高清</a></td><td>4.1GB</td><td>2026-04-01</td></tr>
+    </table>"""
+    mags = parser.parse_magnets(html)
+    assert [m.name for m in mags] == ["fit-008ch 高清 字幕", "fit-008 高清"]

@@ -1,2 +1,2 @@
 """Single source of truth for the crawler version."""
-__version__ = "0.10.57"
+__version__ = "0.10.58"

@@ -77,3 +77,14 @@ def test_db_path_locked_and_unknown_keys_ignored():
     with pytest.raises(ValueError):
         settings.save({"DB_PATH": "/etc/passwd"})
     assert "HACK" not in settings.save({"HACK": "x"})
+
+
+def test_auto_download_toggle_and_fallback_default():
+    cfg = settings.load()
+    assert cfg["AUTO_DOWNLOAD"] is False
+    assert cfg["MAGNET_FALLBACK"] == "largest"
+    assert settings.save({"AUTO_DOWNLOAD": True})["AUTO_DOWNLOAD"] is True
+    assert settings.save({"AUTO_DOWNLOAD": "no"})["AUTO_DOWNLOAD"] is False
+    assert settings.save({"AUTO_DOWNLOAD": "yes"})["AUTO_DOWNLOAD"] is True
+    assert settings.save({"MAGNET_FALLBACK": "none"})["MAGNET_FALLBACK"] == "none"
+    assert settings.save({"MAGNET_FALLBACK": "first"})["MAGNET_FALLBACK"] == "first"

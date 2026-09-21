@@ -8,8 +8,8 @@ from urllib.parse import urlencode
 
 from . import db
 from .fetcher import Fetcher, StopRequested
-from .parser import (parse_detail, parse_genre_catalog, parse_list,
-                     parse_movie_script_vars, parse_magnets)
+from .parser import (magnet_hash, parse_detail, parse_genre_catalog,
+                     parse_list, parse_movie_script_vars, parse_magnets)
 
 log = logging.getLogger("seedmm.crawl")
 
@@ -316,6 +316,34 @@ def pick_best(magnets: list, keywords: list[str],
     return [] if i is None else [magnets[i]]
 
 
+def auto_download(cfg: dict, movie) -> None:
+    """AUTO_DOWNLOAD: submit the stored best magnet of a movie to 115.
+
+    Best-effort: never raises, so a 115 failure cannot break the crawl.
+    """
+    if not cfg.get("AUTO_DOWNLOAD") or not getattr(movie, "magnets", None):
+        return
+    from . import p115  # deferred: p115 imports this module at load time
+
+    try:
+        if not p115.has_auth():
+            log.info("%s: 自动云下载已开启但 115 未登录，跳过", movie.code)
+            return
+        if any(r.get("code") == movie.code
+               for r in p115.track_records().values()):
+            log.info("%s: 已有云下载任务，跳过重复提交", movie.code)
+            return
+        m = movie.magnets[0]
+        log.info("开始云下载: %s (%s)", movie.code, m.name[:60])
+        result = p115.add_magnet(m.link)
+        p115.track_add(movie.code, result.get("info_hash") or magnet_hash(m.link),
+                       m.link, result.get("name") or "")
+        log.info("已提交 115 离线任务: %s (%s)",
+                 result.get("name") or m.name, movie.code)
+    except Exception:
+        log.exception("%s: 自动云下载失败（不影响采集入库）", movie.code)
+
+
 def run_job(
     cfg: dict,
     pages: str = "1",
@@ -466,13 +494,18 @@ def run_job(
                         movie.matched_tags = compute_matched(
                             movie.genres, [m.name for m in movie.magnets], keywords)
                         if filter_mode == "only" and not movie.matched_tags:
-                            stats.setdefault("skipped", 0)
-                            stats["skipped"] += 1
-                            log.info("跳过 %s（%s，不匹配筛选: %s）", item.code,
-                                     f"磁力 {len(movie.magnets)} 条" if movie.magnets
-                                     else "站点暂无磁力",
-                                     ",".join(keywords))
-                            continue
+                            sample = " / ".join(m.name for m in movie.magnets[:3])
+                            if fallback == "none":
+                                stats.setdefault("skipped", 0)
+                                stats["skipped"] += 1
+                                log.info("跳过 %s（磁力 %d 条%s，无关键词命中: %s）",
+                                         item.code, len(movie.magnets),
+                                         f"，如: {sample}" if sample else "",
+                                         ",".join(keywords))
+                                continue
+                            log.info("%s 无关键词命中，按兜底策略(%s)保留磁力%s",
+                                     item.code, fallback,
+                                     f": {sample}" if sample else "")
 
                     # learn per-channel genre name -> site id mapping
                     for gcat, gname, gid in movie.genre_links:
@@ -494,6 +527,7 @@ def run_job(
                     log.info("%s %s 磁力=%d %s",
                              "新增" if is_new else "更新", movie.code,
                              len(movie.magnets), movie.title[:40])
+                    auto_download(cfg, movie)
     except StopRequested:
         stats["stopped"] = True
         log.warning("采集已被用户停止")
@@ -573,6 +607,7 @@ def crawl_code(cfg: dict, code: str, magnets: bool = True, stop_check=None) -> d
         is_new = code not in known
         log.info("%s %s 磁力=%d %s", "补采新增" if is_new else "补采更新",
                  code, len(movie.magnets), movie.title[:40])
+        auto_download(cfg, movie)
         return {"code": code, "title": movie.title, "category": movie.category,
                 "new": is_new, "magnets": len(movie.magnets)}
     finally:
