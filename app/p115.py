@@ -903,6 +903,49 @@ def list_dirs(cid: int = 0) -> list[dict]:
     return out
 
 
+def list_files(cid: int = 0, path: str = "") -> dict:
+    """List files (not dirs) inside a 115 folder.
+
+    `path` (a config-style path like "JAV/待整理") wins over `cid` and is
+    resolved via resolve_dir — handy for inspecting the download dir.
+    """
+    c = get_client()
+    if not c:
+        raise RuntimeError("115 未登录")
+    p = (path or "").strip()
+    if p:
+        cid = resolve_dir(c, p)
+    files: list[dict] = []
+    dir_count = 0
+    offset = 0
+    while True:
+        items, done = _fs_page(c, cid, offset)
+        for item in items:
+            # dir vs file: fc=="0" means dir; entries without fc but with a
+            # size ("s") are files; otherwise fall back to the dir-id probe
+            fc = item.get("fc")
+            if fc is not None:
+                is_dir = str(fc) == "0"
+            elif "s" in item:
+                is_dir = False
+            else:
+                is_dir = _dir_id(item, cid) is not None
+            if is_dir:
+                dir_count += 1
+                continue
+            files.append({
+                "fid": str(item.get("fid") or item.get("file_id") or item.get("id") or ""),
+                "name": item.get("n") or "",
+                "size": int(item.get("s") or 0),
+                "t": int(item.get("t") or 0),
+            })
+        if done:
+            break
+        offset += 100
+    files.sort(key=lambda f: f["t"], reverse=True)
+    return {"cid": cid, "files": files, "dir_count": dir_count}
+
+
 def mkdir_dir(cid: int, name: str) -> int:
     """Create a sub-directory inside the given 115 folder (for the picker)."""
     c = get_client()

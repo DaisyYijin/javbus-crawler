@@ -778,6 +778,23 @@ def create_app() -> Flask:
         except Exception as exc:
             return jsonify({"ok": False, "error": f"获取目录失败: {exc}"}), 502
 
+    @app.get("/api/p115/files")
+    def p115_files():
+        """List files (not dirs) inside a 115 folder, by cid or config path."""
+        if not p115.HAS_P115:
+            return jsonify({"ok": False, "error": "p115client 未安装"}), 503
+        if not p115.has_auth():
+            return jsonify({"ok": False, "error": "115 未登录，请先到「115 网盘」页扫码"}), 400
+        try:
+            cid = max(0, int(request.args.get("cid", 0)))
+        except ValueError:
+            cid = 0
+        path = (request.args.get("path") or "").strip()
+        try:
+            return jsonify({"ok": True, **p115.list_files(cid, path)})
+        except Exception as exc:
+            return jsonify({"ok": False, "error": f"获取文件列表失败: {exc}"}), 502
+
     @app.get("/api/p115/tasks")
     def p115_tasks():
         if not p115.has_auth():

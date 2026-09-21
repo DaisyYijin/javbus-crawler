@@ -655,6 +655,7 @@
         <div class="row" style="margin-bottom:12px">
           <button class="ghost" onclick="load115Tasks()">刷新</button>
           <button class="ghost" onclick="clear115DoneTasks()">清理已完成记录</button>
+          <button class="ghost" onclick="openDlFiles()">下载目录文件</button>
           <span id="p115-task-msg" class="msg"></span>
         </div>
         <div class="seg" id="p115-task-seg" style="margin-bottom:10px">
@@ -749,6 +750,18 @@
       </div>
       <button class="ghost" type="button" onclick="closeDirPicker()">取消</button>
       <button class="primary" type="button" onclick="confirmDirPicker()">选择此目录</button>
+    </div>
+  </div>
+</div>
+
+<div class="dpicker-mask" id="dlfiles-mask" hidden onclick="if (event.target === this) closeDlFiles()">
+  <div class="dpicker">
+    <div class="dpicker-head"><div class="dpicker-crumb" id="dlfiles-crumb"></div></div>
+    <div class="dpicker-list" id="dlfiles-list"></div>
+    <div class="dpicker-foot">
+      <span class="hint" style="margin-right:auto" id="dlfiles-sum"></span>
+      <button class="ghost" type="button" onclick="loadDlFiles()">刷新</button>
+      <button class="primary" type="button" onclick="closeDlFiles()">关闭</button>
     </div>
   </div>
 </div>
@@ -1812,6 +1825,30 @@ async function mkdirInPicker() {
     input.value = '';
     await loadDirLevel();
   } catch (e) { toast('✗ ' + e.message, 'err'); }
+}
+
+/* ---------- 115 download dir file list ---------- */
+const FILE_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg>';
+async function openDlFiles() {
+  $('dlfiles-mask').hidden = false;
+  await loadDlFiles();
+}
+function closeDlFiles() { $('dlfiles-mask').hidden = true; }
+async function loadDlFiles() {
+  $('dlfiles-crumb').innerHTML = '<span class="crumb cur">下载目录（待整理）</span>';
+  $('dlfiles-list').innerHTML = '<div class="hint" style="padding:12px">加载中…</div>';
+  $('dlfiles-sum').textContent = '';
+  try {
+    const dir = $('c_P115_DOWNLOAD_DIR')?.value?.trim() || '';
+    const j = await (await fetch('/api/p115/files?path=' + encodeURIComponent(dir))).json();
+    if (!j.ok) { $('dlfiles-list').innerHTML = `<div class="hint" style="padding:12px;color:var(--err)">✗ ${esc(j.error || '加载失败')}</div>`; return; }
+    const files = j.files || [];
+    $('dlfiles-crumb').innerHTML = `<span class="crumb cur">下载目录${dir ? ' · ' + esc(dir) : '（115 根目录）'} · cid ${j.cid}</span>`;
+    $('dlfiles-sum').textContent = files.length + ' 个文件 · ' + (j.dir_count || 0) + ' 个子目录';
+    $('dlfiles-list').innerHTML = files.length
+      ? files.map(f => `<div class="dpicker-item" style="cursor:default">${FILE_SVG}<span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(f.name)}">${esc(f.name)}</span><span style="color:var(--mut);font-size:12px;flex:none">${fmtSize(f.size)}</span></div>`).join('')
+      : '<div class="hint" style="padding:12px">目录为空 —— 暂无下载完成的文件</div>';
+  } catch (e) { $('dlfiles-list').innerHTML = `<div class="hint" style="padding:12px;color:var(--err)">✗ ${esc(e.message)}</div>`; }
 }
 
 /* ---------- update ---------- */

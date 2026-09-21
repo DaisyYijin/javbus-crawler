@@ -313,3 +313,43 @@ def test_watch_pass_stalled_and_progress(monkeypatch):
     assert "STALL1" not in recs
     assert recs["MOVING"]["last_percent"] == 25  # progress recorded, kept
     p115.track_del("MOVING")
+
+
+# ------------------------------------------------------------ list files ----
+
+def test_list_files_filters_and_pages(monkeypatch):
+    def fake_page(c, cid, offset, limit=100):
+        if offset == 0:
+            return [
+                {"n": "AAA-100.mp4", "fid": 111, "s": 4096, "t": 200, "fc": "1"},
+                {"n": "新目录", "cid": 222, "fc": "0"},
+                {"n": "BBB-200.mp4", "fid": 333, "s": 8192, "t": 100},
+            ], False
+        return [], True
+
+    monkeypatch.setattr(p115, "get_client", lambda refresh=False: object())
+    monkeypatch.setattr(p115, "_fs_page", fake_page)
+    out = p115.list_files(7)
+    assert out["cid"] == 7 and out["dir_count"] == 1
+    assert out["files"] == [  # newest first, fid stringified for JS
+        {"fid": "111", "name": "AAA-100.mp4", "size": 4096, "t": 200},
+        {"fid": "333", "name": "BBB-200.mp4", "size": 8192, "t": 100},
+    ]
+
+
+def test_list_files_path_resolves_cid(monkeypatch):
+    monkeypatch.setattr(p115, "get_client", lambda refresh=False: object())
+    monkeypatch.setattr(p115, "resolve_dir", lambda c, p: 42)
+    monkeypatch.setattr(p115, "_fs_page", lambda c, cid, off, limit=100:
+                        ([], True))
+    out = p115.list_files(0, "JAV/待整理")
+    assert out["cid"] == 42 and out["files"] == []
+
+
+def test_list_files_requires_auth(monkeypatch):
+    monkeypatch.setattr(p115, "get_client", lambda refresh=False: None)
+    try:
+        p115.list_files()
+        raise AssertionError("should have raised")
+    except RuntimeError as exc:
+        assert "未登录" in str(exc)
