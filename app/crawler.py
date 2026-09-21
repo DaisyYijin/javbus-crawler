@@ -641,6 +641,11 @@ def run_job(
                         log.info("%s %s 磁力=%d %s",
                                  "新增" if is_new else "更新", movie.code,
                                  len(movie.magnets), movie.title[:40])
+                    except StopRequested:
+                        # cooperative stop is control flow, not a per-movie
+                        # failure — re-raise or the remaining items on this
+                        # page all cascade through as fake errors
+                        raise
                     except Exception:
                         # isolate one bad movie: roll back the half-done
                         # transaction (old magnets deleted, new ones missing)

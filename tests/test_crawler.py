@@ -382,3 +382,40 @@ def test_auto_download_swallows_115_errors(monkeypatch):
     monkeypatch.setattr(p115, "add_magnet", boom)
     crawler.auto_download({"AUTO_DOWNLOAD": True}, _movie("FIT-008", [
         {"link": "magnet:?xt=urn:btih:X", "name": "n"}]))
+
+
+def test_run_job_stop_interrupts_immediately(monkeypatch, tmp_path):
+    """用户停止是控制流，不是单条影片失败：StopRequested 必须立即冒泡结束
+    任务，而不是把当前页剩余条目逐条烧成「单条处理失败」(v0.10.68 线上回归)。"""
+    from app.fetcher import StopRequested
+
+    cfg = {"DB_PATH": str(tmp_path / "t.db"), "BASE_URL": "https://x.example",
+           "DELAY_SECONDS": 0, "JITTER_SECONDS": 0, "MAX_RETRIES": 1,
+           "TIMEOUT": 5, "CATEGORY": "censored", "GENRE_CENSORED": "42"}
+
+    class Item:
+        code, url = "AAA-001", "https://x.example/AAA-001"
+
+    monkeypatch.setattr(crawler, "parse_list", lambda html, base: [Item()] * 5)
+    monkeypatch.setattr(crawler, "looks_blocked", lambda html: False)
+
+    state = {"detail_calls": 0}
+
+    class FakeFetcher:
+        base_url = "https://x.example"
+        delay = 0
+
+        def __init__(self, *a, **k):
+            pass
+
+        def get(self, path, referer=None):
+            if "/page/" in path:
+                return "<html>listing</html>"
+            state["detail_calls"] += 1
+            raise StopRequested()  # stop flag flipped on mid-job
+
+    monkeypatch.setattr(crawler, "Fetcher", FakeFetcher)
+    stats = crawler.run_job(cfg, pages="1", magnets=True)
+    assert stats["stopped"] is True
+    assert state["detail_calls"] == 1  # 第一部即中断，无级联
+    assert stats["errors"] == 0        # 不计入单条错误
