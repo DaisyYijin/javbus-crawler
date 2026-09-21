@@ -1230,7 +1230,8 @@ async function pollStatus() {
       if (j.error) last += ' ｜ ' + j.error;
     } else { last = (j.finished_at ? j.finished_at.replace('T',' ').slice(0,16) + ' UTC' : '–'); }
     $('last-run').textContent = '深度 有码' + (d.censored ?? 0) + ' / 无码 ' + (d.uncensored ?? 0) + ' ｜ ' + last;
-    const log = $('log'); if (log) {
+    const log = $('log');
+    if (log && (!$('log-auto') || $('log-auto').checked)) {  // 「自动刷新」未勾选时冻结日志视图
       const atBottom = log.scrollTop + log.clientHeight >= log.scrollHeight - 30;
       log.textContent = (j.log_tail || []).join('\n') || '（暂无日志）';
       $('log-lines') && ($('log-lines').textContent = (j.log_tail || []).length + ' 行');
@@ -1253,6 +1254,11 @@ async function pollStatusLoop() {
   try { await pollStatus(); } catch (e) {}
   setTimeout(pollStatusLoop, 5000);
 }
+function clearLogView() {
+  const log = $('log'); if (log) log.textContent = '';
+  const n = $('log-lines'); if (n) n.textContent = '0 行';
+}
+$('log-auto') && $('log-auto').addEventListener('change', () => { _lastStatusSig = ''; });  // 重新勾选时下一轮立即重绘
 
 /* ---------- genre bars ---------- */
 let showAllGenres = false;

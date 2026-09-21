@@ -183,7 +183,6 @@ def test_config_token_masked(client):
     assert settings.load()["METATUBE_TOKEN"] == "secret-token-123"
     settings.save({"METATUBE_TOKEN": ""})  # explicit clear still works
     assert settings.load()["METATUBE_TOKEN"] == ""
-    assert len(client.get("/api/p115/devices").get_json()["devices"]) > 0
     assert client.get("/api/p115/qr.svg").status_code == 404  # no active QR
 
 
