@@ -402,6 +402,17 @@ def test_gaveup_codes_and_done_mark_release_slot(monkeypatch):
     assert p115.track_records() == {}
 
 
+def test_track_del_stamps_release_time():
+    import time as _time
+    before = p115.last_release_at()
+    p115.track_del("NOSUCH01")  # no-op: must not move the cooldown timer
+    assert p115.last_release_at() == before
+    p115.track_add("GUV-002", "RELTM01", "magnet:?xt=urn:btih:reltm01", "t.mp4")
+    p115.track_del("RELTM01")
+    rel = p115.last_release_at()
+    assert before <= rel and _time.time() - rel < 120
+
+
 # ------------------------------------------------------------ list files ----
 
 def test_list_files_filters_and_pages(monkeypatch):

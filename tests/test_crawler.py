@@ -322,6 +322,27 @@ def test_auto_download_skips_gaveup_code(monkeypatch):
     assert calls == []  # all magnets failed before: skip for good
 
 
+def test_auto_download_waits_serial_interval(monkeypatch):
+    import time
+    from app import p115
+    from app.parser import Magnet
+
+    monkeypatch.setattr(p115, "has_auth", lambda: True)
+    monkeypatch.setattr(p115, "track_records", lambda: {})
+    monkeypatch.setattr(p115, "gaveup_codes", lambda: set())
+    monkeypatch.setattr(p115, "last_release_at", lambda: int(time.time()) - 60)
+    calls = []
+    monkeypatch.setattr(p115, "add_magnet", lambda link: calls.append(link))
+    monkeypatch.setattr(p115, "track_add", lambda *a: None)
+    mv = _movie("FIT-009", [Magnet(link="magnet:?xt=urn:btih:X", name="n")])
+    cfg = {"AUTO_DOWNLOAD": True, "P115_DL_INTERVAL_MIN": 30}
+    crawler.auto_download(cfg, mv)
+    assert calls == []  # last movie landed a minute ago: still cooling down
+    monkeypatch.setattr(p115, "last_release_at", lambda: int(time.time()) - 3600)
+    crawler.auto_download(cfg, mv)
+    assert calls == ["magnet:?xt=urn:btih:X"]  # cooldown elapsed -> submit
+
+
 def test_auto_download_submits_and_tracks(monkeypatch):
     from app import p115
     from app.parser import Magnet

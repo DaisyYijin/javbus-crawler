@@ -4,6 +4,7 @@ from __future__ import annotations
 import logging
 import random
 import re
+import time
 from urllib.parse import urlencode
 
 from . import db
@@ -337,6 +338,13 @@ def auto_download(cfg: dict, movie) -> None:
             log.info("%s: 上一个云下载还未完成整理，稍后自动提交（串行）",
                      movie.code)
             return
+        interval = max(0, int(cfg.get("P115_DL_INTERVAL_MIN", 0))) * 60
+        if interval:  # cooldown after the last movie landed in the library
+            wait = interval - (int(time.time()) - p115.last_release_at())
+            if wait > 0:
+                log.info("%s: 上一部整理完成后冷却中，约 %d 分钟后自动提交（串行间隔）",
+                         movie.code, wait // 60 + 1)
+                return
         if movie.code in p115.gaveup_codes():
             log.info("%s: 该番号磁力已全部失败过，跳过", movie.code)
             return

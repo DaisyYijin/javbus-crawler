@@ -455,6 +455,7 @@ def del_tasks(info_hashes: list[str], *, purge_files: bool = False) -> int:
 
 # -------------------------------------------------------- download watch ----
 _TRACK_PREFIX = "p115:track:"
+_LAST_RELEASE_KEY = "p115:last_release_at"
 
 _EXT_STRIP_RE = re.compile(
     r"\.(?:MP4|MKV|AVI|WMV|MOV|TS|M2TS|M2V|ISO|RMVB|RM|FLV|MPG|MPG4|DIVX|H264|SRT|ASS|JPG|PNG|NFO|TXT|URL|HTML?)$", re.I)
@@ -584,10 +585,27 @@ def _track_update(ih: str, **fields) -> None:
 def track_del(ih: str) -> None:
     conn = sqlite3.connect(settings.load()["DB_PATH"], timeout=10)
     try:
-        conn.execute("DELETE FROM meta WHERE key = ?", (_TRACK_PREFIX + ih,))
+        cur = conn.execute("DELETE FROM meta WHERE key = ?", (_TRACK_PREFIX + ih,))
+        if cur.rowcount:  # slot actually freed -> stamp the serial cooldown timer
+            conn.execute("INSERT OR REPLACE INTO meta(key, value) VALUES (?, ?)",
+                         (_LAST_RELEASE_KEY, str(int(time.time()))))
         conn.commit()
     finally:
         conn.close()
+
+
+def last_release_at() -> int:
+    """Unix ts of the most recent download-slot release (0 when never)."""
+    conn = sqlite3.connect(settings.load()["DB_PATH"], timeout=10)
+    try:
+        row = conn.execute("SELECT value FROM meta WHERE key = ?",
+                           (_LAST_RELEASE_KEY,)).fetchone()
+    finally:
+        conn.close()
+    try:
+        return int(row[0]) if row else 0
+    except ValueError:
+        return 0
 
 
 def gaveup_codes() -> set[str]:
