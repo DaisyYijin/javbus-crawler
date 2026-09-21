@@ -1269,8 +1269,13 @@ def _organize_one(conn, c, task: dict, info_hash: str, stats: dict) -> None:
             is_folder = str(finfo.get("fc")) == "0"
             size = _to_int(finfo.get("size"))
         except Exception:
-            is_folder = False
-            size = 0
+            # fs_files throttled: folder-vs-file is UNKNOWN. Guessing 'file'
+            # renamed and moved the whole download FOLDER as if it were the
+            # feature — the real video inside stayed unrenamed and every ad
+            # traveled along (已整理/X/X.mp4/广告…, 拒收 0). Retry on a
+            # later pass instead of ever guessing.
+            _org_fail_bump(conn, info_hash, old, "文件信息暂不可用（限流）")
+            return
         base = _sanitize_name(f"{code} {title}")
         if is_folder:
             # the download folder goes through the sweep logic: it picks the

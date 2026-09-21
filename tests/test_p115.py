@@ -459,6 +459,45 @@ def test_organize_missing_fid_retries_then_gives_up(monkeypatch):
     assert p115.is_done("NOFID1") is True  # terminal mark for the serial gate
 
 
+def test_organize_fs_file_throttled_does_not_guess(monkeypatch):
+    """fs_file 被限流时「文件夹还是文件」未知：绝不能猜「文件」——那会把
+    整个下载文件夹当正片改名搬进 已整理/番号 剧名/（真正片没改名、广告
+    全程随行、拒收 0）。应记一次失败，60 秒整理循环稍后重试。"""
+    conn = _sweep_db(monkeypatch, movies=[("FIT-008", "初撮り")])
+    try:
+        renames, moves = [], []
+
+        class _ThrottledClient:
+            def clouddownload_task_list(self, payload, timeout=None):
+                return {"state": True, "count": 1, "tasks": [
+                    {"info_hash": "fit8hash", "status": 2, "name": "fit-008ch",
+                     "file_id": 12345, "percentDone": 100}]}
+
+            def fs_file(self, fid, timeout=None):
+                raise RuntimeError("throttled (empty listing)")
+
+            def fs_rename(self, payload, timeout=None):
+                renames.append(payload)
+                return {"state": True}
+
+            def fs_move(self, fid, cid, timeout=None):
+                moves.append((fid, cid))
+                return {"state": True}
+
+        monkeypatch.setattr(p115, "get_client",
+                            lambda refresh=False: _ThrottledClient())
+        monkeypatch.setattr(p115, "resolve_dir", lambda c, p: 10)
+        p115.track_add("FIT-008", "FIT8HASH", "magnet:?x", "fit-008ch")
+        stats = p115.organize_pass()
+        assert renames == [] and moves == []      # nothing renamed or moved
+        assert stats["organized"] == 0 and stats["rejected"] == 0
+        assert set(p115.track_records()) == {"FIT8HASH"}  # slot still held
+        assert p115.is_done("FIT8HASH") is False  # no fake done mark
+        p115.track_del("FIT8HASH")
+    finally:
+        conn.close()
+
+
 def test_gaveup_codes_and_done_mark_release_slot(monkeypatch):
     import json as _json
     import sqlite3
