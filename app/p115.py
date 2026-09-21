@@ -60,6 +60,9 @@ DEVICES: dict[str, str] = {
 }
 
 _TASK_STATUS = {0: "等待中", 1: "下载中", 2: "已完成", -1: "失败", -2: "已取消"}
+# merge to the 3 buckets 115's own web UI uses (等待中 counts as 下载中,
+# 已取消 as 下载失败)
+_TASK_STATE = {0: "downloading", 1: "downloading", 2: "done", -1: "failed", -2: "failed"}
 _QR_STATUS = {0: "waiting", 1: "scanned", 2: "success", -1: "expired", -2: "canceled"}
 _ILLEGAL_FS = re.compile(r'[\\/:*?"<>|\r\n\t]')
 
@@ -396,12 +399,20 @@ def list_tasks(page: int = 1, size: int = 30) -> dict:
         {"page": page, "page_size": size}, timeout=_TIMEOUT))
     items = [{
         "name": t.get("name"),
+        "state": _task_state(t.get("status")),
         "status": _map_task_status(t.get("status")),
         "percent": t.get("percentDone", 0),
         "size": t.get("file_size") or t.get("size"),
         "info_hash": (t.get("info_hash") or "").upper(),
     } for t in resp.get("tasks") or []]
     return {"total": resp.get("count", len(items)), "items": items}
+
+
+def _task_state(raw) -> str:
+    try:
+        return _TASK_STATE.get(int(raw or 0), "downloading")
+    except (TypeError, ValueError):
+        return "downloading"
 
 
 def _map_task_status(raw) -> str:

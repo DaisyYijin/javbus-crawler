@@ -107,7 +107,10 @@
   @keyframes toast-out { to { opacity: 0; transform: translateY(-18px); } }
   .pill { display: inline-flex; align-items: center; font-size: 12px; padding: 3px 11px; border-radius: 999px; background: #eef0f6; color: var(--mut); font-weight: 500; }
   .pill.run { background: var(--pri-soft); color: var(--pri); }
+  .pill.ok { background: #e7f6ec; color: var(--ok); }
   .pill.err { background: #fdeaea; color: var(--err); }
+  .tprog { width: 64px; height: 6px; background: #eef0f6; border-radius: 3px; overflow: hidden; display: inline-block; vertical-align: middle; margin-right: 6px; }
+  .tprog i { display: block; height: 100%; background: var(--pri); border-radius: 3px; }
   .kv { font-size: 13px; color: var(--mut); }
   .kv b { color: var(--pri); }
 
@@ -654,6 +657,12 @@
           <button class="ghost" onclick="clear115DoneTasks()">清理已完成记录</button>
           <button class="primary" onclick="organizeNow()">立即整理</button>
           <span id="p115-task-msg" class="msg"></span>
+        </div>
+        <div class="seg" id="p115-task-seg" style="margin-bottom:10px">
+          <button class="seg-btn active" data-f="all" onclick="setP115TaskFilter(this)">全部</button>
+          <button class="seg-btn" data-f="downloading" onclick="setP115TaskFilter(this)">下载中</button>
+          <button class="seg-btn" data-f="done" onclick="setP115TaskFilter(this)">下载完成</button>
+          <button class="seg-btn" data-f="failed" onclick="setP115TaskFilter(this)">下载失败</button>
         </div>
         <div class="table-wrap">
         <table>
@@ -1648,27 +1657,67 @@ async function p115Logout() {
 }
 function fmtSize(n) { n = Number(n) || 0; const u = ['B','KB','MB','GB','TB']; let i = 0; while (n >= 1024 && i < 4) { n /= 1024; i++; } return (n >= 100 || i === 0 ? n.toFixed(0) : n.toFixed(1)) + u[i]; }
 const P115_TASK_SIZE = 20;
-let p115TaskPage = 1, p115TaskTotal = 0;
+let p115TaskPage = 1, p115TaskFilter = 'all', p115AllTasks = [], p115TaskTimer = 0;
+async function fetch115TasksAll() {
+  const items = [];
+  for (let page = 1; page <= 50; page++) {
+    const r = await fetch('/api/p115/tasks?page=' + page + '&size=100');
+    if (r.status === 400) throw new Error('未登录');
+    const j = await r.json();
+    if (!j.ok) throw new Error(j.error || '获取失败');
+    items.push(...(j.items || []));
+    if (page * 100 >= (j.total || 0)) break;
+  }
+  return items;
+}
+function p115TaskBadge(t) {
+  const cls = t.state === 'done' ? 'ok' : t.state === 'failed' ? 'err' : 'run';
+  return `<span class="pill ${cls}">${esc(t.status)}</span>`;
+}
+function render115Tasks() {
+  const names = {all: '全部', downloading: '下载中', done: '下载完成', failed: '下载失败'};
+  const cnt = {all: p115AllTasks.length, downloading: 0, done: 0, failed: 0};
+  p115AllTasks.forEach(t => { if (cnt[t.state] !== undefined) cnt[t.state]++; });
+  document.querySelectorAll('#p115-task-seg .seg-btn').forEach(b => { b.textContent = names[b.dataset.f] + (cnt[b.dataset.f] ? ' ' + cnt[b.dataset.f] : ''); });
+  const list = p115AllTasks.filter(t => p115TaskFilter === 'all' || t.state === p115TaskFilter);
+  const pages = Math.max(1, Math.ceil(list.length / P115_TASK_SIZE));
+  if (p115TaskPage > pages) p115TaskPage = pages;
+  $('p115-task-msg').textContent = '共 ' + p115AllTasks.length + ' 个任务';
+  $('p115-task-rows').innerHTML = list.slice((p115TaskPage - 1) * P115_TASK_SIZE, p115TaskPage * P115_TASK_SIZE).map(t => {
+    const pct = Math.min(100, Math.max(0, Number(t.percent) || 0));
+    const prog = t.state === 'done' ? '100%'
+      : t.state === 'downloading' ? `<span class="tprog"><i style="width:${pct}%"></i></span>${pct}%`
+      : '<span style="color:var(--mut)">—</span>';
+    return `<tr><td class="mag">${esc(t.name)}</td><td>${p115TaskBadge(t)}</td>
+      <td>${prog}</td><td>${fmtSize(t.size)}</td>
+      <td>${t.info_hash ? `<button class="ghost" style="padding:3px 10px;font-size:12px" onclick="del115Task('${t.info_hash}', this.dataset.n)" data-n="${esc(t.name)}">删除</button>` : '-'}</td></tr>`;
+  }).join('')
+    || '<tr><td colspan="5" style="color:var(--mut);text-align:center;padding:30px">暂无离线任务</td></tr>';
+  $('p115-task-pager').textContent = `第 ${p115TaskPage} / ${pages} 页`;
+  $('p115-task-prev').disabled = p115TaskPage <= 1;
+  $('p115-task-next').disabled = p115TaskPage >= pages;
+}
+function setP115TaskFilter(btn) {
+  p115TaskFilter = btn.dataset.f; p115TaskPage = 1;
+  document.querySelectorAll('#p115-task-seg .seg-btn').forEach(b => b.classList.toggle('active', b === btn));
+  render115Tasks();
+}
 async function load115Tasks(page) {
   if (typeof page === 'number') p115TaskPage = Math.max(1, page);
   try {
-    const r = await fetch('/api/p115/tasks?page=' + p115TaskPage + '&size=' + P115_TASK_SIZE);
-    if (r.status === 400) { $('p115-task-rows').innerHTML = '<tr><td colspan="5" style="color:var(--mut);text-align:center;padding:30px">未登录</td></tr>'; return; }
-    const j = await r.json();
-    if (!j.ok) { $('p115-task-msg').textContent = j.error || ''; return; }
-    p115TaskTotal = j.total ?? (j.items || []).length;
-    const pages = Math.max(1, Math.ceil(p115TaskTotal / P115_TASK_SIZE));
-    if (p115TaskPage > pages) { p115TaskPage = pages; return load115Tasks(); }
-    $('p115-task-msg').textContent = '共 ' + p115TaskTotal + ' 个任务';
-    $('p115-task-rows').innerHTML = (j.items || []).map(t => `
-      <tr><td class="mag">${esc(t.name)}</td><td>${esc(t.status)}</td>
-      <td>${t.status === '已完成' ? '100%' : (t.percent ?? 0) + '%'}</td><td>${fmtSize(t.size)}</td>
-      <td>${t.info_hash ? `<button class="ghost" style="padding:3px 10px;font-size:12px" onclick="del115Task('${t.info_hash}', this.dataset.n)" data-n="${esc(t.name)}">删除</button>` : '-'}</td></tr>`).join('')
-      || '<tr><td colspan="5" style="color:var(--mut);text-align:center;padding:30px">暂无离线任务</td></tr>';
-    $('p115-task-pager').textContent = `第 ${p115TaskPage} / ${pages} 页`;
-    $('p115-task-prev').disabled = p115TaskPage <= 1;
-    $('p115-task-next').disabled = p115TaskPage >= pages;
-  } catch (e) {}
+    p115AllTasks = await fetch115TasksAll();
+    $('p115-task-msg').textContent = '';
+    render115Tasks();
+    scheduleP115TaskRefresh();
+  } catch (e) {
+    clearTimeout(p115TaskTimer);
+    if (e.message === '未登录') $('p115-task-rows').innerHTML = '<tr><td colspan="5" style="color:var(--mut);text-align:center;padding:30px">未登录</td></tr>';
+    else $('p115-task-msg').textContent = e.message || '获取失败';
+  }
+}
+function scheduleP115TaskRefresh() {
+  clearTimeout(p115TaskTimer);
+  if (p115AllTasks.some(t => t.state === 'downloading')) p115TaskTimer = setTimeout(() => load115Tasks(), 5000);
 }
 function p115TaskPrev() { if (p115TaskPage > 1) load115Tasks(p115TaskPage - 1); }
 function p115TaskNext() { load115Tasks(p115TaskPage + 1); }
@@ -1682,16 +1731,10 @@ async function del115Task(hash, name) {
   } catch (e) { toast('✗ ' + e.message, 'err'); }
 }
 async function clear115DoneTasks() {
-  if (!confirm('清理全部「已完成」任务的记录？\n只移除列表记录，不删除网盘文件。')) return;
+  if (!confirm('清理全部「下载完成」任务的记录？\n只移除列表记录，不删除网盘文件。')) return;
   toast('正在收集已完成任务…');
   try {
-    const hashes = [];
-    for (let page = 1; page <= 50; page++) {
-      const j = await (await fetch('/api/p115/tasks?page=' + page + '&size=100')).json();
-      if (!j.ok) break;
-      (j.items || []).forEach(t => { if (t.status === '已完成' && t.info_hash) hashes.push(t.info_hash); });
-      if (page * 100 >= (j.total || 0)) break;
-    }
+    const hashes = (await fetch115TasksAll()).filter(t => t.state === 'done' && t.info_hash).map(t => t.info_hash);
     if (!hashes.length) { toast('没有已完成任务可清理', 'err'); return; }
     const j = await (await fetch('/api/p115/tasks/del', {method: 'POST', headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({hashes})})).json();
