@@ -703,8 +703,10 @@
             <input id="c_P115_DL_STALL_MIN" type="number" min="1" max="720" placeholder="30"></div>
           <div class="field w3"><label>换磁力次数上限 <small>P115_DL_MAX_RETRIES · 超过后放弃该影片的下载</small></label>
             <input id="c_P115_DL_MAX_RETRIES" type="number" min="0" max="20" placeholder="3"></div>
+          <div class="field w3"><label>单磁力时长上限（分钟） <small>P115_DL_MAX_MIN · 同一个磁力下载超过该总时长即换下一个（0 为不限制）</small></label>
+            <input id="c_P115_DL_MAX_MIN" type="number" min="0" max="1440" placeholder="120"></div>
         </div>
-        <div class="hint">全自动流水线：提交磁力 → 每 15 秒监测下载（卡住超时 / 下载失败自动换下一个磁力重试，可设次数上限）→ 下载完成实时整理 → 通过 info_hash 反查（失败时从任务名智能识别番号，支持 aaa-100-ch 等变体）→ 调 MetaTube（已配置时）优化剧名 → 提取正片重命名为「番号 剧名.ext」，归档为「已整理/番号 剧名/番号 剧名.ext」（每部影片一个同名子文件夹；文件夹内广告与疑似广告任务自动移入冗余目录；115 限速导致目录列表暂时为空时本次跳过、下一轮自动重试，不会误判）。目录可点输入框右侧文件夹图标从 115 网盘中直接选取。已整理任务自动记忆去重。「开始整理」不依赖任务记录，直接扫描下载目录存量——可随时手动点按钮触发，启用自动整理时后台也会每 10 分钟自动扫描：体积最大的正片（≥1GB，实时整理门槛为 ≥100MB）按库内番号重命名并移入同名子文件夹，广告图片 / 小体积剪辑等其余文件连同清空后的空目录一律移入冗余（多分段 / 多影片文件夹整体保留，115 限速故每次列表间隔约 1 分钟，请耐心等待）。</div>
+        <div class="hint">全自动串行流水线：同一时间只下载一部影片，下载完成并整理归档后才提交下一部；提交磁力 → 每 15 秒监测下载（卡住无进度、下载失败或超过单磁力时长上限时自动换下一个磁力重试，全部磁力失败则放弃该番号继续下一部）→ 下载完成实时整理 → 通过 info_hash 反查（失败时从任务名智能识别番号，支持 aaa-100-ch 等变体）→ 调 MetaTube（已配置时）优化剧名 → 提取正片重命名为「番号 剧名.ext」，归档为「已整理/番号 剧名/番号 剧名.ext」（每部影片一个同名子文件夹；文件夹内广告与疑似广告任务自动移入冗余目录；115 限速导致目录列表暂时为空时本次跳过、下一轮自动重试，不会误判）。目录可点输入框右侧文件夹图标从 115 网盘中直接选取。已整理任务自动记忆去重。「开始整理」不依赖任务记录，直接扫描下载目录存量——可随时手动点按钮触发，启用自动整理时后台也会每 10 分钟自动扫描：体积最大的正片（≥1GB，实时整理门槛为 ≥100MB）按库内番号重命名并移入同名子文件夹，广告图片 / 小体积剪辑等其余文件连同清空后的空目录一律移入冗余（多分段 / 多影片文件夹整体保留，115 限速故每次列表间隔约 1 分钟，请耐心等待）。</div>
         <div class="row save-row">
           <label class="switch" style="margin:0" title="下载完成后自动重命名并移动 · P115_AUTO_ORGANIZE"><input type="checkbox" id="c_P115_AUTO_ORGANIZE"><span class="track"></span><span>启用自动整理</span></label>
           <button class="primary" onclick="saveConfig()">保存配置</button>
@@ -904,7 +906,7 @@ async function saveConfig() {
   ['BASE_URL','PROXY','METATUBE_URL','METATUBE_TOKEN','DELAY_SECONDS','JITTER_SECONDS',
    'MAX_RETRIES','TIMEOUT','WEB_PORT','AUTO_CRAWL_INTERVAL_HOURS','AUTO_CRAWL_PAGES',
    'TAG_FILTERS','MAGNET_TIEBREAK','MAGNET_FALLBACK','P115_DOWNLOAD_DIR','P115_TARGET_DIR','P115_REJECT_DIR',
-   'P115_DL_STALL_MIN','P115_DL_MAX_RETRIES']
+   'P115_DL_STALL_MIN','P115_DL_MAX_MIN','P115_DL_MAX_RETRIES']
     .forEach(k => { const el = $('c_' + k); if (el) body[k] = el.value; });
   body.CATEGORY = [...document.querySelectorAll('#cat-seg .seg-btn.active')].map(b => b.dataset.cat).join(',');
   body.GENRE_CENSORED = [...GENRE_SEL.censored].join(',');

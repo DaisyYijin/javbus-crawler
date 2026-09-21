@@ -590,6 +590,25 @@ def track_del(ih: str) -> None:
         conn.close()
 
 
+def gaveup_codes() -> set[str]:
+    """Codes whose downloads were abandoned (every magnet failed)."""
+    conn = sqlite3.connect(settings.load()["DB_PATH"], timeout=10)
+    try:
+        rows = conn.execute(
+            "SELECT value FROM meta WHERE key LIKE 'p115:gaveup:%'").fetchall()
+    finally:
+        conn.close()
+    out: set[str] = set()
+    for (raw,) in rows:
+        try:
+            code = str((json.loads(raw) or {}).get("code") or "")
+        except ValueError:
+            continue
+        if code:
+            out.add(code)
+    return out
+
+
 def magnet_candidates(code: str, exclude: set[str]) -> dict | None:
     """Best remaining magnet for a code, skipping already-tried hashes.
 
@@ -680,9 +699,11 @@ def _swap_magnet(ih: str, rec: dict, max_retries: int) -> str:
 def watch_pass() -> dict:
     """One monitoring round over tracked downloads.
 
-    Finished -> forget (the organize pass picks it up); failed/stalled too
-    long -> swap to the next magnet; when the P115_AUTO_ORGANIZE switch is
-    on, a finished batch is organized right away.
+    Finished -> hold the slot until the organize pass lands the file, so the
+    serial pipeline downloads one movie at a time (freed right away when
+    P115_AUTO_ORGANIZE is off); failed / stalled / over the per-magnet time
+    cap -> swap to the next magnet; a finished batch is organized right away
+    when the P115_AUTO_ORGANIZE switch is on.
     """
     cfg = settings.load()
     stats = {"checked": 0, "done": 0, "swapped": 0, "gaveup": 0, "organized": 0}
@@ -705,6 +726,7 @@ def watch_pass() -> dict:
             break
     now = int(time.time())
     stall_s = max(1, int(cfg.get("P115_DL_STALL_MIN", 30))) * 60
+    max_min = max(0, int(cfg.get("P115_DL_MAX_MIN", 120)))
     max_retries = max(0, int(cfg.get("P115_DL_MAX_RETRIES", 3)))
     organize = False
     for ih, rec in recs.items():
@@ -718,16 +740,30 @@ def watch_pass() -> dict:
         except (TypeError, ValueError):
             status = 0
         if status == 2:  # finished
-            track_del(ih)
             stats["done"] += 1
-            organize = True
+            if cfg.get("P115_AUTO_ORGANIZE"):
+                # keep the slot until organize lands the file, so the serial
+                # download gate won't submit the next movie too early
+                if not rec.get("finished_at"):
+                    _track_update(ih, finished_at=now, last_percent=100)
+                    organize = True
+            else:
+                track_del(ih)  # nobody will organize it: free the slot now
         elif status in (-1, -2):  # failed / canceled
             stats[_swap_magnet(ih, rec, max_retries)] += 1
-        else:  # waiting / downloading -> stall detection
+        else:  # waiting / downloading -> per-magnet time cap + stall guard
             pct = t.get("percentDone") or 0
-            if pct != rec.get("last_percent"):
+            fresh = pct != rec.get("last_percent")
+            if fresh:
                 _track_update(ih, last_percent=pct, last_prog_at=now)
-            elif now - int(rec.get("last_prog_at") or rec.get("submitted_at") or now) > stall_s:
+            submitted = int(rec.get("submitted_at") or now)
+            if max_min > 0 and now - submitted > max_min * 60:
+                log.info("115 任务超时 %s: %s %.8s 已下载 %d 分钟（上限 %d），换磁力",
+                         rec.get("code"), rec.get("name"), ih,
+                         (now - submitted) // 60, max_min)
+                stats[_swap_magnet(ih, rec, max_retries)] += 1
+            elif not fresh and now - int(rec.get("last_prog_at")
+                                         or rec.get("submitted_at") or now) > stall_s:
                 log.info("115 任务卡住 %s: %s %.8s 超过 %d 分钟无进度，换磁力",
                          rec.get("code"), rec.get("name"), ih, stall_s // 60)
                 stats[_swap_magnet(ih, rec, max_retries)] += 1
@@ -977,7 +1013,10 @@ def organize_pass(max_pages: int = 5) -> dict:
             if _map_task_status(t.get("status")) != "已完成":
                 continue
             ih = (t.get("info_hash") or "").upper()
-            if not ih or db_get_meta(conn, f"p115:done:{ih}"):
+            if not ih:
+                continue
+            if db_get_meta(conn, f"p115:done:{ih}"):
+                track_del(ih)  # already organized: release the download slot
                 continue
             stats["scanned"] += 1
             try:
@@ -1081,6 +1120,7 @@ def _organize_one(conn, c, task: dict, info_hash: str, stats: dict) -> None:
     conn.execute("INSERT OR REPLACE INTO meta(key, value) VALUES (?, '1')",
                  (f"p115:done:{info_hash}",))
     conn.commit()
+    track_del(info_hash)  # serial pipeline: free the download slot
 
 
 # ------------------------------------------------------ sweep (backfill) ----

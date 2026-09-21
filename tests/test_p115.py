@@ -253,7 +253,10 @@ def test_watch_pass_finished_organizes(monkeypatch):
     stats = p115.watch_pass()
     assert stats["done"] == 1 and stats["organized"] == 1
     assert calls == [1]  # P115_AUTO_ORGANIZE is on by default
-    assert p115.track_records() == {}
+    recs = p115.track_records()
+    assert set(recs) == {"FINI01"}  # slot held until organize lands the file
+    assert recs["FINI01"]["finished_at"] > 0
+    p115.track_del("FINI01")
 
 
 def test_watch_pass_failed_swaps_magnet(monkeypatch):
@@ -315,6 +318,88 @@ def test_watch_pass_stalled_and_progress(monkeypatch):
     assert "STALL1" not in recs
     assert recs["MOVING"]["last_percent"] == 25  # progress recorded, kept
     p115.track_del("MOVING")
+
+
+def test_watch_pass_over_total_time_swaps(monkeypatch):
+    import time as _time
+    from app import db, settings
+    db.connect(settings.load()["DB_PATH"]).close()
+    saved = settings.load().get("P115_DL_MAX_MIN")
+    settings.save({"P115_DL_MAX_MIN": 60})
+    try:
+        p115.track_add("AAA-100", "SLOW01", "magnet:?xt=urn:btih:slow01", "t.mp4")
+        old = int(_time.time()) - 2 * 3600  # 2h at it, cap is 60 min
+        p115._track_update("SLOW01", submitted_at=old,
+                           last_percent=10, last_prog_at=int(_time.time()))
+        monkeypatch.setattr(p115, "has_auth", lambda: True)
+        monkeypatch.setattr(p115, "get_client", lambda refresh=False:
+                            _FakeWatchClient([
+                                {"info_hash": "slow01", "status": 1,
+                                 "percentDone": 10, "name": "s.mp4"}]))
+        swaps = []
+
+        def _fake_swap(ih, rec, mx):
+            swaps.append(ih)
+            p115.track_del(ih)  # mirror the real swap's cleanup
+            return "swapped"
+
+        monkeypatch.setattr(p115, "_swap_magnet", _fake_swap)
+        monkeypatch.setattr(p115, "organize_pass", lambda: {"organized": 0})
+        stats = p115.watch_pass()
+        assert swaps == ["SLOW01"]  # over the cap even though it progresses
+        assert stats["swapped"] == 1
+    finally:
+        settings.save({"P115_DL_MAX_MIN": int(saved or 120)})
+        p115.track_del("SLOW01")
+
+
+def test_watch_pass_finished_no_auto_organize_frees_slot(monkeypatch):
+    from app import db, settings
+    db.connect(settings.load()["DB_PATH"]).close()
+    saved = settings.load().get("P115_AUTO_ORGANIZE")
+    settings.save({"P115_AUTO_ORGANIZE": False})
+    try:
+        p115.track_add("AAA-100", "FINI02", "magnet:?xt=urn:btih:fini02", "t.mp4")
+        monkeypatch.setattr(p115, "has_auth", lambda: True)
+        monkeypatch.setattr(p115, "get_client", lambda refresh=False:
+                            _FakeWatchClient([
+                                {"info_hash": "fini02", "status": 2,
+                                 "percentDone": 100, "name": "t.mp4"}]))
+        called = []
+        monkeypatch.setattr(p115, "organize_pass",
+                            lambda: called.append(1) or {"organized": 0})
+        stats = p115.watch_pass()
+        assert stats["done"] == 1 and called == []
+        assert p115.track_records() == {}  # no organize switch: slot freed
+    finally:
+        settings.save({"P115_AUTO_ORGANIZE": bool(saved)})
+        p115.track_del("FINI02")
+
+
+def test_gaveup_codes_and_done_mark_release_slot(monkeypatch):
+    import json as _json
+    import sqlite3
+    from app import db, settings
+    db.connect(settings.load()["DB_PATH"]).close()
+    conn = sqlite3.connect(settings.load()["DB_PATH"], timeout=10)
+    try:
+        conn.execute("INSERT OR REPLACE INTO meta(key, value) VALUES "
+                     "('p115:gaveup:dead01', ?)",
+                     (_json.dumps({"code": "GUV-001", "reason": "x"}),))
+        conn.execute("INSERT OR REPLACE INTO meta(key, value) VALUES "
+                     "('p115:done:DONEDL', '1')")
+        conn.commit()
+    finally:
+        conn.close()
+    assert p115.gaveup_codes() == {"GUV-001"}
+    # a finished download still holding its slot is released by the done mark
+    p115.track_add("GUV-001", "DONEDL", "magnet:?xt=urn:btih:donedl", "t.mp4")
+    monkeypatch.setattr(p115, "get_client", lambda refresh=False:
+                        _FakeWatchClient([
+                            {"info_hash": "donedl", "status": 2,
+                             "percentDone": 100, "name": "t.mp4"}]))
+    p115.organize_pass()
+    assert p115.track_records() == {}
 
 
 # ------------------------------------------------------------ list files ----

@@ -296,13 +296,39 @@ def test_auto_download_skips_code_already_tracked(monkeypatch):
     assert calls == []
 
 
+def test_auto_download_serial_gate_waits_for_current(monkeypatch):
+    from app import p115
+
+    monkeypatch.setattr(p115, "has_auth", lambda: True)
+    monkeypatch.setattr(p115, "track_records",
+                        lambda: {"IH0": {"code": "OTHER-1", "name": "busy"}})
+    calls = []
+    monkeypatch.setattr(p115, "add_magnet", lambda link: calls.append(link))
+    crawler.auto_download({"AUTO_DOWNLOAD": True}, _movie("FIT-008", [
+        {"link": "magnet:?xt=urn:btih:X", "name": "n"}]))
+    assert calls == []  # serial: previous movie still downloading/organizing
+
+
+def test_auto_download_skips_gaveup_code(monkeypatch):
+    from app import p115
+
+    monkeypatch.setattr(p115, "has_auth", lambda: True)
+    monkeypatch.setattr(p115, "track_records", lambda: {})
+    monkeypatch.setattr(p115, "gaveup_codes", lambda: {"FIT-008"})
+    calls = []
+    monkeypatch.setattr(p115, "add_magnet", lambda link: calls.append(link))
+    crawler.auto_download({"AUTO_DOWNLOAD": True}, _movie("FIT-008", [
+        {"link": "magnet:?xt=urn:btih:X", "name": "n"}]))
+    assert calls == []  # all magnets failed before: skip for good
+
+
 def test_auto_download_submits_and_tracks(monkeypatch):
     from app import p115
     from app.parser import Magnet
 
     monkeypatch.setattr(p115, "has_auth", lambda: True)
-    monkeypatch.setattr(p115, "track_records",
-                        lambda: {"IH0": {"code": "ABC-1", "name": "other"}})
+    monkeypatch.setattr(p115, "track_records", lambda: {})
+    monkeypatch.setattr(p115, "gaveup_codes", lambda: set())
     submitted = {}
 
     def fake_add(link):
@@ -327,6 +353,7 @@ def test_auto_download_swallows_115_errors(monkeypatch):
 
     monkeypatch.setattr(p115, "has_auth", lambda: True)
     monkeypatch.setattr(p115, "track_records", lambda: {})
+    monkeypatch.setattr(p115, "gaveup_codes", lambda: set())
 
     def boom(link):
         raise RuntimeError("115 down")

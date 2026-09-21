@@ -329,9 +329,16 @@ def auto_download(cfg: dict, movie) -> None:
         if not p115.has_auth():
             log.info("%s: 自动云下载已开启但 115 未登录，跳过", movie.code)
             return
-        if any(r.get("code") == movie.code
-               for r in p115.track_records().values()):
+        recs = p115.track_records()
+        if any(r.get("code") == movie.code for r in recs.values()):
             log.info("%s: 已有云下载任务，跳过重复提交", movie.code)
+            return
+        if recs:  # serial pipeline: one download (through organize) at a time
+            log.info("%s: 上一个云下载还未完成整理，稍后自动提交（串行）",
+                     movie.code)
+            return
+        if movie.code in p115.gaveup_codes():
+            log.info("%s: 该番号磁力已全部失败过，跳过", movie.code)
             return
         m = movie.magnets[0]
         log.info("开始云下载: %s (%s)", movie.code, m.name[:60])
