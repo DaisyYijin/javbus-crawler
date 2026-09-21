@@ -517,9 +517,11 @@ _VANISH_GRACE_S = 180  # fresh submissions may lag behind the 115 task list
 
 _EXT_STRIP_RE = re.compile(
     r"\.(?:MP4|MKV|AVI|WMV|MOV|TS|M2TS|M2V|ISO|RMVB|RM|FLV|MPG|MPG4|DIVX|H264|SRT|ASS|JPG|PNG|NFO|TXT|URL|HTML?)$", re.I)
-# trailing quality/edition decorations: -C -CH -UCD -CD1 -4K -1080P ...
+# trailing quality/edition decorations: -C -CH -UCD -CD1 -4K -1080P ... the
+# glued alternatives cover magnet-style names like 'fit-008ch' (no separator)
 _TAIL_TOKEN_RE = re.compile(
-    r"[-_. ](?:CD\d{1,2}|PART\d{1,2}|C|CH|UC|UCD|UNCENSORED|LEAK|4K|8K|1080P|720P|2160P)$", re.I)
+    r"(?:[-_. ](?:CD\d{1,2}|PART\d{1,2}|C|CH|UC|UCD|UNCENSORED|LEAK|4K|8K|1080P|720P|2160P)$"
+    r"|(?<=\d)(?:CH|UCD|UC|C)$)", re.I)
 _CODE_FC2_RE = re.compile(r"\bFC2[-_ ]?PPV[-_ ]?(\d{6,9})\b", re.I)
 # AAA-100 / T28-619 / 259LUXU-1234 / 300MIUM-703 (numeric prefixes glue to
 # the letters on either side: letters+digits like T28 or digits+letters like
@@ -1400,7 +1402,11 @@ def _sweep_folder(conn, c, fid: int, name: str, target: int, reject: int,
 
     Multi-part folders are kept intact: several codes, files from several
     sub-dirs, or flat CD1/CD2 files sharing one code (extract_code strips
-    the -CD1 tail, so they all resolve to the same code).
+    the -CD1 tail, so they all resolve to the same code) — they file
+    directly under 已整理/<原目录名>/, never inside a same-named sub-dir.
+    Bundles that carry exactly one file per title are split apart: each
+    library-known movie is renamed and filed under its own
+    已整理/CODE Title/; unknown titles sink with the ads.
 
     Returns True when fully handled, False when the listing came back empty
     (115 throttling) and no decision should be made yet.  With target_path
@@ -1454,50 +1460,101 @@ def _sweep_folder(conn, c, fid: int, name: str, target: int, reject: int,
         _pace_list(sleep_s)
         return resolve_dir(c, f"{target_path}/{base}")
 
-    if not candidates or len(codes) > 1 or len(parents) > 1 or multi_part:
-        if not candidates:
-            if not files and subdirs and sub_all_empty:
-                # only empty subdir answers: likely throttled, retry later
-                stats["skipped"] = stats.get("skipped", 0) + 1
-                log.info("115 整理: %s 子目录列表为空(疑似限流)，本次跳过", name)
-                return False
-            # nothing feature-sized anywhere: the whole folder is junk
+    if not candidates:
+        if not files and subdirs and sub_all_empty:
+            # only empty subdir answers: likely throttled, retry later
+            stats["skipped"] = stats.get("skipped", 0) + 1
+            log.info("115 整理: %s 子目录列表为空(疑似限流)，本次跳过", name)
+            return False
+        # nothing feature-sized anywhere: the whole folder is junk
+        check_response(c.fs_move(fid, reject, timeout=_TIMEOUT))
+        stats["rejected"] += 1
+        log.info("115 整理: 文件夹 %s 无正片 -> 冗余目录", name)
+        return True
+    # group the candidates by code: bundles that carry one file per title
+    # can be split apart, each movie filed under its own 已整理/CODE Title/
+    groups: dict[str, list] = {}
+    for cand in candidates:
+        groups.setdefault(extract_code(cand[1]) or cand[1], []).append(cand)
+    single_each = all(len(v) == 1 for v in groups.values())
+    splittable = len(codes) > 1 and single_each and not multi_part
+    if len(codes) == 1 and len(parents) == 1 and not multi_part:
+        # keep the single LARGEST candidate: the listing order is arbitrary,
+        # so candidates[0] could keep a low-res copy and junk the real 4K
+        # feature
+        ffid, fname, _size, fsrc = max(candidates, key=lambda v: v[2] or 0)
+        ext = _ext_of(fname)
+        base = (_sanitize_name(prefer_name) if prefer_name
+                else _best_name(conn, name, fname))
+        new = base + ext if base else ""
+        if new and new != fname:
+            check_response(c.fs_rename((ffid, new), timeout=_TIMEOUT))
+            log.info("115 重命名: %s -> %s", fname, new)
+            fname = new
+        if not base:
+            base = fname[:-len(ext)] if ext else fname
+        tgt = nested(base)
+        if fsrc != tgt:
+            check_response(c.fs_move(ffid, tgt, timeout=_TIMEOUT))
+        stats["organized"] += 1
+        log.info("115 整理: 正片 %s -> 已整理", fname)
+        # the leftovers (ads, promo images, sub-dirs, the shell itself)
+        # travel as ONE folder: 冗余/<原目录名>/ keeps each download's junk
+        # grouped (two folders both holding 广告.url must not melt into two
+        # same-named loose files at the reject root), and one fs_move beats
+        # N under the fs_files rate limit
+        check_response(c.fs_move(fid, reject, timeout=_TIMEOUT))
+        stats["rejected"] += 1
+        log.info("115 整理: 正片外的剩余内容随文件夹 %s 整体 -> 冗余目录", name)
+        return True
+    # multi-title bundle (spam magnets stuff several movies into one
+    # download): file each library-known movie under its own
+    # 已整理/CODE Title/, renamed by its own entry — a bundled fit-008ch.mp4
+    # used to sit inside the intact folder unrenamed; unknown titles and
+    # all the ad junk sink with the shell
+    filed = 0
+    if splittable:
+        for ffid, fname, _sz, _par in candidates:
+            base = _best_name(conn, fname, fname)
+            if not base:
+                continue  # not in our library: goes to reject with the shell
+            ext = _ext_of(fname)
+            new = base + ext
+            try:
+                if new != fname:
+                    check_response(c.fs_rename((ffid, new), timeout=_TIMEOUT))
+                    log.info("115 重命名: %s -> %s", fname, new)
+                check_response(c.fs_move(ffid, nested(base), timeout=_TIMEOUT))
+            except Exception as exc:
+                # e.g. that movie was already filed from another download:
+                # park the duplicate in reject instead of wedging the folder
+                log.warning("115 整理: 拆分归档 %s 失败（%s），该文件转入冗余目录",
+                            fname, exc)
+                check_response(c.fs_move(ffid, reject, timeout=_TIMEOUT))
+                stats["rejected"] += 1
+                continue
+            filed += 1
+            stats["organized"] += 1
+            log.info("115 整理: 正片 %s -> 已整理", new)
+        if filed:
             check_response(c.fs_move(fid, reject, timeout=_TIMEOUT))
             stats["rejected"] += 1
-            log.info("115 整理: 文件夹 %s 无正片 -> 冗余目录", name)
+            log.info("115 整理: 捆绑下载 %s 的广告与未识别影片随文件夹整体 -> 冗余目录",
+                     name)
             return True
-        # several titles / multi-part release: keep the folder intact
-        check_response(c.fs_move(fid, nested(_sanitize_name(name)),
-                                 timeout=_TIMEOUT))
-        stats["organized"] += 1
-        log.info("115 整理: 多分段/多影片文件夹 %s 整体 -> 已整理", name)
+    # CD sets / several cuts / unknown bundles: the folder IS the unit. File
+    # it directly under the target root -> 已整理/<原目录名>/…; moving it into
+    # a same-named sub-dir duplicated the layer (已整理/X/X/…)
+    try:
+        check_response(c.fs_move(fid, target, timeout=_TIMEOUT))
+    except Exception as exc:
+        log.warning("115 整理: 文件夹 %s 移入已整理失败（%s），整体转入冗余目录",
+                    name, exc)
+        check_response(c.fs_move(fid, reject, timeout=_TIMEOUT))
+        stats["rejected"] += 1
         return True
-    # keep the single LARGEST candidate: the listing order is arbitrary, so
-    # candidates[0] could keep a low-res copy and junk the real 4K feature
-    ffid, fname, _size, fsrc = max(candidates, key=lambda v: v[2] or 0)
-    ext = _ext_of(fname)
-    base = (_sanitize_name(prefer_name) if prefer_name
-            else _best_name(conn, name, fname))
-    new = base + ext if base else ""
-    if new and new != fname:
-        check_response(c.fs_rename((ffid, new), timeout=_TIMEOUT))
-        log.info("115 重命名: %s -> %s", fname, new)
-        fname = new
-    if not base:
-        base = fname[:-len(ext)] if ext else fname
-    tgt = nested(base)
-    if fsrc != tgt:
-        check_response(c.fs_move(ffid, tgt, timeout=_TIMEOUT))
     stats["organized"] += 1
-    log.info("115 整理: 正片 %s -> 已整理", fname)
-    # the leftovers (ads, promo images, sub-dirs, the shell itself) travel
-    # as ONE folder: 冗余/<原目录名>/ keeps each download's junk grouped
-    # (two folders both holding 广告.url must not melt into two same-named
-    # loose files at the reject root), and one fs_move beats N under the
-    # fs_files rate limit
-    check_response(c.fs_move(fid, reject, timeout=_TIMEOUT))
-    stats["rejected"] += 1
-    log.info("115 整理: 正片外的剩余内容随文件夹 %s 整体 -> 冗余目录", name)
+    log.info("115 整理: 多分段/多影片文件夹 %s 整体 -> 已整理", name)
     return True
 
 
@@ -1509,10 +1566,11 @@ def sweep_existing(sleep_s: float = _SWEEP_LIST_GAP, max_folders: int = 0) -> di
     folder keeps exactly one feature film (largest video >= 1 GiB), renamed
     to 'CODE Title' and filed as '已整理/CODE Title/CODE Title.ext'; ads,
     promo images, clips and the remaining folder shell move to the reject
-    dir as one unit ('冗余/<原目录名>/…').  Multi-part or multi-title
-    folders are kept intact inside their own sub-directory.  Empty listings
-    (115 throttling) skip the item for a later pass.  fs_files listings are
-    throttled (~1 req/min on 115); the whole pass never raises.
+    dir as one unit ('冗余/<原目录名>/…').  Multi-part folders are kept
+    intact directly under '已整理/<原目录名>/'; bundles with one file per
+    title are split, each movie filed under its own sub-directory.  Empty
+    listings (115 throttling) skip the item for a later pass.  fs_files
+    listings are throttled (~1 req/min on 115); the whole pass never raises.
     """
     stats = {"at": int(time.time()), "scanned": 0, "organized": 0,
              "rejected": 0, "skipped": 0, "errors": 0, "duration_s": 0}

@@ -718,6 +718,66 @@ def test_sweep_folder_multi_code_kept_intact(monkeypatch):
         conn.close()
 
 
+def test_sweep_folder_multititle_splits_per_code(monkeypatch):
+    """捆绑多部影片的下载文件夹（每部恰好一个文件）：逐部按库内番号
+    重命名、各自归档到 已整理/番号 剧名/，广告与未识别内容随壳进冗余。
+    此前这种文件夹整体保留，捆绑的 fit-008ch.mp4 从未被重命名。"""
+    conn = _sweep_db(monkeypatch, movies=[("FIT-008", "初撮り"),
+                                          ("FNS-248", "不倫")])
+    try:
+        fake = _FakeSweepClient({
+            400: [
+                {"n": "fit-008ch.mp4", "fid": 401, "s": 2 * GIB, "fc": "1"},
+                {"n": "FNS-248 不倫中で.mp4", "fid": 402, "s": 2 * GIB,
+                 "fc": "1"},
+                {"n": "宣传.url", "fid": 403, "s": 64, "fc": "1"},
+            ],
+        })
+        monkeypatch.setattr(p115, "_fs_page", lambda c, cid, off, limit=100:
+                            (fake.listings.get(cid, []), True))
+        table = {"已整理": 10, "已整理/FIT-008 初撮り": 41,
+                 "已整理/FNS-248 不倫": 42}
+        monkeypatch.setattr(p115, "resolve_dir", lambda c, p: table[str(p)])
+        stats = {"organized": 0, "rejected": 0}
+        p115._sweep_folder(conn, fake, 400, "FNS-248 不倫中で…", 10, 20,
+                           0, stats, target_path="已整理")
+        # both bundled features renamed via their OWN library entries
+        assert fake.renames == [(401, "FIT-008 初撮り.mp4"),
+                                (402, "FNS-248 不倫.mp4")]
+        assert (401, 41) in fake.moves and (402, 42) in fake.moves
+        # ads + shell travel to reject as ONE folder
+        assert [f for f, t in fake.moves if t == 20] == [400]
+        assert stats == {"organized": 2, "rejected": 1}
+    finally:
+        conn.close()
+
+
+def test_sweep_folder_intact_no_double_nesting(monkeypatch):
+    """多分段文件夹整体保留时直接落在 已整理/<目录名>/ 下——移进同名子
+    目录曾造成 已整理/X/X/… 的双层嵌套。"""
+    conn = _sweep_db(monkeypatch, movies=[("MIDA-790", "下海")])
+    try:
+        fake = _FakeSweepClient({
+            500: [
+                {"n": "MIDA-790 CD1.mp4", "fid": 501, "s": 4 * GIB, "fc": "1"},
+                {"n": "MIDA-790 CD2.mp4", "fid": 502, "s": 4 * GIB, "fc": "1"},
+            ],
+        })
+        monkeypatch.setattr(p115, "_fs_page", lambda c, cid, off, limit=100:
+                            (fake.listings.get(cid, []), True))
+        # any resolve_dir call for a per-movie path would mean double nesting
+        monkeypatch.setattr(p115, "resolve_dir",
+                            lambda c, p: (_ for _ in ()).throw(
+                                AssertionError(f"unexpected nested: {p}")))
+        stats = {"organized": 0, "rejected": 0}
+        p115._sweep_folder(conn, fake, 500, "MIDA-790ch", 10, 20, 0, stats,
+                           target_path="已整理")
+        assert fake.moves == [(500, 10)]  # straight under the target root
+        assert stats == {"organized": 1, "rejected": 0}
+    finally:
+        conn.close()
+
+
 def test_sweep_folder_prefers_largest(monkeypatch):
     conn = _sweep_db(monkeypatch, movies=[("AAA-100", "大片")])
     try:
