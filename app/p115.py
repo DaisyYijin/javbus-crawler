@@ -416,7 +416,9 @@ def del_tasks(info_hashes: list[str]) -> int:
     c = get_client()
     if not c:
         raise RuntimeError("115 未登录")
-    hashes = [h.strip().upper() for h in info_hashes if h and h.strip()]
+    # 115's task_del is CASE-SENSITIVE and the list returns lowercase
+    # info_hash — upper-case hashes (what the UI shows) silently no-op
+    hashes = [h.strip().lower() for h in info_hashes if h and h.strip()]
     if not hashes:
         return 0
     deleted = 0
