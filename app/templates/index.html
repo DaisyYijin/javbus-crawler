@@ -1737,13 +1737,18 @@ async function loadDirLevel() {
     if (!j.ok) { $('dpicker-list').innerHTML = `<div class="hint" style="padding:12px;color:var(--err)">✗ ${esc(j.error || '加载失败')}</div>`; return; }
     $('dpicker-list').innerHTML = (j.dirs || []).length
       ? (j.dirs || []).map(d =>
-          `<div class="dpicker-item" data-fid="${d.fid}" data-name="${esc(d.name)}" onclick="enterDirLevel(this)">${DIR_SVG}${esc(d.name)}</div>`).join('')
+          `<div class="dpicker-item" data-fid="${d.fid}" data-name="${esc(d.name)}" onclick="enterDirLevel(this)" ondblclick="pickThisDir(this)" title="单击进入 · 双击直接选用">${DIR_SVG}${esc(d.name)}</div>`).join('')
+        + '<div class="hint" style="padding:8px 10px 2px;margin:0">单击进入目录 · 双击直接选用该目录</div>'
       : '<div class="hint" style="padding:12px">没有子目录，可直接点「选择此目录」</div>';
   } catch (e) { $('dpicker-list').innerHTML = `<div class="hint" style="padding:12px;color:var(--err)">✗ ${esc(e.message)}</div>`; }
 }
 function enterDirLevel(el) {
   dirPicker.stack.push({ name: el.dataset.name, fid: +el.dataset.fid });
   loadDirLevel();
+}
+function pickThisDir(el) {
+  dirPicker.stack.push({ name: el.dataset.name, fid: +el.dataset.fid });
+  confirmDirPicker();
 }
 function jumpDirLevel(i) {
   if (i === dirPicker.stack.length - 1) return;

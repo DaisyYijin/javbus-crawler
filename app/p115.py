@@ -147,11 +147,10 @@ def logout() -> None:
 _user_cache: dict | None = None
 _user_cache_at: float = 0.0
 _USER_CACHE_TTL = 300  # seconds; usage numbers go stale as tasks download
-_user_diag_logged = False
 
 
 def status() -> dict:
-    global _user_cache, _user_cache_at, _user_diag_logged
+    global _user_cache, _user_cache_at
     if not HAS_P115:
         return {"available": False, "logged_in": False}
     if _user_cache is not None and time.time() - _user_cache_at < _USER_CACHE_TTL:
@@ -159,44 +158,49 @@ def status() -> dict:
     c = get_client()
     if not c:
         return {"available": True, "logged_in": False}
+    # user_info4 = webapi.115.com/user/info: the FULL profile (user_pic,
+    # vip_end_time, space_info, and the name is "username" not "user_name")
+    # with fields at the TOP level; the proapi user_info carries almost
+    # none of these — only use it as a fallback
+    data: dict = {}
     try:
-        data = check_response(c.user_info(timeout=_TIMEOUT))["data"]
-        auth = _load_auth() or {}
-        if not _user_diag_logged:
-            _user_diag_logged = True
-            try:
-                log.info("115 user_info 字段: %s", ",".join(sorted(data.keys()))[:300])
-            except Exception:
-                pass
-        # capacity lives in files/index_info, not user_info
-        total = used = 0
+        resp = check_response(c.user_info4(timeout=_TIMEOUT))
+        data = resp.get("data") if isinstance(resp.get("data"), dict) else resp
+    except Exception as exc:
+        log.warning("115 完整用户信息获取失败，改用精简接口: %s", exc)
+    if not data.get("user_pic") and not data.get("username") and not data.get("user_name"):
+        try:
+            data = check_response(c.user_info(timeout=_TIMEOUT))["data"] or data
+        except Exception as exc:
+            log.warning("115 用户信息获取失败: %s", exc)
+            return {"available": True, "logged_in": False}
+    auth = _load_auth() or {}
+    space = data.get("space_info") or {}
+    total = int(space.get("total_size") or 0)
+    used = int(space.get("use_size") or space.get("used_size") or 0)
+    if not total:
         try:
             si = check_response(c.fs_index_info(timeout=_TIMEOUT)).get("data") or {}
-            space = si.get("space_info") or {}
-            total = int(space.get("total_size") or 0)
-            used = int(space.get("use_size") or space.get("used_size") or 0)
+            sp = si.get("space_info") or {}
+            total = int(sp.get("total_size") or 0)
+            used = int(sp.get("use_size") or sp.get("used_size") or 0)
         except Exception as exc:
             log.warning("115 容量信息获取失败: %s", exc)
-        _user_cache = {
-            "available": True, "logged_in": True,
-            "user": data.get("user_name"),
-            "user_id": str(data.get("user_id", "")),
-            "device": auth.get("app", ""),
-            "icon": (data.get("user_pic") or data.get("icon")
-                     or data.get("head_img_url") or ""),
-            "total_size": total,
-            "used_size": used,
-            "vip_end": int(data.get("vip_end_time") or 0),
-            # full user_info payload: the frontend heuristically picks the
-            # avatar / vip fields (names vary across 115 api generations)
-            # and can show everything in a collapsible raw panel
-            "raw": data,
-        }
-        _user_cache_at = time.time()
-        return _user_cache
-    except Exception as exc:
-        log.warning("115 用户信息获取失败: %s", exc)
-        return {"available": True, "logged_in": False}
+    _user_cache = {
+        "available": True, "logged_in": True,
+        "user": data.get("user_name") or data.get("username"),
+        "user_id": str(data.get("user_id", "")),
+        "device": auth.get("app", ""),
+        "icon": (data.get("user_pic") or data.get("icon")
+                 or data.get("head_img_url") or ""),
+        "total_size": total,
+        "used_size": used,
+        "vip_end": int(data.get("vip_end_time") or 0),
+        # full payload for the frontend's heuristic avatar/vip picking
+        "raw": data,
+    }
+    _user_cache_at = time.time()
+    return _user_cache
 
 
 # ------------------------------------------------------------- qr login ----
@@ -477,7 +481,7 @@ def _find_dir(c, name: str, pid: int = 0) -> int | None:
         items, done = _fs_page(c, pid, offset)
         for item in items:
             if item.get("n") == name:
-                fid = _dir_id(item)
+                fid = _dir_id(item, pid)
                 if fid is not None:
                     return fid
         if done:
@@ -511,21 +515,26 @@ def resolve_dir(c, name: str) -> int:
     return cid
 
 
-def _dir_id(item: dict) -> int | None:
+def _dir_id(item: dict, cwd: int = -1) -> int | None:
     """Directory id of a listing entry, or None when not usable.
 
-    Web-shaped entries carry the dir id in BOTH fid and cid (equal for
-    folders); bare-list shapes may only have cid.
+    Web-shaped entries carry the dir id in fid; bare-list shapes may only
+    have cid — but entries whose resolved id equals the CURRENT folder are
+    self-references (the folder itself), never navigable children.
     """
     if "fc" in item and str(item.get("fc")) != "0":
         return None
     for k in ("fid", "cid", "file_id", "id"):
         v = item.get(k)
-        if v is not None:
-            try:
-                return int(v)
-            except (TypeError, ValueError):
-                return None
+        if v is None:
+            continue
+        try:
+            fid = int(v)
+        except (TypeError, ValueError):
+            return None
+        if fid != cwd:
+            return fid
+        # equal to cwd: fall through to the next candidate field
     return None
 
 
@@ -542,7 +551,7 @@ def list_dirs(cid: int = 0) -> list[dict]:
         if not sample:
             sample = items[:2]
         for item in items:
-            fid = _dir_id(item)
+            fid = _dir_id(item, cid)
             if fid is None:
                 continue
             out.append({"fid": fid, "name": item.get("n") or ""})
