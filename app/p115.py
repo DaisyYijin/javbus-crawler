@@ -903,6 +903,13 @@ def list_dirs(cid: int = 0) -> list[dict]:
     return out
 
 
+def _to_int(v, default: int = 0) -> int:
+    try:
+        return int(v)
+    except (TypeError, ValueError):
+        return default
+
+
 def list_files(cid: int = 0, path: str = "") -> dict:
     """List files (not dirs) inside a 115 folder.
 
@@ -936,8 +943,8 @@ def list_files(cid: int = 0, path: str = "") -> dict:
             files.append({
                 "fid": str(item.get("fid") or item.get("file_id") or item.get("id") or ""),
                 "name": item.get("n") or "",
-                "size": int(item.get("s") or 0),
-                "t": int(item.get("t") or 0),
+                "size": _to_int(item.get("s")),
+                "t": _to_int(item.get("t")),
             })
         if done:
             break

@@ -353,3 +353,20 @@ def test_list_files_requires_auth(monkeypatch):
         raise AssertionError("should have raised")
     except RuntimeError as exc:
         assert "未登录" in str(exc)
+
+
+def test_list_files_tolerates_string_timestamps(monkeypatch):
+    def fake_page(c, cid, offset, limit=100):
+        return [
+            {"n": "a.mp4", "fid": 1, "s": "1024", "t": "2026-09-20 16:32",
+             "fc": "1"},
+            {"n": "b.mp4", "fid": 2, "s": 2048, "t": 123, "fc": "1"},
+        ], True
+
+    monkeypatch.setattr(p115, "get_client", lambda refresh=False: object())
+    monkeypatch.setattr(p115, "_fs_page", fake_page)
+    out = p115.list_files(7)
+    assert out["files"] == [
+        {"fid": "2", "name": "b.mp4", "size": 2048, "t": 123},
+        {"fid": "1", "name": "a.mp4", "size": 1024, "t": 0},
+    ]
