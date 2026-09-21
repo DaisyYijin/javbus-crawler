@@ -60,6 +60,22 @@ def test_tag_filter_mode_legacy_migration():
         settings.save({"TAG_FILTER_MODE": "weird"})
 
 
+def test_dl_interval_minutes_to_seconds_migration():
+    """v0.10.72 把串行间隔从分钟改成秒：磁盘上的旧键按 ×60 换算带入。"""
+    import json as _json
+    import time as _time
+
+    settings.save({"P115_DL_INTERVAL_SEC": 0})  # ensure the file exists
+    with open(settings.CONFIG_PATH, "r", encoding="utf-8") as fh:
+        stored = _json.load(fh)
+    stored.pop("P115_DL_INTERVAL_SEC", None)
+    stored["P115_DL_INTERVAL_MIN"] = 2  # legacy key from pre-0.10.72
+    _time.sleep(0.02)  # ensure a distinguishable mtime
+    with open(settings.CONFIG_PATH, "w", encoding="utf-8") as fh:
+        _json.dump(stored, fh)
+    assert settings.load()["P115_DL_INTERVAL_SEC"] == 120
+
+
 @pytest.mark.parametrize("key,value", [
     ("DELAY_SECONDS", -1),
     ("JITTER_SECONDS", -0.5),

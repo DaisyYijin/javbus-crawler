@@ -335,7 +335,7 @@ def test_auto_download_waits_serial_interval(monkeypatch):
     monkeypatch.setattr(p115, "add_magnet", lambda link: calls.append(link))
     monkeypatch.setattr(p115, "track_add", lambda *a: None)
     mv = _movie("FIT-009", [Magnet(link="magnet:?xt=urn:btih:X", name="n")])
-    cfg = {"AUTO_DOWNLOAD": True, "P115_DL_INTERVAL_MIN": 30}
+    cfg = {"AUTO_DOWNLOAD": True, "P115_DL_INTERVAL_SEC": 1800}
     crawler.auto_download(cfg, mv)
     assert calls == []  # last movie landed a minute ago: still cooling down
     monkeypatch.setattr(p115, "last_release_at", lambda: int(time.time()) - 3600)
@@ -524,7 +524,7 @@ def test_auto_download_reports_status(monkeypatch):
     monkeypatch.setattr(p115, "track_records", lambda: {})
     monkeypatch.setattr(p115, "last_release_at", lambda: int(time_mod.time()))
     assert crawler.auto_download(
-        {"AUTO_DOWNLOAD": True, "P115_DL_INTERVAL_MIN": 30}, mv) == "cooldown"
+        {"AUTO_DOWNLOAD": True, "P115_DL_INTERVAL_SEC": 30}, mv) == "cooldown"
 
     monkeypatch.setattr(p115, "gaveup_codes", lambda: {"FIT-008"})
     assert crawler.auto_download({"AUTO_DOWNLOAD": True}, mv) == "skip"
@@ -555,8 +555,44 @@ def test_serial_settle_returns_after_double_confirm(monkeypatch):
     monkeypatch.setattr(p115, "gaveup_codes", lambda: set())
     monkeypatch.setattr(p115, "last_release_at", lambda: 0)
     monkeypatch.setattr(crawler, "_SERIAL_POLL_S", 0)
-    crawler._serial_settle({"P115_DL_INTERVAL_MIN": 0}, "FIT-008")
+    crawler._serial_settle({"P115_DL_INTERVAL_SEC": 0}, "FIT-008")
     assert len(seq) == 1  # settled exactly at the second clean poll
+
+
+def test_serial_settle_waits_for_done_marker(monkeypatch):
+    """watch_pass 因任务从 115 列表消失而放行槽位时，记录没了但整理从未
+    发生：必须继续等（等记录回来或等 gaveup 终止标记），不能误报「整理
+    刚完成」就直接采集下一部。"""
+    from app import p115
+
+    seq = [{"IH1": {"code": "FIT-008"}},   # poll 1: tracked
+           {},                              # poll 2: gone once
+           {},                              # poll 3: gone twice, no done -> wait
+           {},                              # poll 4: still no proof -> wait
+           {},                              # poll 5: gaveup marker -> release
+           {}]                              # must never be reached
+    monkeypatch.setattr(p115, "track_records", lambda: seq.pop(0))
+    monkeypatch.setattr(p115, "gaveup_codes",
+                        lambda: set() if len(seq) > 1 else {"FIT-008"})
+    monkeypatch.setattr(p115, "is_done", lambda ih: False)
+    monkeypatch.setattr(crawler, "_SERIAL_POLL_S", 0)
+    crawler._serial_settle(
+        {"P115_DL_INTERVAL_SEC": 0, "P115_AUTO_ORGANIZE": True}, "FIT-008")
+    assert len(seq) == 1  # held until the gaveup marker showed up
+
+
+def test_serial_settle_done_marker_releases(monkeypatch):
+    """整理真实落库后（p115:done 已打标），双确认消失即放行。"""
+    from app import p115
+
+    seq = [{"IH1": {"code": "FIT-008"}}, {}, {}]
+    monkeypatch.setattr(p115, "track_records", lambda: seq.pop(0))
+    monkeypatch.setattr(p115, "gaveup_codes", lambda: set())
+    monkeypatch.setattr(p115, "is_done", lambda ih: ih == "IH1")
+    monkeypatch.setattr(crawler, "_SERIAL_POLL_S", 0)
+    crawler._serial_settle(
+        {"P115_DL_INTERVAL_SEC": 0, "P115_AUTO_ORGANIZE": True}, "FIT-008")
+    assert len(seq) == 0  # released at the second clean poll, proof exists
 
 
 def test_serial_settle_stop_request(monkeypatch):
@@ -618,7 +654,7 @@ def test_serial_settle_resubmits_when_slot_frees(monkeypatch, tmp_path):
 
     monkeypatch.setattr(crawler, "auto_download", fake_auto)
     crawler._serial_settle(
-        {"DB_PATH": db_path, "P115_DL_INTERVAL_MIN": 0}, "FIT-008")
+        {"DB_PATH": db_path, "P115_DL_INTERVAL_SEC": 0}, "FIT-008")
     assert resub == ["FIT-008"]  # resubmitted from the rebuilt DB record
     assert len(seq) == 1  # settled at the second clean poll; sentinel intact
 

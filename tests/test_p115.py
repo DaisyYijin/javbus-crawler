@@ -376,6 +376,48 @@ def test_watch_pass_finished_no_auto_organize_frees_slot(monkeypatch):
         p115.track_del("FINI02")
 
 
+def test_watch_pass_vanished_fresh_task_keeps_slot(monkeypatch):
+    """刚提交的任务还没出现在 115 任务列表（API 传播延迟）：宽限期内不得
+    释放记录，否则串行等待会误报「整理刚完成」而目录里什么都没有。"""
+    from app import db, settings
+    db.connect(settings.load()["DB_PATH"]).close()
+    p115.track_add("AAA-100", "VANISH1", "magnet:?xt=urn:btih:vanish1", "t.mp4")
+    monkeypatch.setattr(p115, "has_auth", lambda: True)
+    monkeypatch.setattr(p115, "get_client", lambda refresh=False:
+                        _FakeWatchClient([]))  # task list is empty
+    stats = p115.watch_pass()
+    assert stats["checked"] == 1
+    assert set(p115.track_records()) == {"VANISH1"}  # grace window: kept
+    p115.track_del("VANISH1")
+
+
+def test_watch_pass_vanished_old_task_releases_with_gaveup(monkeypatch):
+    """超过宽限期任务仍不在列表（被手动删除或被 115 拒绝）：释放槽位并写
+    gaveup 终止标记，串行等待才能及时感知并退出。"""
+    import time as _time
+
+    from app import db, settings
+    db.connect(settings.load()["DB_PATH"]).close()
+    p115.track_add("AAA-100", "VANISH2", "magnet:?xt=urn:btih:vanish2", "t.mp4")
+    p115._track_update("VANISH2",
+                       submitted_at=int(_time.time()) - 3600)  # past grace
+    monkeypatch.setattr(p115, "has_auth", lambda: True)
+    monkeypatch.setattr(p115, "get_client", lambda refresh=False:
+                        _FakeWatchClient([]))
+    stats = p115.watch_pass()
+    assert stats["checked"] == 1
+    assert p115.track_records() == {}  # slot released
+    assert p115.gaveup_codes() == {"AAA-100"}  # termination marker for settle
+    import sqlite3
+
+    conn = sqlite3.connect(settings.load()["DB_PATH"], timeout=10)
+    try:
+        conn.execute("DELETE FROM meta WHERE key = ?", ("p115:gaveup:VANISH2",))
+        conn.commit()
+    finally:
+        conn.close()
+
+
 def test_gaveup_codes_and_done_mark_release_slot(monkeypatch):
     import json as _json
     import sqlite3

@@ -45,7 +45,7 @@ DEFAULTS: dict = {
     "P115_DL_STALL_MIN": 30,          # minutes without progress -> swap magnet
     "P115_DL_MAX_MIN": 120,           # total minutes per magnet -> swap (0 = no cap)
     "P115_DL_MAX_RETRIES": 3,         # magnet swaps before giving up
-    "P115_DL_INTERVAL_MIN": 0,        # cooldown minutes between movies (0 = off)
+    "P115_DL_INTERVAL_SEC": 0,        # cooldown seconds between movies (0 = off)
 }
 
 # Types allowed per key, for validation on save.
@@ -78,7 +78,7 @@ _TYPES = {
     "P115_DL_STALL_MIN": int,
     "P115_DL_MAX_MIN": int,
     "P115_DL_MAX_RETRIES": int,
-    "P115_DL_INTERVAL_MIN": int,
+    "P115_DL_INTERVAL_SEC": int,
 }
 
 _lock = threading.RLock()  # reentrant: save() holds it and calls load()
@@ -122,6 +122,15 @@ def _read_config_file() -> dict:
                 for key in DEFAULTS:
                     if key in stored:
                         cfg[key] = stored[key]
+                # one-shot migration: the serial cooldown moved from minutes
+                # to seconds in v0.10.72; carry the old value over scaled
+                if ("P115_DL_INTERVAL_SEC" not in stored
+                        and "P115_DL_INTERVAL_MIN" in stored):
+                    try:
+                        cfg["P115_DL_INTERVAL_SEC"] = \
+                            max(0, int(stored["P115_DL_INTERVAL_MIN"])) * 60
+                    except (TypeError, ValueError):
+                        pass
         except (OSError, ValueError) as exc:
             log = logging.getLogger(__name__)
             log.error("配置文件损坏，已回退默认值（原文件已备份为 config.json.bak）: %s", exc)

@@ -513,6 +513,7 @@ def del_tasks(info_hashes: list[str], *, purge_files: bool = False) -> int:
 # -------------------------------------------------------- download watch ----
 _TRACK_PREFIX = "p115:track:"
 _LAST_RELEASE_KEY = "p115:last_release_at"
+_VANISH_GRACE_S = 180  # fresh submissions may lag behind the 115 task list
 
 _EXT_STRIP_RE = re.compile(
     r"\.(?:MP4|MKV|AVI|WMV|MOV|TS|M2TS|M2V|ISO|RMVB|RM|FLV|MPG|MPG4|DIVX|H264|SRT|ASS|JPG|PNG|NFO|TXT|URL|HTML?)$", re.I)
@@ -693,6 +694,40 @@ def gaveup_codes() -> set[str]:
     return out
 
 
+def is_done(info_hash: str) -> bool:
+    """True when the organize pass stamped p115:done for this download.
+
+    The marker is only written after the file actually landed in the
+    library (or organize gave up on a poison task), so the serial gate
+    can use it as proof of a real organize — a track record merely
+    disappearing is not proof (watch_pass releases the slot when a task
+    falls out of the 115 list too).
+    """
+    conn = sqlite3.connect(settings.load()["DB_PATH"], timeout=10)
+    try:
+        return bool(db_get_meta(conn, f"p115:done:{(info_hash or '').upper()}"))
+    finally:
+        conn.close()
+
+
+def vanish_release(ih: str, code: str) -> None:
+    """Task gone from the 115 list past the grace window: free the slot
+    and stamp a gaveup marker so the serial gate stops waiting on it."""
+    track_del(ih)
+    conn = sqlite3.connect(settings.load()["DB_PATH"], timeout=10)
+    try:
+        conn.execute("INSERT OR REPLACE INTO meta(key, value) VALUES (?, ?)",
+                     (f"p115:gaveup:{ih}", json.dumps(
+                         {"code": code,
+                          "reason": "任务从115任务列表消失（被手动删除或被115拒绝）",
+                          "at": int(time.time())}, ensure_ascii=False)))
+        conn.commit()
+    finally:
+        conn.close()
+    log.warning("115 任务 %s（%.8s）已从任务列表消失，停止跟踪并放行串行槽",
+                code or "?", ih)
+
+
 def magnet_candidates(code: str, exclude: set[str]) -> dict | None:
     """Best remaining magnet for a code, skipping already-tried hashes.
 
@@ -816,8 +851,14 @@ def watch_pass() -> dict:
     for ih, rec in recs.items():
         stats["checked"] += 1
         t = tasks.get(ih)
-        if not t:  # vanished from the list (cleared manually) -> stop tracking
-            track_del(ih)
+        if not t:
+            # Not in the 115 task list. A fresh submission can lag behind
+            # this API by minutes, so releasing a young record on a single
+            # miss made the serial gate believe the movie was already
+            # organized ("整理刚完成") while nothing had landed at all.
+            if now - int(rec.get("submitted_at") or now) < _VANISH_GRACE_S:
+                continue  # inside the grace window: keep watching it
+            vanish_release(ih, str(rec.get("code") or ""))
             continue
         try:
             status = int(t.get("status"))

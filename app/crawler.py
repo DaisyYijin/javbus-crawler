@@ -411,13 +411,13 @@ def auto_download(cfg: dict, movie) -> str:
             log.info("%s: 上一个云下载还未完成整理，稍后自动提交（串行）",
                      movie.code)
             return "busy"
-        interval = max(0, int(cfg.get("P115_DL_INTERVAL_MIN", 0))) * 60
+        interval = max(0, int(cfg.get("P115_DL_INTERVAL_SEC", 0)))
         if interval:  # cooldown after the last movie landed in the library
             wait = interval - (int(time.time()) - p115.last_release_at())
             if wait > 0:
                 _queued_update(cfg, movie.code, True)
-                log.info("%s: 上一部整理完成后冷却中，约 %d 分钟后自动提交（串行间隔）",
-                         movie.code, wait // 60 + 1)
+                log.info("%s: 上一部整理完成后冷却中，约 %d 秒后自动提交（串行间隔）",
+                         movie.code, wait)
                 return "cooldown"
         if movie.code in p115.gaveup_codes():
             _queued_update(cfg, movie.code, False)  # dead magnets: stop retrying
@@ -485,34 +485,47 @@ def _serial_settle(cfg: dict, code: str, stop_check=None) -> None:
     seen = False      # our code entered the pipeline at least once
     gone = 0          # consecutive polls with the record absent (after seen)
     attempts = 0      # consecutive failed (re)submits in the free-slot branch
+    ih_last = ""      # our code's last known info_hash (done-marker lookup)
     last = ""
     while time.time() < deadline:
         if stop_check is not None and stop_check():
             raise StopRequested()
         recs = p115.track_records()
         state = ""
-        if any(r.get("code") == code for r in recs.values()):
+        mine = {k: r for k, r in recs.items() if r.get("code") == code}
+        if mine:
             seen = True
             gone = 0
+            ih_last = next(iter(mine))
             state = "云下载/整理进行中"
         elif seen:
-            # the record left the pipeline — but _swap_magnet briefly deletes
-            # then re-adds it while switching magnets, so require two clean
-            # polls before declaring the pipeline done with this code
+            # The record left the pipeline. _swap_magnet briefly deletes then
+            # re-adds it while switching magnets, so require two clean polls;
+            # and a vanished record only counts as organized once p115:done
+            # exists — watch_pass may have released the slot because the task
+            # fell out of the 115 list, which is no proof anything landed.
             gone += 1
-            if gone >= 2:
+            if gone < 2:
+                state = "整理刚完成，确认槽位释放"
+            elif code in p115.gaveup_codes():
+                log.warning("%s: 下载任务已终止（磁力全部失败或任务被移除），"
+                            "继续采集下一部", code)
                 return
-            state = "整理刚完成，确认槽位释放"
+            elif cfg.get("P115_AUTO_ORGANIZE") and ih_last \
+                    and not p115.is_done(ih_last):
+                state = "任务记录消失但未见整理完成，继续等待"
+            else:
+                return
         elif code in p115.gaveup_codes():
             log.info("%s: 磁力全部失败，继续采集下一部", code)
             return
         elif recs:
             state = "串行槽被其他下载占用"
         else:
-            interval = max(0, int(cfg.get("P115_DL_INTERVAL_MIN", 0))) * 60
+            interval = max(0, int(cfg.get("P115_DL_INTERVAL_SEC", 0)))
             wait = interval - (int(time.time()) - p115.last_release_at())
             if wait > 0:
-                state = f"串行间隔冷却中（约 {wait // 60 + 1} 分钟）"
+                state = f"串行间隔冷却中（约 {wait} 秒）"
             else:
                 # slot free but our movie not tracked: the first
                 # auto_download hit busy/cooldown — submit the stored record
