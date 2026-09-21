@@ -548,19 +548,182 @@ def test_sweep_existing_end_to_end(monkeypatch):
         monkeypatch.setattr(p115, "get_client", lambda *a, **k: fake)
         monkeypatch.setattr(p115, "_fs_page", lambda c, cid, off, limit=100:
                             (fake.listings.get(cid, []), True))
-        cids = iter([900, 910, 920])  # download, target, reject
-        monkeypatch.setattr(p115, "resolve_dir", lambda c, p: next(cids))
+        # resolve_dir now answers nested per-movie paths too
+        table = {"待整理": 900, "已整理": 910, "冗余": 920,
+                 "已整理/MIDA-790 下海": 930}
+        monkeypatch.setattr(p115, "resolve_dir", lambda c, p: table[str(p)])
         stats = p115.sweep_existing(sleep_s=0)
         assert stats["errors"] == 0
         assert stats["organized"] == 1
+        assert stats["skipped"] == 0
         # png + emptied 901 shell + junk folder 902 + loose txt
         assert stats["rejected"] == 4
         assert fake.renames == [(911, "MIDA-790 下海.mp4")]
         assert sorted(f for f, t in fake.moves if t == 920) == \
             [901, 902, 903, 912]
-        assert (911, 910) in fake.moves
+        assert (911, 930) in fake.moves  # nested: 已整理/MIDA-790 下海/
         st = p115.sweep_status()
         assert st["running"] is False
         assert st["result"]["organized"] == 1
+    finally:
+        conn.close()
+
+
+def test_sweep_folder_nested_target(monkeypatch):
+    conn = _sweep_db(monkeypatch, movies=[("MIDA-790", "下海")])
+    try:
+        fake = _FakeSweepClient({
+            100: [{"n": "MIDA-790.mp4", "fid": 101, "s": 2 * GIB, "fc": "1"}],
+        })
+        monkeypatch.setattr(p115, "_fs_page", lambda c, cid, off, limit=100:
+                            (fake.listings.get(cid, []), True))
+        table = {"已整理": 10, "已整理/MIDA-790 下海": 55}
+        monkeypatch.setattr(p115, "resolve_dir", lambda c, p: table[str(p)])
+        stats = {"organized": 0, "rejected": 0, "skipped": 0}
+        handled = p115._sweep_folder(conn, fake, 100, "MIDA-790ch", 10, 20,
+                                     0, stats, target_path="已整理",
+                                     prefer_name="MIDA-790 下海")
+        assert handled is True
+        # feature renamed and nested under 已整理/MIDA-790 下海/
+        assert fake.renames == [(101, "MIDA-790 下海.mp4")]
+        assert (101, 55) in fake.moves
+        assert (100, 20) in fake.moves  # emptied shell -> reject
+        assert stats == {"organized": 1, "rejected": 1, "skipped": 0}
+    finally:
+        conn.close()
+
+
+def test_sweep_file_nested_target(monkeypatch):
+    conn = _sweep_db(monkeypatch)
+    try:
+        fake = _FakeSweepClient({})
+        monkeypatch.setattr(p115, "resolve_dir", lambda c, p: 555)
+        stats = {"organized": 0, "rejected": 0}
+        handled = p115._sweep_file(conn, fake, 6, "MIDA-790.mp4", 2 * GIB,
+                                   10, 20, stats, target_path="已整理",
+                                   prefer_name="MIDA-790 下海")
+        assert handled is True
+        assert fake.renames == [(6, "MIDA-790 下海.mp4")]
+        assert fake.moves == [(6, 555)]  # 已整理/MIDA-790 下海/
+        assert stats["organized"] == 1
+    finally:
+        conn.close()
+
+
+def test_sweep_folder_empty_listing_skipped(monkeypatch):
+    conn = _sweep_db(monkeypatch)
+    try:
+        fake = _FakeSweepClient({})  # every listing comes back empty
+        monkeypatch.setattr(p115, "_fs_page", lambda c, cid, off, limit=100:
+                            (fake.listings.get(cid, []), True))
+        stats = {"organized": 0, "rejected": 0}
+        handled = p115._sweep_folder(conn, fake, 400, "受限目录", 10, 20,
+                                     0, stats)
+        # throttled listing: no decision made, item retried on a later pass
+        assert handled is False
+        assert stats == {"organized": 0, "rejected": 0, "skipped": 1}
+        assert fake.moves == []
+    finally:
+        conn.close()
+
+
+def test_sweep_folder_subdirs_all_empty_skipped(monkeypatch):
+    conn = _sweep_db(monkeypatch)
+    try:
+        # folder holding only subdirs whose listings came back empty
+        fake = _FakeSweepClient({
+            400: [{"n": "CD1", "cid": 401, "fc": "0"}],
+            401: [],
+        })
+        monkeypatch.setattr(p115, "_fs_page", lambda c, cid, off, limit=100:
+                            (fake.listings.get(cid, []), True))
+        stats = {"organized": 0, "rejected": 0}
+        handled = p115._sweep_folder(conn, fake, 400, "受限目录", 10, 20,
+                                     0, stats)
+        assert handled is False
+        assert stats == {"organized": 0, "rejected": 0, "skipped": 1}
+        assert fake.moves == []
+    finally:
+        conn.close()
+
+
+# ------------------------------------------- real-time organize (tasks) ----
+
+class _FakeOrgClient:
+    """fs_file info for the finished task + sweep listings underneath."""
+
+    def __init__(self, finfo, listings):
+        self.finfo = finfo
+        self.listings = listings
+        self.moves = []
+        self.renames = []
+
+    def fs_file(self, fid, timeout=None):
+        return {"state": True, "data": dict(self.finfo, fid=fid)}
+
+    def fs_move(self, fid, cid, timeout=None):
+        self.moves.append((int(fid), int(cid)))
+        return {"state": True}
+
+    def fs_rename(self, payload, timeout=None):
+        fid, name = payload
+        self.renames.append((int(fid), name))
+        return {"state": True}
+
+
+def test_organize_one_folder_delegates_and_marks_done(monkeypatch):
+    conn = _sweep_db(monkeypatch, movies=[("AAA-100", "标题Y")])
+    try:
+        conn.execute("INSERT OR REPLACE INTO magnets(hash, code, name) "
+                     "VALUES ('ih1', 'AAA-100', 'AAA-100.mp4')")
+        conn.commit()
+        # 150 MiB feature: above the 100 MiB organize floor, below the 1 GiB
+        # backfill threshold — proves organize uses its own lower bar
+        size = 150 * 1024 * 1024
+        fake = _FakeOrgClient(
+            {"file_name": "AAA-100ch", "fc": "0", "size": size},
+            {700: [{"n": "AAA-100.mp4", "fid": 701, "s": size, "fc": "1"}]})
+        monkeypatch.setattr(p115, "_pace_list", lambda sleep_s: None)
+        monkeypatch.setattr(p115, "_fs_page", lambda c, cid, off, limit=100:
+                            (fake.listings.get(cid, []), True))
+        table = {"已整理": 10, "冗余": 20, "已整理/AAA-100 标题Y": 66}
+        monkeypatch.setattr(p115, "resolve_dir", lambda c, p: table[str(p)])
+        stats = {"organized": 0, "rejected": 0, "skipped": 0}
+        p115._organize_one(conn, fake, {"file_id": 700, "name": "AAA-100ch"},
+                           "ih1", stats)
+        # nested per-movie dir: 已整理/AAA-100 标题Y/AAA-100 标题Y.mp4
+        assert fake.renames == [(701, "AAA-100 标题Y.mp4")]
+        assert (701, 66) in fake.moves
+        assert (700, 20) in fake.moves  # emptied shell -> reject
+        assert stats == {"organized": 1, "rejected": 1, "skipped": 0}
+        done = conn.execute("SELECT value FROM meta WHERE key = "
+                            "'p115:done:ih1'").fetchone()
+        assert done == ("1",)
+    finally:
+        conn.close()
+
+
+def test_organize_one_throttled_retries_without_done(monkeypatch):
+    conn = _sweep_db(monkeypatch, movies=[("AAA-100", "标题Y")])
+    try:
+        conn.execute("INSERT OR REPLACE INTO magnets(hash, code, name) "
+                     "VALUES ('ih2', 'AAA-100', 'AAA-100.mp4')")
+        conn.commit()
+        fake = _FakeOrgClient(
+            {"file_name": "AAA-100ch", "fc": "0", "size": 150 * 1024 * 1024},
+            {})  # every listing empty: 115 throttling
+        monkeypatch.setattr(p115, "_pace_list", lambda sleep_s: None)
+        monkeypatch.setattr(p115, "_fs_page", lambda c, cid, off, limit=100:
+                            (fake.listings.get(cid, []), True))
+        table = {"已整理": 10, "冗余": 20}
+        monkeypatch.setattr(p115, "resolve_dir", lambda c, p: table[str(p)])
+        stats = {"organized": 0, "rejected": 0}
+        p115._organize_one(conn, fake, {"file_id": 700, "name": "AAA-100ch"},
+                           "ih2", stats)
+        assert stats == {"organized": 0, "rejected": 0, "skipped": 1}
+        assert fake.moves == []  # nothing decided while throttled
+        done = conn.execute("SELECT value FROM meta WHERE key = "
+                            "'p115:done:ih2'").fetchone()
+        assert done is None  # not marked done: picked up again next pass
     finally:
         conn.close()
