@@ -370,3 +370,197 @@ def test_list_files_tolerates_string_timestamps(monkeypatch):
         {"fid": "2", "name": "b.mp4", "size": 2048, "t": 123},
         {"fid": "1", "name": "a.mp4", "size": 1024, "t": 0},
     ]
+
+
+# ---------------------------------------------------- sweep (backfill) ----
+
+GIB = 1024 * 1024 * 1024
+
+
+class _FakeSweepClient:
+    """fs_files listings per cid + records fs_move/fs_rename calls."""
+
+    def __init__(self, listings):
+        self.listings = listings
+        self.moves = []    # (fid, target_cid)
+        self.renames = []  # (fid, new_name)
+
+    def fs_move(self, fid, cid, timeout=None):
+        self.moves.append((int(fid), int(cid)))
+        return {"state": True}
+
+    def fs_rename(self, payload, timeout=None):
+        fid, name = payload
+        self.renames.append((int(fid), name))
+        return {"state": True}
+
+
+def _sweep_db(monkeypatch, movies=()):
+    """Test DB with tables set up, optional library rows; returns a conn."""
+    from app import db, settings
+    settings.save({"METATUBE_URL": "", "METATUBE_TOKEN": ""})
+    conn = db.connect(settings.load()["DB_PATH"])
+    for code, title in movies:
+        conn.execute("INSERT OR REPLACE INTO movies(code, url, title, "
+                     "first_seen, last_seen) VALUES (?, '', ?, '1', '1')",
+                     (code, title))
+    conn.commit()
+    return conn
+
+
+def test_looks_ad_padded_and_images():
+    # spaces between characters no longer dodge the keyword filter
+    assert p115.looks_ad("最 新 地 址 www.abc.xyz") is True
+    assert p115.looks_ad("每 日 更 新") is True
+    # promo images / posters are junk even without keywords
+    assert p115.looks_ad("poster.png") is True
+    assert p115.looks_ad("xxxx-剧照.jpg") is True
+    assert p115.looks_ad("封面.webp") is True
+    assert p115.looks_ad("BANK-248 1080p.mp4") is False  # videos stay legit
+
+
+def test_ext_of():
+    assert p115._ext_of("a.MP4") == ".mp4"
+    assert p115._ext_of("x.rmvb") == ".rmvb"
+    assert p115._ext_of("noext") == ""
+    assert p115._ext_of("a.abcdef") == ""  # too long to be an extension
+    assert p115._ext_of("") == ""
+
+
+def test_item_fid_reads_cid_for_dirs():
+    # fs_files lists dirs with "cid" (no "fid") and files with "fid"
+    assert p115._item_fid({"n": "dir", "cid": 2621499, "fc": "0"}) == 2621499
+    assert p115._item_fid({"n": "f.mp4", "fid": 111, "fc": "1"}) == 111
+    assert p115._item_fid({"n": "x"}) is None
+
+
+def test_sweep_file_feature_and_junk(monkeypatch):
+    conn = _sweep_db(monkeypatch)
+    try:
+        fake = _FakeSweepClient({})
+        stats = {"organized": 0, "rejected": 0}
+        # junk: ad image, non-video ext, sub-1GiB clip all go to reject
+        p115._sweep_file(conn, fake, 1, "广告.png", 10, 10, 20, stats)
+        p115._sweep_file(conn, fake, 2, "b.txt", 4096, 10, 20, stats)
+        p115._sweep_file(conn, fake, 3, "c.mp4", 1024 * 1024, 10, 20, stats)
+        assert fake.moves == [(1, 20), (2, 20), (3, 20)]
+        assert stats == {"organized": 0, "rejected": 3}
+        # library hit: renamed (spam stripped) then moved to target
+        conn.execute("INSERT OR REPLACE INTO movies(code, url, title, "
+                     "first_seen, last_seen) "
+                     "VALUES ('SSIS-100', '', '标题X', '1', '1')")
+        conn.commit()
+        p115._sweep_file(conn, fake, 4, "SSIS-100 [1080p].mp4", 2 * GIB,
+                         10, 20, stats)
+        assert fake.renames == [(4, "SSIS-100 标题X.mp4")]
+        assert fake.moves[-1] == (4, 10)
+        assert stats["organized"] == 1
+        # unknown big video without a library row: kept as-is -> target
+        p115._sweep_file(conn, fake, 5, "UNKNOWN-9.mp4", 2 * GIB,
+                         10, 20, stats)
+        assert fake.moves[-1] == (5, 10)
+        assert stats["organized"] == 2
+    finally:
+        conn.close()
+
+
+def test_sweep_folder_single_feature(monkeypatch):
+    conn = _sweep_db(monkeypatch, movies=[("MIDA-790", "下海")])
+    try:
+        fake = _FakeSweepClient({
+            100: [  # folder content: feature + ads + a subdir
+                {"n": "MIDA-790.mp4", "fid": 101, "s": 2 * GIB, "fc": "1"},
+                {"n": "广告.png", "fid": 102, "s": 2048, "fc": "1"},
+                {"n": "宣传.url", "fid": 103, "s": 128, "fc": "1"},
+                {"n": "CD1", "cid": 104, "fc": "0"},
+            ],
+            104: [{"n": "占位.txt", "fid": 105, "s": 8, "fc": "1"}],
+        })
+        monkeypatch.setattr(p115, "_fs_page", lambda c, cid, off, limit=100:
+                            (fake.listings.get(cid, []), True))
+        stats = {"organized": 0, "rejected": 0}
+        p115._sweep_folder(conn, fake, 100, "MIDA-790ch", 10, 20, 0, stats)
+        # feature renamed with the library title and moved to the target dir
+        assert fake.renames == [(101, "MIDA-790 下海.mp4")]
+        assert (101, 10) in fake.moves
+        # ads + junk + emptied subdir shell + the folder itself -> reject
+        assert sorted(f for f, t in fake.moves if t == 20) == \
+            [100, 102, 103, 104, 105]
+        assert stats == {"organized": 1, "rejected": 5}
+    finally:
+        conn.close()
+
+
+def test_sweep_folder_all_junk_to_reject(monkeypatch):
+    conn = _sweep_db(monkeypatch)
+    try:
+        fake = _FakeSweepClient({
+            200: [
+                {"n": "广告.png", "fid": 201, "s": 2048, "fc": "1"},
+                {"n": "www.spam.com.url", "fid": 202, "s": 64, "fc": "1"},
+            ],
+        })
+        monkeypatch.setattr(p115, "_fs_page", lambda c, cid, off, limit=100:
+                            (fake.listings.get(cid, []), True))
+        stats = {"organized": 0, "rejected": 0}
+        p115._sweep_folder(conn, fake, 200, "垃圾目录", 10, 20, 0, stats)
+        assert fake.moves == [(200, 20)]  # whole folder, nothing listed inside
+        assert stats == {"organized": 0, "rejected": 1}
+    finally:
+        conn.close()
+
+
+def test_sweep_folder_multi_code_kept_intact(monkeypatch):
+    conn = _sweep_db(monkeypatch)
+    try:
+        fake = _FakeSweepClient({
+            300: [
+                {"n": "AAA-100.mp4", "fid": 301, "s": 2 * GIB, "fc": "1"},
+                {"n": "BBB-200.mp4", "fid": 302, "s": 2 * GIB, "fc": "1"},
+            ],
+        })
+        monkeypatch.setattr(p115, "_fs_page", lambda c, cid, off, limit=100:
+                            (fake.listings.get(cid, []), True))
+        stats = {"organized": 0, "rejected": 0}
+        p115._sweep_folder(conn, fake, 300, "合集", 10, 20, 0, stats)
+        assert fake.moves == [(300, 10)]  # intact to target, nothing renamed
+        assert stats == {"organized": 1, "rejected": 0}
+    finally:
+        conn.close()
+
+
+def test_sweep_existing_end_to_end(monkeypatch):
+    conn = _sweep_db(monkeypatch, movies=[("mida-790", "下海")])  # lowercase row
+    try:
+        fake = _FakeSweepClient({
+            900: [
+                # library hit is case-insensitive (MIDA-790ch -> mida-790)
+                {"n": "MIDA-790ch", "cid": 901, "fc": "0"},
+                {"n": "垃圾合集", "cid": 902, "fc": "0"},
+                {"n": "推广.txt", "fid": 903, "s": 88, "fc": "1"},
+            ],
+            901: [
+                {"n": "MIDA-790.mp4", "fid": 911, "s": 2 * GIB, "fc": "1"},
+                {"n": "宣传图.png", "fid": 912, "s": 4096, "fc": "1"},
+            ],
+            902: [{"n": "www.spam.com.url", "fid": 913, "s": 64, "fc": "1"}],
+        })
+        monkeypatch.setattr(p115, "get_client", lambda *a, **k: fake)
+        monkeypatch.setattr(p115, "_fs_page", lambda c, cid, off, limit=100:
+                            (fake.listings.get(cid, []), True))
+        cids = iter([900, 910, 920])  # download, target, reject
+        monkeypatch.setattr(p115, "resolve_dir", lambda c, p: next(cids))
+        stats = p115.sweep_existing(sleep_s=0)
+        assert stats["errors"] == 0
+        assert stats["organized"] == 1
+        # png + emptied 901 shell + junk folder 902 + loose txt
+        assert stats["rejected"] == 4
+        assert fake.renames == [(911, "MIDA-790 下海.mp4")]
+        assert sorted(f for f, t in fake.moves if t == 920) == \
+            [901, 902, 903, 912]
+        assert (911, 910) in fake.moves
+        st = p115.sweep_status()
+        assert st["running"] is False
+        assert st["result"]["organized"] == 1
+    finally:
+        conn.close()

@@ -744,13 +744,16 @@ def watch_pass() -> dict:
 
 
 # ------------------------------------------------------------ organize ----
-_AD_EXTS = {".url", ".txt", ".htm", ".html", ".lnk", ".exe", ".apk", ".bat", ".cmd"}
+_AD_EXTS = {".url", ".txt", ".htm", ".html", ".lnk", ".exe", ".apk", ".bat", ".cmd",
+            ".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".ini", ".nfo"}
 _AD_PAT = re.compile(
-    r"广告|推广|宣传|官网|发布页|最新地址|永久地址|防失联|失联|地址发布|"
+    r"广告|推广|宣传|官网|发布页|最新地址|新地址|永久地址|备用地址|防失联|失联|地址发布|"
     r"电报|飞机群|telegram|t\.me|qq群|微信群|扫码|二维码|请访问|"
     r"www\.|https?://|\.(com|net|org|xyz|top|icu|cc|tv|info|club|site|shop|fun|online|vip)\b|"
     r"娱乐城|押注|六合彩|赌博|赌场|赌城|彩票|免费领|福利群|资源群|中文不卡|高清资源|必看|"
-    r"磁力|磁链|bt下载|bbs|论坛|导航站|搜索引擎|字幕网|每日更新|大更新", re.I)
+    r"磁力|磁链|bt下载|bbs|论坛|导航站|搜索引擎|字幕网|每日更新|大更新|"
+    r"永久域名|永久发布|免费观看|免费下载|免费看|在线看|手机看|app下载|收藏本站|"
+    r"公众号|威信|薇信|防迷路|请记住", re.I)
 
 
 def looks_ad(name: str) -> bool:
@@ -761,7 +764,12 @@ def looks_ad(name: str) -> bool:
     ext = n.rsplit(".", 1)
     if len(ext) == 2 and len(ext[1]) <= 5 and f".{ext[1].lower()}" in _AD_EXTS:
         return True
-    return bool(_AD_PAT.search(n))
+    if _AD_PAT.search(n):
+        return True
+    # spam often pads spaces between characters to dodge keyword filters;
+    # retry on the whitespace-squeezed variant ("最 新 地 址" etc.)
+    squeezed = re.sub(r"\s+", "", n)
+    return squeezed != n and bool(_AD_PAT.search(squeezed))
 
 
 def _fs_page(c, cid: int, offset: int, limit: int = 100) -> tuple[list, bool]:
@@ -1026,6 +1034,18 @@ def last_organize_result() -> dict | None:
         return None
 
 
+def _lookup_movie(conn, code: str | None):
+    """movies 表查询，容忍大小写差异（库内 'mida-790' vs 提取的 'MIDA-790'）。"""
+    if not code:
+        return None
+    row = conn.execute("SELECT code, title FROM movies WHERE code = ?",
+                       (code,)).fetchone()
+    if not row:
+        row = conn.execute("SELECT code, title FROM movies WHERE UPPER(code) = ?",
+                           (code,)).fetchone()
+    return row
+
+
 def _organize_one(conn, c, task: dict, info_hash: str, stats: dict) -> None:
     cfg = settings.load()
     fid = task.get("file_id") or task.get("delete_file_id")
@@ -1036,10 +1056,7 @@ def _organize_one(conn, c, task: dict, info_hash: str, stats: dict) -> None:
         # hash lookup missed (magnet rescraped / entry purged): fall back to
         # pulling the code out of the task name — covers variants like
         # 'aaa-100-ch xxx.mp4' — then verify it against our library
-        guessed = extract_code(task.get("name"))
-        if guessed:
-            row = conn.execute("SELECT code, title FROM movies WHERE code = ?",
-                               (guessed,)).fetchone()
+        row = _lookup_movie(conn, extract_code(task.get("name")))
     if not fid:
         pass  # nothing to act on; only mark done
     elif row:
@@ -1082,3 +1099,243 @@ def _organize_one(conn, c, task: dict, info_hash: str, stats: dict) -> None:
     conn.execute("INSERT OR REPLACE INTO meta(key, value) VALUES (?, '1')",
                  (f"p115:done:{info_hash}",))
     conn.commit()
+
+
+# ------------------------------------------------------ sweep (backfill) ----
+_VIDEO_EXTS = {".mp4", ".mkv", ".wmv", ".avi", ".rmvb", ".rm", ".ts", ".m2ts",
+               ".mov", ".flv", ".webm", ".mpg", ".mpeg", ".vob", ".iso"}
+_MAIN_MIN_SIZE = 1024 * 1024 * 1024  # 1 GiB: feature film threshold
+_SWEEP_LIST_GAP = 55.0               # 115 fs_files throttled to ~1 req/min
+_sweep_state = {"running": False, "started_at": 0, "finished_at": 0}
+_sweep_last_list = 0.0
+
+
+def _pace_list(sleep_s: float) -> None:
+    """Space out fs_files listings: hammered 115 answers empty lists."""
+    global _sweep_last_list
+    wait = sleep_s - (time.time() - _sweep_last_list)
+    if wait > 0:
+        time.sleep(wait)
+    _sweep_last_list = time.time()
+
+
+def _sweep_list(c, cid: int, sleep_s: float) -> list:
+    _pace_list(sleep_s)
+    items, _done = _fs_page(c, cid, 0, 1000)
+    return items
+
+
+def _ext_of(name: str) -> str:
+    parts = str(name or "").rsplit(".", 1)
+    if len(parts) == 2 and 0 < len(parts[1]) <= 5:
+        return f".{parts[1].lower()}"
+    return ""
+
+
+def _item_fid(item: dict):
+    # files carry "fid", directories only "cid" in fs_files listings
+    fid = (item.get("fid") or item.get("file_id")
+           or item.get("cid") or item.get("id"))
+    try:
+        return int(fid)
+    except (TypeError, ValueError):
+        return None
+
+
+def _best_name(conn, folder: str, fname: str) -> str:
+    """Best 'CODE Title' for a feature file ('' keeps its own name)."""
+    code = extract_code(folder) or extract_code(fname)
+    row = _lookup_movie(conn, code)
+    if not row:
+        return ""
+    title = metatube_title(row[0]) or row[1] or ""
+    return _sanitize_name(f"{row[0]} {title}").strip()
+
+
+def _sweep_file(conn, c, fid: int, name: str, size: int,
+                target: int, reject: int, stats: dict) -> None:
+    """One loose file in the download dir: feature -> target, junk -> reject."""
+    ext = _ext_of(name)
+    row = _lookup_movie(conn, extract_code(name))
+    if row:
+        # library hit: rename (this also strips spam glued to the name)
+        title = metatube_title(row[0]) or row[1] or ""
+        new = (_sanitize_name(f"{row[0]} {title}").strip() + ext)
+        if new != name and new.rstrip():
+            check_response(c.fs_rename((fid, new), timeout=_TIMEOUT))
+            log.info("115 重命名: %s -> %s", name, new)
+            name = new
+    elif looks_ad(name) or ext not in _VIDEO_EXTS or size < _MAIN_MIN_SIZE:
+        check_response(c.fs_move(fid, reject, timeout=_TIMEOUT))
+        stats["rejected"] += 1
+        log.info("115 清理: %s -> 冗余目录", name)
+        return
+    check_response(c.fs_move(fid, target, timeout=_TIMEOUT))
+    stats["organized"] += 1
+    log.info("115 清理: 正片 %s -> 已整理", name)
+
+
+def _sweep_folder(conn, c, fid: int, name: str, target: int, reject: int,
+                  sleep_s: float, stats: dict) -> None:
+    """One folder: keep the single largest feature video, junk the rest."""
+    items = _sweep_list(c, fid, sleep_s)
+    files, subdirs = [], []
+    for it in items:
+        sub_fid = _item_fid(it)
+        if sub_fid is None:
+            continue
+        entry = (sub_fid, str(it.get("n") or ""), _to_int(it.get("s")))
+        (subdirs if str(it.get("fc", "")) == "0" else files).append(entry)
+    # descend one level (CD1/CD2-style layouts), remembering each file's parent
+    deep = []
+    for sub_fid, _n, _s in subdirs:
+        for it in _sweep_list(c, sub_fid, sleep_s):
+            gfid = _item_fid(it)
+            if gfid is None or str(it.get("fc", "")) == "0":
+                continue
+            deep.append((gfid, str(it.get("n") or ""), _to_int(it.get("s")),
+                         sub_fid))
+    candidates = [(f, n, s, fid) for f, n, s in files
+                  if _ext_of(n) in _VIDEO_EXTS and s >= _MAIN_MIN_SIZE]
+    candidates += [v for v in deep
+                   if _ext_of(v[1]) in _VIDEO_EXTS and v[2] >= _MAIN_MIN_SIZE]
+    codes = {extract_code(n) or n for _f, n, _s, _p in candidates}
+    parents = {p for _f, _n, _s, p in candidates}
+    if not candidates or len(codes) > 1 or len(parents) > 1:
+        if not candidates:
+            # nothing feature-sized anywhere: the whole folder is junk
+            check_response(c.fs_move(fid, reject, timeout=_TIMEOUT))
+            stats["rejected"] += 1
+            log.info("115 清理: 文件夹 %s 无正片 -> 冗余目录", name)
+            return
+        # several titles / multi-part release: keep the folder intact -> target
+        check_response(c.fs_move(fid, target, timeout=_TIMEOUT))
+        stats["organized"] += 1
+        log.info("115 清理: 多分段/多影片文件夹 %s 整体 -> 已整理", name)
+        return
+    ffid, fname, _size, fsrc = candidates[0]
+    ext = _ext_of(fname)
+    new = _best_name(conn, name, fname)
+    if new:
+        new = new + ext
+        if new != fname:
+            check_response(c.fs_rename((ffid, new), timeout=_TIMEOUT))
+            log.info("115 重命名: %s -> %s", fname, new)
+            fname = new
+    if fsrc != target:
+        check_response(c.fs_move(ffid, target, timeout=_TIMEOUT))
+    stats["organized"] += 1
+    log.info("115 清理: 正片 %s -> 已整理", fname)
+    for ofid, oname, _s in [(f, n, s) for f, n, s in files if f != ffid]:
+        check_response(c.fs_move(ofid, reject, timeout=_TIMEOUT))
+        stats["rejected"] += 1
+        log.info("115 清理: %s -> 冗余目录", oname)
+    for ofid, oname, _s, _p in deep:
+        if ofid == ffid:
+            continue
+        check_response(c.fs_move(ofid, reject, timeout=_TIMEOUT))
+        stats["rejected"] += 1
+        log.info("115 清理: %s -> 冗余目录", oname)
+    for sub_fid, sub_name, _s in subdirs:
+        check_response(c.fs_move(sub_fid, reject, timeout=_TIMEOUT))
+        stats["rejected"] += 1
+        log.info("115 清理: 空目录 %s -> 冗余目录", sub_name)
+    check_response(c.fs_move(fid, reject, timeout=_TIMEOUT))
+    stats["rejected"] += 1
+    log.info("115 清理: 清空后的文件夹 %s -> 冗余目录", name)
+
+
+def sweep_existing(sleep_s: float = _SWEEP_LIST_GAP, max_folders: int = 0) -> dict:
+    """Organize whatever already sits in DOWNLOAD_DIR, ignoring task history.
+
+    Independent from organize_pass (which only sees offline-download tasks
+    and skips hashes marked done): it walks the download dir itself.  Every
+    folder keeps exactly one feature film (largest video >= 1 GiB), renamed
+    to 'CODE Title' and moved to the target dir; ads, promo images, clips
+    and the emptied folder shells move to the reject dir.  Multi-part or
+    multi-title folders are moved intact.  fs_files listings are throttled
+    (~1 req/min on 115); the whole pass never raises.
+    """
+    stats = {"at": int(time.time()), "scanned": 0, "organized": 0,
+             "rejected": 0, "errors": 0, "duration_s": 0}
+    t0 = time.time()
+    _sweep_state.update(running=True, started_at=stats["at"], finished_at=0)
+    conn = None
+    try:
+        c = get_client()
+        if not c:
+            raise RuntimeError("115 未登录")
+        conn = sqlite3.connect(settings.load()["DB_PATH"], timeout=30)
+        cfg = settings.load()
+        dl = resolve_dir(c, (cfg.get("P115_DOWNLOAD_DIR") or "").strip() or "待整理")
+        target = resolve_dir(c, (cfg.get("P115_TARGET_DIR") or "").strip() or "已整理")
+        reject = resolve_dir(c, (cfg.get("P115_REJECT_DIR") or "").strip() or "冗余")
+        for item in _sweep_list(c, dl, sleep_s):
+            if max_folders and stats["scanned"] >= max_folders:
+                break
+            ifid = _item_fid(item)
+            name = str(item.get("n") or "")
+            if ifid is None or not name:
+                continue
+            stats["scanned"] += 1
+            try:
+                if str(item.get("fc", "")) == "0":
+                    _sweep_folder(conn, c, ifid, name, target, reject,
+                                  sleep_s, stats)
+                else:
+                    _sweep_file(conn, c, ifid, name, _to_int(item.get("s")),
+                                target, reject, stats)
+            except Exception as exc:
+                stats["errors"] += 1
+                log.warning("115 清理 %s 失败: %s", name, exc)
+    except Exception as exc:
+        stats["errors"] += 1
+        stats["error"] = str(exc)
+        log.warning("115 网盘清理中断: %s", exc)
+    finally:
+        if conn is not None:
+            conn.close()
+        stats["at"] = int(time.time())
+        stats["duration_s"] = int(time.time() - t0)
+        _sweep_state.update(running=False, finished_at=stats["at"])
+        try:
+            conn = sqlite3.connect(settings.load()["DB_PATH"], timeout=30)
+            try:
+                conn.execute(
+                    "INSERT OR REPLACE INTO meta(key, value) VALUES (?, ?)",
+                    ("p115:last_sweep", json.dumps(stats, ensure_ascii=False)))
+                conn.commit()
+            finally:
+                conn.close()
+        except Exception:
+            log.exception("保存清理结果失败")
+    return stats
+
+
+def start_sweep() -> tuple[bool, str]:
+    """Kick sweep_existing in a background thread; refuse when busy/logged out."""
+    if _sweep_state.get("running"):
+        return False, "网盘清理已在进行中"
+    if not has_auth():
+        return False, "115 未登录"
+    _sweep_state["running"] = True  # claim now to fence double-clicks
+    threading.Thread(target=sweep_existing, daemon=True).start()
+    return True, ""
+
+
+def sweep_status() -> dict:
+    """Running flag + last stored sweep result (for the UI)."""
+    out = {"running": bool(_sweep_state.get("running")),
+           "started_at": _sweep_state.get("started_at") or 0}
+    try:
+        conn = sqlite3.connect(settings.load()["DB_PATH"], timeout=10)
+        try:
+            raw = db_get_meta(conn, "p115:last_sweep")
+        finally:
+            conn.close()
+        data = json.loads(raw)
+        if isinstance(data, dict):
+            out["result"] = data
+    except (ValueError, sqlite3.Error):
+        pass
+    return out
