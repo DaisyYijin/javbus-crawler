@@ -647,6 +647,52 @@ def test_sweep_folder_subdirs_all_empty_skipped(monkeypatch):
         conn.close()
 
 
+# --------------------------------- manual/auto sweep trigger (fence) ----
+
+def test_start_sweep_refuses_when_busy_or_logged_out(monkeypatch):
+    saved = dict(p115._sweep_state)
+    try:
+        p115._sweep_state.update(running=True)
+        assert p115.sweep_busy() is True
+        assert p115.start_sweep() == (False, "整理已在进行中")
+        p115._sweep_state.update(running=False)
+        monkeypatch.setattr(p115, "has_auth", lambda: False)
+        assert p115.start_sweep() == (False, "115 未登录")
+        assert p115.sweep_busy() is False  # fence untouched on refusal
+    finally:
+        p115._sweep_state.clear()
+        p115._sweep_state.update(saved)
+
+
+def test_start_sweep_claims_fence_and_spawns(monkeypatch):
+    saved = dict(p115._sweep_state)
+    holder = {}
+
+    class _Thread:  # stand-in for threading.Thread, never really starts
+        def __init__(self, target=None, daemon=False):
+            self.target, self.daemon, self.started = target, daemon, False
+            holder["th"] = self
+
+        def start(self):
+            self.started = True
+
+    try:
+        monkeypatch.setattr(p115, "has_auth", lambda: True)
+        calls = []
+        monkeypatch.setattr(p115, "sweep_existing", lambda: calls.append(1))
+        monkeypatch.setattr(p115, "threading", type(
+            "threading", (), {"Thread": _Thread}))
+        assert p115.start_sweep() == (True, "")
+        th = holder["th"]
+        assert th.started and th.daemon and th.target is not None
+        assert p115.sweep_busy() is True  # fence held while the pass runs
+        th.target()  # run the stubbed pass body
+        assert calls == [1]
+    finally:
+        p115._sweep_state.clear()
+        p115._sweep_state.update(saved)
+
+
 # ------------------------------------------- real-time organize (tasks) ----
 
 class _FakeOrgClient:

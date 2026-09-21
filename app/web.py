@@ -922,7 +922,7 @@ def create_app() -> Flask:
 
     @app.post("/api/p115/sweep")
     def p115_sweep():
-        """Backfill: organize whatever already sits in the download dir."""
+        """Manual organize: sweep the download dir (same pass the auto loop runs)."""
         ok, msg = p115.start_sweep()
         if not ok:
             return jsonify({"ok": False, "error": msg}), 409
@@ -1058,11 +1058,12 @@ def _p115_organize_loop() -> None:
             # folders that predate task tracking (or lost their done mark)
             if time.time() - last_sweep >= 600:
                 last_sweep = time.time()
-                st = p115.sweep_existing()
-                if st.get("organized") or st.get("rejected"):
-                    log.info("115 网盘清理：影片 %d · 冗余 %d · 错误 %d",
-                             st.get("organized", 0), st.get("rejected", 0),
-                             st.get("errors", 0))
+                if not p115.sweep_busy():  # fence: a manual click may be running
+                    st = p115.sweep_existing()
+                    if st.get("organized") or st.get("rejected"):
+                        log.info("115 自动整理（目录扫描）：影片 %d · 冗余 %d · 错误 %d",
+                                 st.get("organized", 0), st.get("rejected", 0),
+                                 st.get("errors", 0))
         except Exception:
             log.exception("115 自动整理异常")
 

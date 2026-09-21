@@ -1152,7 +1152,7 @@ def _sweep_file(conn, c, fid: int, name: str, size: int,
         elif looks_ad(name) or ext not in _VIDEO_EXTS or size < _MAIN_MIN_SIZE:
             check_response(c.fs_move(fid, reject, timeout=_TIMEOUT))
             stats["rejected"] += 1
-            log.info("115 清理: %s -> 冗余目录", name)
+            log.info("115 整理: %s -> 冗余目录", name)
             return True
     new = base + ext if base else ""
     if new and new != name and new.rstrip():
@@ -1166,7 +1166,7 @@ def _sweep_file(conn, c, fid: int, name: str, size: int,
         tgt = resolve_dir(c, f"{target_path}/{base}")
     check_response(c.fs_move(fid, tgt, timeout=_TIMEOUT))
     stats["organized"] += 1
-    log.info("115 清理: 正片 %s -> 已整理", name)
+    log.info("115 整理: 正片 %s -> 已整理", name)
     return True
 
 
@@ -1186,7 +1186,7 @@ def _sweep_folder(conn, c, fid: int, name: str, target: int, reject: int,
         # a download dir is never truly empty: an empty answer means the
         # listing got throttled — deciding now could junk the feature
         stats["skipped"] = stats.get("skipped", 0) + 1
-        log.info("115 清理: %s 列表为空(疑似限流)，本次跳过", name)
+        log.info("115 整理: %s 列表为空(疑似限流)，本次跳过", name)
         return False
     files, subdirs = [], []
     for it in items:
@@ -1228,18 +1228,18 @@ def _sweep_folder(conn, c, fid: int, name: str, target: int, reject: int,
             if not files and subdirs and sub_all_empty:
                 # only empty subdir answers: likely throttled, retry later
                 stats["skipped"] = stats.get("skipped", 0) + 1
-                log.info("115 清理: %s 子目录列表为空(疑似限流)，本次跳过", name)
+                log.info("115 整理: %s 子目录列表为空(疑似限流)，本次跳过", name)
                 return False
             # nothing feature-sized anywhere: the whole folder is junk
             check_response(c.fs_move(fid, reject, timeout=_TIMEOUT))
             stats["rejected"] += 1
-            log.info("115 清理: 文件夹 %s 无正片 -> 冗余目录", name)
+            log.info("115 整理: 文件夹 %s 无正片 -> 冗余目录", name)
             return True
         # several titles / multi-part release: keep the folder intact
         check_response(c.fs_move(fid, nested(_sanitize_name(name)),
                                  timeout=_TIMEOUT))
         stats["organized"] += 1
-        log.info("115 清理: 多分段/多影片文件夹 %s 整体 -> 已整理", name)
+        log.info("115 整理: 多分段/多影片文件夹 %s 整体 -> 已整理", name)
         return True
     ffid, fname, _size, fsrc = candidates[0]
     ext = _ext_of(fname)
@@ -1256,24 +1256,24 @@ def _sweep_folder(conn, c, fid: int, name: str, target: int, reject: int,
     if fsrc != tgt:
         check_response(c.fs_move(ffid, tgt, timeout=_TIMEOUT))
     stats["organized"] += 1
-    log.info("115 清理: 正片 %s -> 已整理", fname)
+    log.info("115 整理: 正片 %s -> 已整理", fname)
     for ofid, oname, _s in [(f, n, s) for f, n, s in files if f != ffid]:
         check_response(c.fs_move(ofid, reject, timeout=_TIMEOUT))
         stats["rejected"] += 1
-        log.info("115 清理: %s -> 冗余目录", oname)
+        log.info("115 整理: %s -> 冗余目录", oname)
     for ofid, oname, _s, _p in deep:
         if ofid == ffid:
             continue
         check_response(c.fs_move(ofid, reject, timeout=_TIMEOUT))
         stats["rejected"] += 1
-        log.info("115 清理: %s -> 冗余目录", oname)
+        log.info("115 整理: %s -> 冗余目录", oname)
     for sub_fid, sub_name, _s in subdirs:
         check_response(c.fs_move(sub_fid, reject, timeout=_TIMEOUT))
         stats["rejected"] += 1
-        log.info("115 清理: 空目录 %s -> 冗余目录", sub_name)
+        log.info("115 整理: 空目录 %s -> 冗余目录", sub_name)
     check_response(c.fs_move(fid, reject, timeout=_TIMEOUT))
     stats["rejected"] += 1
-    log.info("115 清理: 清空后的文件夹 %s -> 冗余目录", name)
+    log.info("115 整理: 清空后的文件夹 %s -> 冗余目录", name)
     return True
 
 
@@ -1323,11 +1323,11 @@ def sweep_existing(sleep_s: float = _SWEEP_LIST_GAP, max_folders: int = 0) -> di
                                 target_path=target_name)
             except Exception as exc:
                 stats["errors"] += 1
-                log.warning("115 清理 %s 失败: %s", name, exc)
+                log.warning("115 整理 %s 失败: %s", name, exc)
     except Exception as exc:
         stats["errors"] += 1
         stats["error"] = str(exc)
-        log.warning("115 网盘清理中断: %s", exc)
+        log.warning("115 整理中断: %s", exc)
     finally:
         if conn is not None:
             conn.close()
@@ -1344,19 +1344,24 @@ def sweep_existing(sleep_s: float = _SWEEP_LIST_GAP, max_folders: int = 0) -> di
             finally:
                 conn.close()
         except Exception:
-            log.exception("保存清理结果失败")
+            log.exception("保存整理结果失败")
     return stats
 
 
 def start_sweep() -> tuple[bool, str]:
     """Kick sweep_existing in a background thread; refuse when busy/logged out."""
     if _sweep_state.get("running"):
-        return False, "网盘清理已在进行中"
+        return False, "整理已在进行中"
     if not has_auth():
         return False, "115 未登录"
     _sweep_state["running"] = True  # claim now to fence double-clicks
     threading.Thread(target=sweep_existing, daemon=True).start()
     return True, ""
+
+
+def sweep_busy() -> bool:
+    """True while a sweep pass is running (manual button or auto loop)."""
+    return bool(_sweep_state.get("running"))
 
 
 def sweep_status() -> dict:

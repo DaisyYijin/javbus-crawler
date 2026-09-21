@@ -704,11 +704,11 @@
           <div class="field w3"><label>换磁力次数上限 <small>P115_DL_MAX_RETRIES · 超过后放弃该影片的下载</small></label>
             <input id="c_P115_DL_MAX_RETRIES" type="number" min="0" max="20" placeholder="3"></div>
         </div>
-        <div class="hint">全自动流水线：提交磁力 → 每 15 秒监测下载（卡住超时 / 下载失败自动换下一个磁力重试，可设次数上限）→ 下载完成实时整理 → 通过 info_hash 反查（失败时从任务名智能识别番号，支持 aaa-100-ch 等变体）→ 调 MetaTube（已配置时）优化剧名 → 提取正片重命名为「番号 剧名.ext」，归档为「已整理/番号 剧名/番号 剧名.ext」（每部影片一个同名子文件夹；文件夹内广告与疑似广告任务自动移入冗余目录；115 限速导致目录列表暂时为空时本次跳过、下一轮自动重试，不会误判）。目录可点输入框右侧文件夹图标从 115 网盘中直接选取。已整理任务自动记忆去重。「立即清理」不依赖任务记录，直接扫描下载目录存量：体积最大的正片（≥1GB，实时整理门槛为 ≥100MB）按库内番号重命名并移入同名子文件夹，广告图片 / 小体积剪辑等其余文件连同清空后的空目录一律移入冗余（多分段 / 多影片文件夹整体保留，115 限速故每次列表间隔约 1 分钟，请耐心等待）。</div>
+        <div class="hint">全自动流水线：提交磁力 → 每 15 秒监测下载（卡住超时 / 下载失败自动换下一个磁力重试，可设次数上限）→ 下载完成实时整理 → 通过 info_hash 反查（失败时从任务名智能识别番号，支持 aaa-100-ch 等变体）→ 调 MetaTube（已配置时）优化剧名 → 提取正片重命名为「番号 剧名.ext」，归档为「已整理/番号 剧名/番号 剧名.ext」（每部影片一个同名子文件夹；文件夹内广告与疑似广告任务自动移入冗余目录；115 限速导致目录列表暂时为空时本次跳过、下一轮自动重试，不会误判）。目录可点输入框右侧文件夹图标从 115 网盘中直接选取。已整理任务自动记忆去重。「开始整理」不依赖任务记录，直接扫描下载目录存量——可随时手动点按钮触发，启用自动整理时后台也会每 10 分钟自动扫描：体积最大的正片（≥1GB，实时整理门槛为 ≥100MB）按库内番号重命名并移入同名子文件夹，广告图片 / 小体积剪辑等其余文件连同清空后的空目录一律移入冗余（多分段 / 多影片文件夹整体保留，115 限速故每次列表间隔约 1 分钟，请耐心等待）。</div>
         <div class="row save-row">
           <label class="switch" style="margin:0" title="下载完成后自动重命名并移动 · P115_AUTO_ORGANIZE"><input type="checkbox" id="c_P115_AUTO_ORGANIZE"><span class="track"></span><span>启用自动整理</span></label>
           <button class="primary" onclick="saveConfig()">保存配置</button>
-          <button class="ghost" id="p115-sweep-btn" onclick="startSweep()" title="直接扫描下载目录，把存量文件夹也整理掉">立即清理网盘</button>
+          <button class="ghost" id="p115-sweep-btn" onclick="startSweep()" title="立即扫描下载目录并整理存量（与自动整理同一条流水线，可随时手动触发）">开始整理</button>
           <span class="msg" id="p115-sweep-msg"></span>
           <span class="msg cfg-msg"></span>
         </div>
@@ -1574,7 +1574,7 @@ async function pollSweep() {
     const j = await (await fetch('/api/p115/sweep/result')).json();
     if (j.running) {
       const sec = j.started_at ? Math.max(0, Math.round(Date.now() / 1000 - j.started_at)) : 0;
-      msg.textContent = `清理进行中… 已运行 ${Math.floor(sec / 60)}分${sec % 60}秒`;
+      msg.textContent = `整理进行中… 已运行 ${Math.floor(sec / 60)}分${sec % 60}秒`;
       btn.disabled = true;
       sweepPollTimer = setTimeout(pollSweep, 5000);
       return;
@@ -1583,7 +1583,7 @@ async function pollSweep() {
     const r = j.result;
     if (r && r.at) {
       const err = r.errors ? ` · 错误 ${r.errors}` : '';
-      msg.textContent = `上次清理 ${fmtTs(r.at)}：影片 ${r.organized || 0} · 冗余 ${r.rejected || 0}${err} · 耗时 ${r.duration_s || 0}秒`;
+      msg.textContent = `上次整理 ${fmtTs(r.at)}：影片 ${r.organized || 0} · 冗余 ${r.rejected || 0}${err} · 耗时 ${r.duration_s || 0}秒`;
     }
   } catch (e) { sweepPollTimer = setTimeout(pollSweep, 10000); }
 }
