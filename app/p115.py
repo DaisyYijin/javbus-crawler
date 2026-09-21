@@ -1334,7 +1334,9 @@ def _sweep_folder(conn, c, fid: int, name: str, target: int, reject: int,
                   sleep_s: float, stats: dict, *, target_path: str = "",
                   prefer_name: str = "",
                   min_size: int = _MAIN_MIN_SIZE) -> bool:
-    """One folder: keep the single largest feature video, junk the rest.
+    """One folder: keep the single largest feature video; everything left
+    over moves to the reject dir as ONE folder (冗余/<原目录名>/…), so ads
+    and promos stay grouped under the download's own name.
 
     Multi-part folders are kept intact: several codes, files from several
     sub-dirs, or flat CD1/CD2 files sharing one code (extract_code strips
@@ -1428,23 +1430,14 @@ def _sweep_folder(conn, c, fid: int, name: str, target: int, reject: int,
         check_response(c.fs_move(ffid, tgt, timeout=_TIMEOUT))
     stats["organized"] += 1
     log.info("115 整理: 正片 %s -> 已整理", fname)
-    for ofid, oname, _s in [(f, n, s) for f, n, s in files if f != ffid]:
-        check_response(c.fs_move(ofid, reject, timeout=_TIMEOUT))
-        stats["rejected"] += 1
-        log.info("115 整理: %s -> 冗余目录", oname)
-    for ofid, oname, _s, _p in deep:
-        if ofid == ffid:
-            continue
-        check_response(c.fs_move(ofid, reject, timeout=_TIMEOUT))
-        stats["rejected"] += 1
-        log.info("115 整理: %s -> 冗余目录", oname)
-    for sub_fid, sub_name, _s in subdirs:
-        check_response(c.fs_move(sub_fid, reject, timeout=_TIMEOUT))
-        stats["rejected"] += 1
-        log.info("115 整理: 空目录 %s -> 冗余目录", sub_name)
+    # the leftovers (ads, promo images, sub-dirs, the shell itself) travel
+    # as ONE folder: 冗余/<原目录名>/ keeps each download's junk grouped
+    # (two folders both holding 广告.url must not melt into two same-named
+    # loose files at the reject root), and one fs_move beats N under the
+    # fs_files rate limit
     check_response(c.fs_move(fid, reject, timeout=_TIMEOUT))
     stats["rejected"] += 1
-    log.info("115 整理: 清空后的文件夹 %s -> 冗余目录", name)
+    log.info("115 整理: 正片外的剩余内容随文件夹 %s 整体 -> 冗余目录", name)
     return True
 
 
@@ -1455,11 +1448,11 @@ def sweep_existing(sleep_s: float = _SWEEP_LIST_GAP, max_folders: int = 0) -> di
     and skips hashes marked done): it walks the download dir itself.  Every
     folder keeps exactly one feature film (largest video >= 1 GiB), renamed
     to 'CODE Title' and filed as '已整理/CODE Title/CODE Title.ext'; ads,
-    promo images, clips and the emptied folder shells move to the reject
-    dir.  Multi-part or multi-title folders are kept intact inside their
-    own sub-directory.  Empty listings (115 throttling) skip the item for
-    a later pass.  fs_files listings are throttled (~1 req/min on 115);
-    the whole pass never raises.
+    promo images, clips and the remaining folder shell move to the reject
+    dir as one unit ('冗余/<原目录名>/…').  Multi-part or multi-title
+    folders are kept intact inside their own sub-directory.  Empty listings
+    (115 throttling) skip the item for a later pass.  fs_files listings are
+    throttled (~1 req/min on 115); the whole pass never raises.
     """
     stats = {"at": int(time.time()), "scanned": 0, "organized": 0,
              "rejected": 0, "skipped": 0, "errors": 0, "duration_s": 0}

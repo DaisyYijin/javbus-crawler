@@ -581,10 +581,11 @@ def test_sweep_folder_single_feature(monkeypatch):
         # feature renamed with the library title and moved to the target dir
         assert fake.renames == [(101, "MIDA-790 下海.mp4")]
         assert (101, 10) in fake.moves
-        # ads + junk + emptied subdir shell + the folder itself -> reject
-        assert sorted(f for f, t in fake.moves if t == 20) == \
-            [100, 102, 103, 104, 105]
-        assert stats == {"organized": 1, "rejected": 5}
+        # ads + junk + subdir stay INSIDE the folder, which moves to reject
+        # as ONE unit: 冗余/MIDA-790ch/广告.png … — junk from two downloads
+        # keeps its own sub-dir instead of melting into same-named loose files
+        assert [f for f, t in fake.moves if t == 20] == [100]
+        assert stats == {"organized": 1, "rejected": 1}
     finally:
         conn.close()
 
@@ -646,9 +647,9 @@ def test_sweep_folder_prefers_largest(monkeypatch):
         # the LARGEST copy is kept and renamed with the library title
         assert fake.renames == [(402, "AAA-100 大片.mp4")]
         assert (402, 10) in fake.moves
-        # the smaller duplicate + the emptied folder shell -> reject
-        assert sorted(f for f, t in fake.moves if t == 20) == [400, 401]
-        assert stats == {"organized": 1, "rejected": 2}
+        # the folder (smaller duplicate still inside) -> reject as one unit
+        assert [f for f, t in fake.moves if t == 20] == [400]
+        assert stats == {"organized": 1, "rejected": 1}
     finally:
         conn.close()
 
@@ -703,11 +704,12 @@ def test_sweep_existing_end_to_end(monkeypatch):
         assert stats["errors"] == 0
         assert stats["organized"] == 1
         assert stats["skipped"] == 0
-        # png + emptied 901 shell + junk folder 902 + loose txt
-        assert stats["rejected"] == 4
+        # 901 (宣传图.png still inside) + junk folder 902 + loose txt:
+        # folders travel as one unit, only the loose txt moves by itself
+        assert stats["rejected"] == 3
         assert fake.renames == [(911, "MIDA-790 下海.mp4")]
         assert sorted(f for f, t in fake.moves if t == 920) == \
-            [901, 902, 903, 912]
+            [901, 902, 903]
         assert (911, 930) in fake.moves  # nested: 已整理/MIDA-790 下海/
         st = p115.sweep_status()
         assert st["running"] is False
