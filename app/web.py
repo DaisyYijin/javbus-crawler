@@ -988,6 +988,9 @@ def _p115_organize_loop() -> None:
             if n.get("organized") or n.get("ads") or n.get("rejected"):
                 log.info("115 自动整理：影片 %d · 广告 %d · 拒收 %d",
                          n["organized"], n["ads"], n["rejected"])
+            # keep the "稍后自动提交（串行）" promise: resubmit movies that
+            # were skipped while the serial pipeline was busy
+            crawler.retry_queued(cfg)
             # every 10 min also sweep the download dir itself: backfills
             # folders that predate task tracking (or lost their done mark)
             if time.time() - last_sweep >= 600:

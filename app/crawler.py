@@ -5,6 +5,7 @@ import logging
 import random
 import re
 import time
+from types import SimpleNamespace
 from urllib.parse import urlencode
 
 from . import db
@@ -317,10 +318,36 @@ def pick_best(magnets: list, keywords: list[str],
     return [] if i is None else [magnets[i]]
 
 
+_QUEUED_PREFIX = "dl:queued:"
+
+
+def _queued_update(cfg: dict, code: str, queued: bool) -> None:
+    """Persist (or drop) a "wants download, serial slot busy" mark.
+
+    Best-effort: a failed mark write must never break the crawl.
+    """
+    try:
+        conn = db.connect(cfg["DB_PATH"])
+        try:
+            if queued:
+                db.set_meta(conn, _QUEUED_PREFIX + code, "1")
+            else:
+                conn.execute("DELETE FROM meta WHERE key = ?",
+                             (_QUEUED_PREFIX + code,))
+            conn.commit()
+        finally:
+            conn.close()
+    except Exception:
+        log.debug("dl:queued 标记更新失败 %s", code, exc_info=True)
+
+
 def auto_download(cfg: dict, movie) -> None:
     """AUTO_DOWNLOAD: submit the stored best magnet of a movie to 115.
 
     Best-effort: never raises, so a 115 failure cannot break the crawl.
+    When the serial pipeline (or the cooldown) blocks the submit, a
+    dl:queued:{code} mark is persisted so retry_queued() can pick the
+    movie back up once the slot frees.
     """
     if not cfg.get("AUTO_DOWNLOAD") or not getattr(movie, "magnets", None):
         return
@@ -332,9 +359,11 @@ def auto_download(cfg: dict, movie) -> None:
             return
         recs = p115.track_records()
         if any(r.get("code") == movie.code for r in recs.values()):
+            _queued_update(cfg, movie.code, False)  # tracked: mark served
             log.info("%s: 已有云下载任务，跳过重复提交", movie.code)
             return
         if recs:  # serial pipeline: one download (through organize) at a time
+            _queued_update(cfg, movie.code, True)
             log.info("%s: 上一个云下载还未完成整理，稍后自动提交（串行）",
                      movie.code)
             return
@@ -342,10 +371,12 @@ def auto_download(cfg: dict, movie) -> None:
         if interval:  # cooldown after the last movie landed in the library
             wait = interval - (int(time.time()) - p115.last_release_at())
             if wait > 0:
+                _queued_update(cfg, movie.code, True)
                 log.info("%s: 上一部整理完成后冷却中，约 %d 分钟后自动提交（串行间隔）",
                          movie.code, wait // 60 + 1)
                 return
         if movie.code in p115.gaveup_codes():
+            _queued_update(cfg, movie.code, False)  # dead magnets: stop retrying
             log.info("%s: 该番号磁力已全部失败过，跳过", movie.code)
             return
         m = movie.magnets[0]
@@ -353,10 +384,63 @@ def auto_download(cfg: dict, movie) -> None:
         result = p115.add_magnet(m.link)
         p115.track_add(movie.code, result.get("info_hash") or magnet_hash(m.link),
                        m.link, result.get("name") or "")
+        _queued_update(cfg, movie.code, False)
         log.info("已提交 115 离线任务: %s (%s)",
                  result.get("name") or m.name, movie.code)
     except Exception:
         log.exception("%s: 自动云下载失败（不影响采集入库）", movie.code)
+
+
+def retry_queued(cfg: dict) -> int:
+    """AUTO_DOWNLOAD follow-up: resubmit movies the serial slot skipped.
+
+    auto_download only fires while a movie lands in the DB; with the
+    pipeline busy it logs "稍后自动提交" and leaves a dl:queued mark.
+    The organize loop calls this once per minute to keep that promise.
+    Returns how many movies were actually submitted this pass.
+    """
+    if not cfg.get("AUTO_DOWNLOAD"):
+        return 0
+    from . import p115  # deferred: p115 imports this module at load time
+
+    try:
+        conn = db.connect(cfg["DB_PATH"])
+        try:
+            rows = conn.execute("SELECT key FROM meta WHERE key LIKE ?",
+                                (_QUEUED_PREFIX + "%",)).fetchall()
+        finally:
+            conn.close()
+    except Exception:
+        log.exception("待提交队列读取失败")
+        return 0
+    codes = [r[0][len(_QUEUED_PREFIX):] for r in rows]
+    if not codes:
+        return 0
+    submitted = 0
+    for code in codes:
+        try:
+            conn = db.connect(cfg["DB_PATH"])
+            try:
+                stored = db.get_movie(conn, code)
+            finally:
+                conn.close()
+            if not stored or not stored.get("magnets"):
+                _queued_update(cfg, code, False)  # movie gone: drop the mark
+                continue
+            # auto_download expects attribute access; adapt the stored dict
+            movie = SimpleNamespace(
+                code=code,
+                magnets=[SimpleNamespace(link=m["link"], name=m.get("name") or "")
+                         for m in stored["magnets"]])
+            before = {r.get("code") for r in p115.track_records().values()}
+            auto_download(cfg, movie)  # re-runs serial/cooldown guards
+            if code not in before and code in {
+                    r.get("code") for r in p115.track_records().values()}:
+                submitted += 1
+                log.info("待提交队列: %s 已顺延提交（串行 %d 完成）", code, submitted)
+        except Exception:
+            log.exception("待提交队列处理失败 %s", code)
+    return submitted
 
 
 def run_job(
