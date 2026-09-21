@@ -1747,11 +1747,13 @@ async function loadDirLevel() {
   } catch (e) { $('dpicker-list').innerHTML = `<div class="hint" style="padding:12px;color:var(--err)">✗ ${esc(e.message)}</div>`; }
 }
 function enterDirLevel(el) {
-  dirPicker.stack.push({ name: el.dataset.name, fid: +el.dataset.fid });
+  // fid is a 19-digit id: keep it a STRING — Number() would silently lose
+  // precision (> 2^53) and query a non-existent cid
+  dirPicker.stack.push({ name: el.dataset.name, fid: String(el.dataset.fid) });
   loadDirLevel();
 }
 function pickThisDir(el) {
-  dirPicker.stack.push({ name: el.dataset.name, fid: +el.dataset.fid });
+  dirPicker.stack.push({ name: el.dataset.name, fid: String(el.dataset.fid) });
   confirmDirPicker();
 }
 function jumpDirLevel(i) {

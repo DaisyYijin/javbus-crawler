@@ -826,6 +826,20 @@ def create_app() -> Flask:
             return jsonify({"ok": False, "error": f"创建目录失败: {exc}"}), 502
         return jsonify({"ok": True, "fid": fid})
 
+    @app.get("/api/p115/space-debug")
+    def p115_space_debug():
+        """Diagnostic: raw payloads of the capacity endpoints (login required)."""
+        if not p115.has_auth():
+            return jsonify({"error": "not logged in"}), 400
+        c = p115.get_client()
+        out = {}
+        for name in ("user_space_info", "fs_index_info"):
+            try:
+                out[name] = getattr(c, name)(timeout=10)
+            except Exception as exc:
+                out[name] = {"error": str(exc)}
+        return jsonify(out)
+
     @app.post("/api/p115/organize")
     def p115_organize():
         if not p115.has_auth():

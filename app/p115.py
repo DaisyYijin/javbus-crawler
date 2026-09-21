@@ -570,7 +570,8 @@ def list_dirs(cid: int = 0) -> list[dict]:
             fid = _dir_id(item, cid)
             if fid is None:
                 continue
-            out.append({"fid": fid, "name": item.get("n") or ""})
+            # fid as STRING: 19-digit ids exceed JS Number precision (2^53)
+            out.append({"fid": str(fid), "name": item.get("n") or ""})
         if done:
             break
         offset += 100
