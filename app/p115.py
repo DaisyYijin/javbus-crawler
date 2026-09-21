@@ -70,6 +70,9 @@ _ILLEGAL_FS = re.compile(r'[\\/:*?"<>|\r\n\t]')
 
 _client = None
 _client_lock = threading.Lock()
+_organize_lock = threading.Lock()
+_auth_lost_at = 0.0
+_AUTH_LOST_ERRNOS = {401, 4102, 990001}
 # path -> (cid, cached_at); entries expire so renames/deletes made in the
 # 115 app are picked up without a container restart
 _dir_cid: dict[str, tuple[int, float]] = {}
@@ -109,15 +112,20 @@ def has_auth() -> bool:
 
 
 def get_client(refresh: bool = False):
-    """Return a logged-in P115Client (cached), or None when not logged in."""
+    """Return a logged-in P115Client (cached), or None when not logged in.
+
+    The client is wrapped in _AuthWatch so an expired cookie discovered
+    mid-call drops the cache and the app degrades to "not logged in"
+    (the web UI will show the QR login prompt again).
+    """
     global _client
     if not HAS_P115:
         return None
     if _client is not None and not refresh:
-        return _client
+        return _AuthWatch(_client)
     with _client_lock:
         if _client is not None and not refresh:
-            return _client
+            return _AuthWatch(_client)
         auth = _load_auth()
         if not auth:
             return None
@@ -130,11 +138,60 @@ def get_client(refresh: bool = False):
             if not c.login_status(timeout=_TIMEOUT):
                 raise ValueError("cookie 已失效，请重新扫码登录")
             _client = c
-            return c
+            return _AuthWatch(c)
         except Exception as exc:
             log.warning("115 登录态不可用: %s", exc)
             _client = None
             return None
+
+
+def _is_auth_loss(exc: Exception) -> bool:
+    errno = getattr(exc, "errno", None)
+    try:
+        if errno is not None and int(errno) in _AUTH_LOST_ERRNOS:
+            return True
+    except (TypeError, ValueError):
+        pass
+    text = str(exc)
+    return any(k in text for k in ("登录已失效", "未登录", "请登录", "not logged in"))
+
+
+def _drop_auth(reason: str) -> None:
+    global _client, _auth_lost_at
+    with _client_lock:
+        if _client is None:
+            return
+        _client = None
+    now = time.time()
+    if now - _auth_lost_at >= 60:
+        _auth_lost_at = now
+        log.error("%s", reason)
+
+
+class _AuthWatch:
+    """Proxy over P115Client: on an auth-loss API error drop the cache.
+
+    The next get_client() then re-runs login_status and fails -> callers
+    see "not logged in" instead of a stream of confusing per-call errors.
+    """
+
+    __slots__ = ("_c",)
+
+    def __init__(self, c):
+        self._c = c
+
+    def __getattr__(self, name):
+        attr = getattr(self._c, name)
+        if not callable(attr):
+            return attr
+        def method(*args, **kwargs):
+            try:
+                return attr(*args, **kwargs)
+            except Exception as exc:
+                if _is_auth_loss(exc):
+                    _drop_auth("115 cookie 已失效，请重新扫码登录")
+                raise
+        return method
 
 
 def logout() -> None:
@@ -807,6 +864,7 @@ def watch_pass() -> dict:
 
 
 # ------------------------------------------------------------ organize ----
+_ORG_MAX_FAILS = 5                   # per-task organize attempts before give-up
 _AD_EXTS = {".url", ".txt", ".htm", ".html", ".lnk", ".exe", ".apk", ".bat", ".cmd",
             ".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".ini", ".nfo"}
 _AD_PAT = re.compile(
@@ -888,6 +946,12 @@ def resolve_dir(c, name: str) -> int:
     cid = 0
     for part in parts:
         nxt = _find_dir(c, part, cid)
+        if nxt is None:
+            # 115 fs_files occasionally answers with an EMPTY page instead
+            # of an error (transient throttle glitch) — that looks exactly
+            # like "dir missing". Re-check once before creating, otherwise
+            # each glitch plants a duplicate directory.
+            nxt = _find_dir(c, part, cid)
         if nxt is None:
             nxt = int(check_response(c.fs_mkdir(part, pid=cid, timeout=_TIMEOUT))["file_id"])
         cid = nxt
@@ -1017,10 +1081,23 @@ def reset_dir_cache() -> None:
 def organize_pass(max_pages: int = 5) -> dict:
     """Rename completed tasks (code + title) and move them to the target dir.
 
-    Tasks are matched back to movies via the magnet info_hash stored in our
-    own database; already-organized hashes are remembered in the meta table.
-    Returns counters and stores them as the last result in the meta table.
+    Serialized via _organize_lock: two background loops (the 60s organize
+    loop and watch_pass finishing a download) can both trigger a pass; the
+    loser just skips instead of running two interleaved passes.
     """
+    stats = {"at": int(time.time()), "scanned": 0, "organized": 0,
+             "ads": 0, "rejected": 0}
+    if not _organize_lock.acquire(blocking=False):
+        stats["busy"] = True
+        log.info("115 整理已在进行中，跳过本次触发")
+        return stats
+    try:
+        return _organize_pass_locked(max_pages)
+    finally:
+        _organize_lock.release()
+
+
+def _organize_pass_locked(max_pages: int = 5) -> dict:
     c = get_client()
     stats = {"at": int(time.time()), "scanned": 0, "organized": 0,
              "ads": 0, "rejected": 0}
@@ -1131,8 +1208,23 @@ def _organize_one(conn, c, task: dict, info_hash: str, stats: dict) -> None:
                                   reject, stats, target_path=target_name,
                                   prefer_name=base)
         if not handled:
-            # listing throttled -> info incomplete; retry on a later pass
-            log.info("115 整理: %s 列表受限，稍后重试", old)
+            # listing throttled -> info incomplete; retry on a later pass,
+            # but give up after _ORG_MAX_FAILS so a poison task can't hold
+            # the serial download slot forever
+            fails = _to_int(db_get_meta(conn, f"p115:fail:{info_hash}")) + 1
+            conn.execute("INSERT OR REPLACE INTO meta(key, value) VALUES (?, ?)",
+                         (f"p115:fail:{info_hash}", str(fails)))
+            conn.commit()
+            if fails >= _ORG_MAX_FAILS:
+                log.error("115 整理: %s 连续失败 %d 次，放行任务（不再自动重试）",
+                          old, fails)
+                conn.execute("INSERT OR REPLACE INTO meta(key, value) VALUES (?, '1')",
+                             (f"p115:done:{info_hash}",))
+                conn.commit()
+                track_del(info_hash)
+            else:
+                log.info("115 整理: %s 列表受限，稍后重试（%d/%d）",
+                         old, fails, _ORG_MAX_FAILS)
             return
         # organized/rejected/skipped counters are kept by the sweep itself
     elif looks_ad(task.get("name")):
@@ -1146,6 +1238,7 @@ def _organize_one(conn, c, task: dict, info_hash: str, stats: dict) -> None:
             log.warning("115 移动广告任务失败 %s: %s", task.get("name"), exc)
     conn.execute("INSERT OR REPLACE INTO meta(key, value) VALUES (?, '1')",
                  (f"p115:done:{info_hash}",))
+    conn.execute("DELETE FROM meta WHERE key = ?", (f"p115:fail:{info_hash}",))
     conn.commit()
     track_del(info_hash)  # serial pipeline: free the download slot
 

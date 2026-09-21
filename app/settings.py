@@ -7,7 +7,9 @@ from a source checkout without /data).
 from __future__ import annotations
 
 import json
+import logging
 import os
+import shutil
 import threading
 import time
 
@@ -120,8 +122,13 @@ def _read_config_file() -> dict:
                 for key in DEFAULTS:
                     if key in stored:
                         cfg[key] = stored[key]
-        except (OSError, ValueError):
-            pass  # corrupted file -> fall back to defaults
+        except (OSError, ValueError) as exc:
+            log = logging.getLogger(__name__)
+            log.error("配置文件损坏，已回退默认值（原文件已备份为 config.json.bak）: %s", exc)
+            try:
+                shutil.copy2(CONFIG_PATH, CONFIG_PATH + ".bak")
+            except OSError:
+                pass
     return cfg
 
 

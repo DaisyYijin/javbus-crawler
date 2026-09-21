@@ -880,7 +880,14 @@ function switchTab(btn) {
 /* ---------- config ---------- */
 let SITE_BASE = '';
 async function loadConfig() {
-  const j = await (await fetch('/api/config')).json();
+  let j;
+  try {
+    j = await (await fetch('/api/config')).json();
+  } catch (e) {
+    console.error('配置加载失败，10 秒后重试', e);
+    setTimeout(loadConfig, 10000);
+    return;
+  }
   SITE_BASE = (j.config.BASE_URL || '').replace(/\/+$/, '');
   window.METATUBE_URL = (j.config.METATUBE_URL || '').replace(/\/+$/, '');
   for (const [k, v] of Object.entries(j.config)) {
@@ -924,7 +931,10 @@ async function saveConfig() {
   // the masked token sentinel must never be sent back: drop the key so the
   // server keeps the stored value (empty string still clears it on purpose)
   if (body.METATUBE_TOKEN === '••••') delete body.METATUBE_TOKEN;
-  const j = await (await fetch('/api/config', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body)})).json();
+  let j;
+  try {
+    j = await (await fetch('/api/config', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body)})).json();
+  } catch (e) { toast('✗ 保存失败: ' + e.message, 'err'); return; }
   // success is confirmed by the transient toast only; the inline slot next to
   // the test-connection button must not carry a lingering "saved" state
   document.querySelectorAll('.cfg-msg').forEach(m => {
@@ -1192,11 +1202,17 @@ function updateModeHint() {
 async function startCrawl() {
   const body = {mode: $('mode').value, pages: $('pages').value || '1',
                 magnets: $('opt-magnets').checked, refresh: $('opt-refresh').checked};
-  const j = await (await fetch('/api/crawl/start', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body)})).json();
+  let j;
+  try {
+    j = await (await fetch('/api/crawl/start', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body)})).json();
+  } catch (e) { $('last-run').textContent = '启动失败: ' + e.message; return; }
   if (!j.ok) { $('last-run').textContent = '启动失败: ' + j.error; return; }
   pollStatus();
 }
-async function stopCrawl() { await fetch('/api/crawl/stop', {method:'POST'}); }
+async function stopCrawl() {
+  try { await fetch('/api/crawl/stop', {method:'POST'}); }
+  catch (e) { toast('✗ 停止失败: ' + e.message, 'err'); }
+}
 
 let lastDepths = {}, wasRunning = false, _lastStatusSig = '';
 async function pollStatus() {
@@ -1352,9 +1368,16 @@ async function loadMovies(page) {
   if (ft) p.set(ft, fv);
   if (fdfrom) p.set('date_from', fdfrom);
   if (fdto) p.set('date_to', fdto);
-  const r = await fetch('/api/movies?' + p.toString());
-  if (seq !== loadSeq) return;  // superseded by a newer request
-  const j = await r.json();
+  let r, j;
+  try {
+    r = await fetch('/api/movies?' + p.toString());
+    if (seq !== loadSeq) return;  // superseded by a newer request
+    j = await r.json();
+  } catch (e) {
+    if (seq !== loadSeq) return;
+    $('movie-rows').innerHTML = '<tr><td colspan="8" style="color:var(--err);text-align:center;padding:30px">加载失败: ' + esc(e.message) + '</td></tr>';
+    return;
+  }
   $('data-total').textContent = `共 ${j.total} 部`;
   $('pg-info').textContent = `第 ${j.page} / ${Math.max(1, Math.ceil(j.total / j.size))} 页`;
   $('pg-prev').disabled = j.page <= 1; $('pg-next').disabled = j.page * j.size >= j.total;
@@ -1364,12 +1387,12 @@ async function loadMovies(page) {
     const catName = m.category === 'censored' ? '有码' : m.category === 'uncensored' ? '无码' : '未知';
     return `
     <tr class="movie" data-code="${esc(m.code)}">
-      <td><img src="${coverUrl(m.cover)}" loading="lazy" alt="" style="width:54px;height:38px;object-fit:cover;border-radius:4px;border:1px solid var(--line)" onerror="this.style.visibility='hidden'"></td>
-      <td><span class="code">${m.code}</span></td>
+      <td><img src="${esc(coverUrl(m.cover))}" loading="lazy" alt="" style="width:54px;height:38px;object-fit:cover;border-radius:4px;border:1px solid var(--line)" onerror="this.style.visibility='hidden'"></td>
+      <td><span class="code">${esc(m.code)}</span></td>
       <td>${esc(m.title)}</td>
       <td><span class="cat ${m.category||'unknown'}">${catName}</span></td>
       <td>${matched.length ? `<span class="tag hit" title="${esc(matched.join(', '))}" data-search="${esc(matched[0])}">${esc(matched[0])}</span>` : '<span style="color:var(--line)">—</span>'}</td>
-      <td>${m.release_date || ''}</td>
+      <td>${esc(m.release_date || '')}</td>
       <td>${m.magnet_count}</td><td style="color:var(--mut)">${(m.first_seen || '').replace('T',' ').slice(5,16)}</td>
     </tr>`;
   }).join('') || '<tr><td colspan="8" style="color:var(--mut);text-align:center;padding:30px">暂无数据，去仪表盘运行一次采集吧</td></tr>';
@@ -1435,7 +1458,10 @@ $('browse-rows').addEventListener('click', e => {
 async function toggleDetail(code, tr) {
   const next = tr.nextElementSibling;
   if (next && next.classList.contains('detail')) { next.remove(); return; }
-  const m = await (await fetch('/api/movies/' + encodeURIComponent(code))).json();
+  let m;
+  try {
+    m = await (await fetch('/api/movies/' + encodeURIComponent(code))).json();
+  } catch (e) { toast('✗ 详情加载失败: ' + e.message, 'err'); return; }
   const row = document.createElement('tr'); row.className = 'detail';
   const all = (m.magnets || []);
   const ordered = m.best_magnet
@@ -1465,7 +1491,10 @@ const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt
 async function clearData() {
   if (!confirm('确定清空全部采集数据？\n\n所有影片与磁力记录将被删除，采集深度归零。此操作不可恢复！')) return;
   if (!confirm('再次确认：真的要清空吗？（建议先「导出 JSON」备份）')) return;
-  const j = await (await fetch('/api/data/clear', {method:'POST'})).json();
+  let j;
+  try {
+    j = await (await fetch('/api/data/clear', {method:'POST'})).json();
+  } catch (e) { alert('清空失败: ' + e.message); return; }
   if (j.ok) { alert('已清空 ' + j.deleted + ' 部影片记录。'); loadStats(); loadMovies(1); loadGenres(); pollStatus(); }
   else alert('清空失败: ' + (j.error || '未知错误'));
 }
@@ -1714,11 +1743,13 @@ async function qrPoll() {
     } else {
       $('p115-qr-state').textContent = map[j.status] || (j.message || j.status);
     }
-  } catch (e) {}
+    return j;
+  } catch (e) { return {status: 'error', message: e.message}; }
 }
 async function p115Logout() {
   if (!confirm('确定退出 115 登录？')) return;
-  await fetch('/api/p115/logout', {method: 'POST'});
+  try { await fetch('/api/p115/logout', {method: 'POST'}); }
+  catch (e) { toast('✗ 退出失败: ' + e.message, 'err'); }
   load115Status();
 }
 function fmtSize(n) { n = Number(n) || 0; const u = ['B','KB','MB','GB','TB']; let i = 0; while (n >= 1024 && i < 4) { n /= 1024; i++; } return (n >= 100 || i === 0 ? n.toFixed(0) : n.toFixed(1)) + u[i]; }
@@ -1756,13 +1787,17 @@ function render115Tasks() {
       : '<span style="color:var(--mut)">—</span>';
     return `<tr><td class="mag">${esc(t.name)}</td><td>${p115TaskBadge(t)}</td>
       <td>${prog}</td><td>${fmtSize(t.size)}</td>
-      <td>${t.info_hash ? `<button class="ghost" style="padding:3px 10px;font-size:12px" onclick="del115Task('${t.info_hash}', this.dataset.n)" data-n="${esc(t.name)}">删除</button>` : '-'}</td></tr>`;
+      <td>${t.info_hash ? `<button class="ghost" style="padding:3px 10px;font-size:12px" data-hash="${esc(t.info_hash)}" data-n="${esc(t.name)}">删除</button>` : '-'}</td></tr>`;
   }).join('')
     || '<tr><td colspan="5" style="color:var(--mut);text-align:center;padding:30px">暂无离线任务</td></tr>';
   $('p115-task-pager').textContent = `第 ${p115TaskPage} / ${pages} 页`;
   $('p115-task-prev').disabled = p115TaskPage <= 1;
   $('p115-task-next').disabled = p115TaskPage >= pages;
 }
+$('p115-task-rows').addEventListener('click', e => {
+  const btn = e.target.closest('button[data-hash]');
+  if (btn) del115Task(btn.dataset.hash, btn.dataset.n);
+});
 function setP115TaskFilter(btn) {
   p115TaskFilter = btn.dataset.f; p115TaskPage = 1;
   document.querySelectorAll('#p115-task-seg .seg-btn').forEach(b => b.classList.toggle('active', b === btn));
