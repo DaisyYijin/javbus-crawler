@@ -174,22 +174,26 @@ def status() -> dict:
             log.warning("115 用户信息获取失败: %s", exc)
             return {"available": True, "logged_in": False}
     auth = _load_auth() or {}
-    # capacity: dedicated proapi endpoint; fall back to files/index_info
+    # capacity: dedicated proapi endpoint; fall back to files/index_info.
+    # Real shape (verified live via /api/p115/space-debug): data.all_total /
+    # all_use / all_remain, each {"size": <bytes>, "size_format": "5.11PB"}
+    def _space(sp: dict) -> tuple:
+        def num(key: str) -> int:
+            v = (sp or {}).get(key)
+            return int(v.get("size") or 0) if isinstance(v, dict) else int(v or 0)
+        return num("all_total"), num("all_use")
+
     total = used = 0
     try:
         resp = check_response(c.user_space_info(timeout=_TIMEOUT))
         sp = resp.get("data") if isinstance(resp.get("data"), dict) else resp
-        total = int(sp.get("total_size") or sp.get("all_size") or 0)
-        used = int(sp.get("use_size") or sp.get("space_used")
-                   or sp.get("used_size") or 0)
+        total, used = _space(sp)
     except Exception as exc:
         log.warning("115 容量信息获取失败(user_space_info): %s", exc)
     if not total:
         try:
             si = check_response(c.fs_index_info(timeout=_TIMEOUT)).get("data") or {}
-            sp = si.get("space_info") or {}
-            total = int(sp.get("total_size") or 0)
-            used = int(sp.get("use_size") or sp.get("used_size") or 0)
+            total, used = _space(si.get("space_info") or {})
         except Exception as exc:
             log.warning("115 容量信息获取失败(fs_index_info): %s", exc)
     # vip expiry is NOT in user_info4; try the nav endpoint
