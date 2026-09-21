@@ -83,7 +83,8 @@ def parse_list(html: str, base_url: str) -> list[ListItem]:
             continue
         code = href.rstrip("/").rsplit("/", 1)[-1]
         title_el = box.select_one(".photo-info span")
-        items.append(ListItem(code=code, url=href, title=_clean(title_el.get_text())))
+        items.append(ListItem(code=code, url=href,
+                              title=_clean(title_el.get_text()) if title_el else ""))
     return items
 
 

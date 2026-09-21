@@ -469,6 +469,9 @@ _CODE_FC2_RE = re.compile(r"\bFC2[-_ ]?PPV[-_ ]?(\d{6,9})\b", re.I)
 _CODE_DASH_RE = re.compile(
     r"\b((?:\d{1,3})?[A-Z]{2,10}(?:\d{1,4})?|[A-Z]\d{1,4})[-_ ](\d{2,5})\b")
 _CODE_PLAIN_RE = re.compile(r"\b([A-Z]{2,8})(\d{2,5})\b")
+# flat multi-part video files keep the CD/PART marker in their name even
+# though extract_code strips it: 'AAA-100 CD1.mp4' + 'AAA-100 CD2.mp4'
+_PART_FILE_RE = re.compile(r"[-_. ](?:CD|PART)\d{1,2}$", re.I)
 
 
 def extract_code(text) -> str | None:
@@ -498,6 +501,12 @@ def extract_code(text) -> str | None:
     if m:
         return f"{m.group(1)}-{m.group(2)}"
     return None
+
+
+def _is_part_file(name: str) -> bool:
+    """True for multi-part video names like 'AAA-100 CD1.mp4' / '-PART2'."""
+    stem = _EXT_STRIP_RE.sub("", str(name or "")).rstrip()
+    return bool(_PART_FILE_RE.search(stem))
 
 
 def metatube_title(code: str) -> str | None:
@@ -1234,6 +1243,10 @@ def _sweep_folder(conn, c, fid: int, name: str, target: int, reject: int,
                   min_size: int = _MAIN_MIN_SIZE) -> bool:
     """One folder: keep the single largest feature video, junk the rest.
 
+    Multi-part folders are kept intact: several codes, files from several
+    sub-dirs, or flat CD1/CD2 files sharing one code (extract_code strips
+    the -CD1 tail, so they all resolve to the same code).
+
     Returns True when fully handled, False when the listing came back empty
     (115 throttling) and no decision should be made yet.  With target_path
     set ("已整理"), the feature / intact folder lands inside a per-movie
@@ -1272,6 +1285,11 @@ def _sweep_folder(conn, c, fid: int, name: str, target: int, reject: int,
                    if _ext_of(v[1]) in _VIDEO_EXTS and v[2] >= min_size]
     codes = {extract_code(n) or n for _f, n, _s, _p in candidates}
     parents = {p for _f, _n, _s, p in candidates}
+    # flat multi-part files (CD1/CD2 side by side) share a single code and a
+    # single parent after tail-stripping — they must stay intact, not be
+    # reduced to one file with the rest junked
+    multi_part = len(candidates) > 1 and any(
+        _is_part_file(n) for _f, n, _s, _p in candidates)
 
     def nested(base: str) -> int:
         # per-movie sub-dir under the target root; paced, because
@@ -1281,7 +1299,7 @@ def _sweep_folder(conn, c, fid: int, name: str, target: int, reject: int,
         _pace_list(sleep_s)
         return resolve_dir(c, f"{target_path}/{base}")
 
-    if not candidates or len(codes) > 1 or len(parents) > 1:
+    if not candidates or len(codes) > 1 or len(parents) > 1 or multi_part:
         if not candidates:
             if not files and subdirs and sub_all_empty:
                 # only empty subdir answers: likely throttled, retry later
@@ -1299,7 +1317,9 @@ def _sweep_folder(conn, c, fid: int, name: str, target: int, reject: int,
         stats["organized"] += 1
         log.info("115 整理: 多分段/多影片文件夹 %s 整体 -> 已整理", name)
         return True
-    ffid, fname, _size, fsrc = candidates[0]
+    # keep the single LARGEST candidate: the listing order is arbitrary, so
+    # candidates[0] could keep a low-res copy and junk the real 4K feature
+    ffid, fname, _size, fsrc = max(candidates, key=lambda v: v[2] or 0)
     ext = _ext_of(fname)
     base = (_sanitize_name(prefer_name) if prefer_name
             else _best_name(conn, name, fname))

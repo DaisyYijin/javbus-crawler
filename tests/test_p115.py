@@ -627,6 +627,55 @@ def test_sweep_folder_multi_code_kept_intact(monkeypatch):
         conn.close()
 
 
+def test_sweep_folder_prefers_largest(monkeypatch):
+    conn = _sweep_db(monkeypatch, movies=[("AAA-100", "大片")])
+    try:
+        fake = _FakeSweepClient({
+            400: [
+                # same code twice: the low-res copy is listed first —
+                # listing order must not decide which copy is kept
+                {"n": "AAA-100 [HD].mp4", "fid": 401,
+                 "s": 1500 * 1024 * 1024, "fc": "1"},
+                {"n": "AAA-100 [4K].mp4", "fid": 402, "s": 10 * GIB, "fc": "1"},
+            ],
+        })
+        monkeypatch.setattr(p115, "_fs_page", lambda c, cid, off, limit=100:
+                            (fake.listings.get(cid, []), True))
+        stats = {"organized": 0, "rejected": 0}
+        p115._sweep_folder(conn, fake, 400, "AAA-100", 10, 20, 0, stats)
+        # the LARGEST copy is kept and renamed with the library title
+        assert fake.renames == [(402, "AAA-100 大片.mp4")]
+        assert (402, 10) in fake.moves
+        # the smaller duplicate + the emptied folder shell -> reject
+        assert sorted(f for f, t in fake.moves if t == 20) == [400, 401]
+        assert stats == {"organized": 1, "rejected": 2}
+    finally:
+        conn.close()
+
+
+def test_sweep_folder_flat_multipart_kept_intact(monkeypatch):
+    conn = _sweep_db(monkeypatch, movies=[("AAA-100", "大片")])
+    try:
+        fake = _FakeSweepClient({
+            500: [
+                # flat CD1/CD2 side by side: extract_code strips the tails,
+                # so both files collapse to one code — they must stay intact
+                {"n": "AAA-100 CD1.mp4", "fid": 501, "s": 4 * GIB, "fc": "1"},
+                {"n": "AAA-100 CD2.mp4", "fid": 502, "s": 4 * GIB, "fc": "1"},
+            ],
+        })
+        monkeypatch.setattr(p115, "_fs_page", lambda c, cid, off, limit=100:
+                            (fake.listings.get(cid, []), True))
+        stats = {"organized": 0, "rejected": 0}
+        p115._sweep_folder(conn, fake, 500, "AAA-100", 10, 20, 0, stats)
+        # whole folder to target, nothing renamed or split apart
+        assert fake.moves == [(500, 10)]
+        assert fake.renames == []
+        assert stats == {"organized": 1, "rejected": 0}
+    finally:
+        conn.close()
+
+
 def test_sweep_existing_end_to_end(monkeypatch):
     conn = _sweep_db(monkeypatch, movies=[("mida-790", "下海")])  # lowercase row
     try:

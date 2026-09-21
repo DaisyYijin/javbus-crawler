@@ -440,7 +440,7 @@ def run_job(
              len(known), fetcher.delay)
 
     stats = {"pages": 0, "listed": 0, "new": 0, "updated": 0,
-             "magnets": 0, "errors": 0, "stopped": False}
+             "magnets": 0, "errors": 0, "skipped": 0, "stopped": False}
 
     try:
         for cat, genre, page_list in plans:
@@ -472,85 +472,118 @@ def run_job(
                 for item in items:
                     if not refresh and item.code in known:
                         continue
-                    detail_html = fetcher.get(item.url)
-                    if not detail_html:
-                        stats["errors"] += 1
-                        continue
-
-                    movie = parse_detail(detail_html, item.code, item.url)
-                    movie.category = cat
-                    magnets_fetched = False
-                    if magnets:
-                        sv = parse_movie_script_vars(detail_html)
-                        if sv.get("gid"):
-                            frag = fetcher.get(magnet_ajax_path(sv), referer=item.url)
-                            if frag is None:
-                                # magnet fetch failed — an empty list here would
-                                # wrongly count as "no keyword match" and make
-                                # only-mode skip (and mislog) the movie
-                                log.warning("%s: 磁力列表抓取失败，本次不入库（下次追新自动重试）",
-                                            item.code)
-                                stats["errors"] += 1
-                                continue
-                            movie.magnets = parse_magnets(frag)
-                            magnets_fetched = True
-                        else:
-                            log.warning("%s: 未找到 gid 参数，跳过磁力", item.code)
-
-                    # tag filtering: match genres + magnet names against keywords
-                    keywords = [k for k in str(cfg.get("TAG_FILTERS") or "").split(",") if k.strip()]
                     try:
-                        tiebreak = parse_tiebreak(cfg.get("MAGNET_TIEBREAK"))
-                    except ValueError:
-                        tiebreak = ["size", "date"]
-                    fallback = parse_fallback(cfg.get("MAGNET_FALLBACK"))
-                    filter_mode = cfg.get("TAG_FILTER_MODE", "mark")
-                    if keywords:
-                        movie.matched_tags = compute_matched(
-                            movie.genres, [m.name for m in movie.magnets], keywords)
-                        if filter_mode == "only" and not movie.matched_tags:
-                            sample = " / ".join(m.name for m in movie.magnets[:3])
-                            if fallback == "none":
-                                stats.setdefault("skipped", 0)
-                                stats["skipped"] += 1
-                                log.info("跳过 %s（磁力 %d 条%s，无关键词命中: %s）",
-                                         item.code, len(movie.magnets),
-                                         f"，如: {sample}" if sample else "",
-                                         ",".join(keywords))
-                                continue
-                            log.info("%s 无关键词命中，按兜底策略(%s)保留磁力%s",
-                                     item.code, fallback,
-                                     f": {sample}" if sample else "")
+                        detail_html = fetcher.get(item.url)
+                        if not detail_html:
+                            stats["errors"] += 1
+                            continue
+                        if looks_blocked(detail_html):
+                            log.error("%s: 详情页触发站点年龄验证/风控（driver-verify），"
+                                      "请降低采集频率稍后重试", item.code)
+                            stats["errors"] += 1
+                            break
 
-                    # learn per-channel genre name -> site id mapping
-                    for gcat, gname, gid in movie.genre_links:
-                        db.set_meta(conn, f"genre_id:{gcat}:{gname}", gid)
+                        movie = parse_detail(detail_html, item.code, item.url)
+                        if not movie.title:
+                            # blocked/shell pages answer HTTP 200, so an empty
+                            # title is the only tell; storing it would poison
+                            # the DB and this code would never be retried
+                            # (it lands in known below)
+                            log.warning("%s: 详情页解析为空标题，疑似风控页，本次不入库"
+                                        "（下次追新自动重试）", item.code)
+                            stats["errors"] += 1
+                            continue
+                        movie.category = cat
+                        magnets_fetched = False
+                        if magnets:
+                            sv = parse_movie_script_vars(detail_html)
+                            if sv.get("gid"):
+                                frag = fetcher.get(magnet_ajax_path(sv), referer=item.url)
+                                if not frag:
+                                    # magnet fetch failed — an empty list here
+                                    # would wrongly count as "no keyword match"
+                                    # and make only-mode skip (and mislog) the
+                                    # movie; an empty body counts as failure too
+                                    log.warning("%s: 磁力列表抓取失败，本次不入库（下次追新自动重试）",
+                                                item.code)
+                                    stats["errors"] += 1
+                                    continue
+                                movie.magnets = parse_magnets(frag)
+                                magnets_fetched = True
+                            else:
+                                log.warning("%s: 未找到 gid 参数，跳过磁力", item.code)
 
-                    # store ONE magnet per movie: the best pick by keyword
-                    # priority + tiebreakers (matching used the full list)
-                    movie.magnets = pick_best(movie.magnets, keywords, tiebreak, fallback)
+                        # tag filtering: match genres + magnet names against keywords
+                        keywords = [k for k in str(cfg.get("TAG_FILTERS") or "").split(",") if k.strip()]
+                        try:
+                            tiebreak = parse_tiebreak(cfg.get("MAGNET_TIEBREAK"))
+                        except ValueError:
+                            tiebreak = ["size", "date"]
+                        fallback = parse_fallback(cfg.get("MAGNET_FALLBACK"))
+                        filter_mode = cfg.get("TAG_FILTER_MODE", "mark")
+                        if keywords:
+                            movie.matched_tags = compute_matched(
+                                movie.genres, [m.name for m in movie.magnets], keywords)
+                            if filter_mode == "only" and not movie.matched_tags:
+                                sample = " / ".join(m.name for m in movie.magnets[:3])
+                                if fallback == "none":
+                                    stats["skipped"] += 1
+                                    log.info("跳过 %s（磁力 %d 条%s，无关键词命中: %s）",
+                                             item.code, len(movie.magnets),
+                                             f"，如: {sample}" if sample else "",
+                                             ",".join(keywords))
+                                    continue
+                                log.info("%s 无关键词命中，按兜底策略(%s)保留磁力%s",
+                                         item.code, fallback,
+                                         f": {sample}" if sample else "")
 
-                    is_new = item.code not in known
-                    if refresh and magnets_fetched:
-                        # keep the table in sync with what we just fetched
-                        db.delete_magnets(conn, movie.code)
-                    db.upsert_movie(conn, movie)
-                    stats["magnets"] += db.insert_magnets(conn, movie.magnets, movie.code)
-                    conn.commit()
-                    known.add(item.code)
-                    stats["new" if is_new else "updated"] += 1
-                    log.info("%s %s 磁力=%d %s",
-                             "新增" if is_new else "更新", movie.code,
-                             len(movie.magnets), movie.title[:40])
+                        # learn per-channel genre name -> site id mapping
+                        for gcat, gname, gid in movie.genre_links:
+                            db.set_meta(conn, f"genre_id:{gcat}:{gname}", gid)
+
+                        # store ONE magnet per movie: the best pick by keyword
+                        # priority + tiebreakers (matching used the full list)
+                        movie.magnets = pick_best(movie.magnets, keywords, tiebreak, fallback)
+
+                        is_new = item.code not in known
+                        if refresh and magnets_fetched:
+                            # keep the table in sync with what we just fetched
+                            db.delete_magnets(conn, movie.code)
+                        db.upsert_movie(conn, movie)
+                        stats["magnets"] += db.insert_magnets(conn, movie.magnets, movie.code)
+                        conn.commit()
+                        known.add(item.code)
+                        stats["new" if is_new else "updated"] += 1
+                        log.info("%s %s 磁力=%d %s",
+                                 "新增" if is_new else "更新", movie.code,
+                                 len(movie.magnets), movie.title[:40])
+                    except Exception:
+                        # isolate one bad movie: roll back the half-done
+                        # transaction (old magnets deleted, new ones missing)
+                        # and keep the batch going
+                        conn.rollback()
+                        stats["errors"] += 1
+                        log.warning("%s: 单条处理失败，跳过该影片 (%s)",
+                                    item.code, item.url, exc_info=True)
+                        continue
                     auto_download(cfg, movie)
     except StopRequested:
         stats["stopped"] = True
         log.warning("采集已被用户停止")
-    finally:
+    except Exception:
+        # a mid-write crash (e.g. database is locked) must not commit the
+        # half-done transaction (old magnets deleted, new ones missing)
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        raise
+    else:
         conn.commit()
+    finally:
         conn.close()
         log.info("结束: %(pages)d 页, %(new)d 新增, %(updated)d 更新, "
-                 "%(magnets)d 磁力, %(errors)d 错误", stats)
+                 "%(magnets)d 磁力, %(errors)d 错误, %(skipped)d 跳过", stats)
     return stats
 
 

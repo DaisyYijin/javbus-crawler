@@ -89,6 +89,9 @@ def _admin_password() -> str:
 
 
 _logs: deque[str] = deque(maxlen=1000)
+# emit runs on any thread that logs; /api/crawl/status reads on request
+# threads — list(deque) raises RuntimeError if the deque mutates mid-iteration
+_logs_lock = threading.Lock()
 
 # ---- login brute-force guard ---------------------------------------------
 # per-IP sliding window of failed attempts; N failures within the window
@@ -145,7 +148,8 @@ def _invalidate_stats_cache() -> None:
 class _WebLogHandler(logging.Handler):
     def emit(self, record):
         try:
-            _logs.append(self.format(record))
+            with _logs_lock:
+                _logs.append(self.format(record))
         except Exception:
             pass
 
@@ -391,6 +395,8 @@ def create_app() -> Flask:
                 conn.close()
         except Exception:
             depths = {"censored": "0", "uncensored": "0"}
+        with _logs_lock:
+            log_tail = list(_logs)[-200:]
         return jsonify({
             "running": _job["running"],
             "params": _job["params"],
@@ -399,7 +405,7 @@ def create_app() -> Flask:
             "started_at": _job["started_at"],
             "finished_at": _job["finished_at"],
             "depths": depths,
-            "log_tail": list(_logs)[-200:],
+            "log_tail": log_tail,
         })
 
     # ---------------- data ----------------
