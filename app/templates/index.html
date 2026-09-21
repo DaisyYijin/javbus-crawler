@@ -1461,6 +1461,10 @@ async function load115Status() {
         vip.textContent = left > 0 ? `VIP ${d} 到期` : `VIP 已过期（${d}）`;
         vip.className = 'pill' + (left > 0 ? ' run' : ' err');
         vip.style.display = '';
+      } else if (j.vip_level > 0) {
+        vip.textContent = 'VIP 会员';
+        vip.className = 'pill run';
+        vip.style.display = '';
       } else vip.style.display = 'none';
       const sp = $('p115-space');
       if (j.total_size) {

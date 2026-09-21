@@ -158,26 +158,32 @@ def status() -> dict:
     c = get_client()
     if not c:
         return {"available": True, "logged_in": False}
-    # user_info4 = webapi.115.com/user/info: the FULL profile (user_pic,
-    # vip_end_time, space_info, and the name is "username" not "user_name")
-    # with fields at the TOP level; the proapi user_info carries almost
-    # none of these — only use it as a fallback
+    # user_info4 = webapi.115.com/user/info: the FULL profile. Real fields
+    # (verified live): avatar is user_face / user_face_ori, VIP status is
+    # is_vip (number), user_name — NOT user_pic / vip_end_time
     data: dict = {}
     try:
         resp = check_response(c.user_info4(timeout=_TIMEOUT))
         data = resp.get("data") if isinstance(resp.get("data"), dict) else resp
     except Exception as exc:
         log.warning("115 完整用户信息获取失败，改用精简接口: %s", exc)
-    if not data.get("user_pic") and not data.get("username") and not data.get("user_name"):
+    if not data.get("user_face") and not data.get("user_name"):
         try:
             data = check_response(c.user_info(timeout=_TIMEOUT))["data"] or data
         except Exception as exc:
             log.warning("115 用户信息获取失败: %s", exc)
             return {"available": True, "logged_in": False}
     auth = _load_auth() or {}
-    space = data.get("space_info") or {}
-    total = int(space.get("total_size") or 0)
-    used = int(space.get("use_size") or space.get("used_size") or 0)
+    # capacity: dedicated proapi endpoint; fall back to files/index_info
+    total = used = 0
+    try:
+        resp = check_response(c.user_space_info(timeout=_TIMEOUT))
+        sp = resp.get("data") if isinstance(resp.get("data"), dict) else resp
+        total = int(sp.get("total_size") or sp.get("all_size") or 0)
+        used = int(sp.get("use_size") or sp.get("space_used")
+                   or sp.get("used_size") or 0)
+    except Exception as exc:
+        log.warning("115 容量信息获取失败(user_space_info): %s", exc)
     if not total:
         try:
             si = check_response(c.fs_index_info(timeout=_TIMEOUT)).get("data") or {}
@@ -185,17 +191,27 @@ def status() -> dict:
             total = int(sp.get("total_size") or 0)
             used = int(sp.get("use_size") or sp.get("used_size") or 0)
         except Exception as exc:
-            log.warning("115 容量信息获取失败: %s", exc)
+            log.warning("115 容量信息获取失败(fs_index_info): %s", exc)
+    # vip expiry is NOT in user_info4; try the nav endpoint
+    vip_level = int(data.get("is_vip") or 0)
+    vip_end = int(data.get("vip_end_time") or 0)
+    if vip_level and not vip_end:
+        try:
+            nav = check_response(c.user_info3(timeout=_TIMEOUT)).get("data") or {}
+            vip_end = int(nav.get("vip_end_time") or nav.get("vip_end") or 0)
+        except Exception:
+            pass
     _user_cache = {
         "available": True, "logged_in": True,
         "user": data.get("user_name") or data.get("username"),
         "user_id": str(data.get("user_id", "")),
         "device": auth.get("app", ""),
-        "icon": (data.get("user_pic") or data.get("icon")
-                 or data.get("head_img_url") or ""),
+        "icon": (data.get("user_face") or data.get("user_face_ori")
+                 or data.get("user_pic") or ""),
         "total_size": total,
         "used_size": used,
-        "vip_end": int(data.get("vip_end_time") or 0),
+        "vip_level": vip_level,
+        "vip_end": vip_end,
         # full payload for the frontend's heuristic avatar/vip picking
         "raw": data,
     }
