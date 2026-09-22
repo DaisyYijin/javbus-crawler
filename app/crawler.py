@@ -408,8 +408,11 @@ def auto_download(cfg: dict, movie) -> str:
             return "tracked"
         if recs:  # serial pipeline: one download (through organize) at a time
             _queued_update(cfg, movie.code, True)
-            log.info("%s: 上一个云下载还未完成整理，稍后自动提交（串行）",
-                     movie.code)
+            others = ", ".join(sorted({str(r.get("code") or "?")
+                                       for r in recs.values()
+                                       if r.get("code") != movie.code})) or "?"
+            log.info("%s: 上一个云下载（%s）还未完成整理，稍后自动提交（串行）",
+                     movie.code, others)
             return "busy"
         interval = max(0, int(cfg.get("P115_DL_INTERVAL_SEC", 0)))
         if interval:  # cooldown after the last movie landed in the library
@@ -522,7 +525,10 @@ def _serial_settle(cfg: dict, code: str, stop_check=None) -> None:
             log.info("%s: 磁力全部失败，继续采集下一部", code)
             return
         elif recs:
-            state = "串行槽被其他下载占用"
+            others = ", ".join(sorted({str(r.get("code") or "?")
+                                       for r in recs.values()
+                                       if r.get("code") != code})) or "?"
+            state = f"串行槽被其他下载占用（{others}）"
         else:
             interval = max(0, int(cfg.get("P115_DL_INTERVAL_SEC", 0)))
             wait = interval - (int(time.time()) - p115.last_release_at())

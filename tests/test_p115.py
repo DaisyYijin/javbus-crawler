@@ -564,6 +564,74 @@ def test_organize_get_info_file_without_fc(monkeypatch):
         conn.close()
 
 
+def test_sweep_folder_junk_move_conflict_still_handled(monkeypatch):
+    """清空后的壳移入冗余失败（典型：10 分钟扫描已把它移进冗余，115 拒绝
+    移到自身所在目录）：正片已归档就必须视为已处理并放行串行槽，不能让
+    同一任务每轮抛异常无限占槽。"""
+    conn = _sweep_db(monkeypatch, movies=[("MIDA-790", "下海")])
+    try:
+        fake = _FakeSweepClient({
+            600: [
+                {"n": "MIDA-790.mp4", "fid": 601, "s": 2 * GIB, "fc": "1"},
+                {"n": "广告.png", "fid": 602, "s": 2048, "fc": "1"},
+            ],
+        })
+        real_move = fake.fs_move
+
+        def move(fid, cid, timeout=None):
+            if int(fid) == 600:  # the shell: 115 refuses (already in reject)
+                raise RuntimeError("目标目录与当前目录相同")
+            return real_move(fid, cid, timeout=timeout)
+
+        fake.fs_move = move
+        monkeypatch.setattr(p115, "_fs_page", lambda c, cid, off, limit=100:
+                            (fake.listings.get(cid, []), True))
+        stats = {"organized": 0, "rejected": 0}
+        handled = p115._sweep_folder(conn, fake, 600, "MIDA-790ch", 10, 20,
+                                     0, stats)
+        assert handled is True                 # organized, not wedged
+        assert (601, 10) in fake.moves         # feature still filed
+        assert fake.renames == [(601, "MIDA-790 下海.mp4")]
+        assert stats == {"organized": 1, "rejected": 0}  # junk move tolerated
+    finally:
+        conn.close()
+
+
+def test_organize_pass_exception_counts_and_releases(monkeypatch):
+    """整理过程持续抛异常的任务也要计数：5 次后打 done 并放行，不能无限
+    占住串行槽（此前 pass 级异常不计入任何上限）。"""
+    conn = _sweep_db(monkeypatch, movies=[("FIT-008", "初撮り")])
+    try:
+        class _BoomSweepClient:
+            def clouddownload_task_list(self, payload, timeout=None):
+                return {"state": True, "count": 1, "tasks": [
+                    {"info_hash": "boomih1", "status": 2, "name": "fit-008ch",
+                     "file_id": 999, "percentDone": 100}]}
+
+            def fs_file(self, fid, timeout=None):
+                return {"state": True, "data": {"file_name": "fit-008ch",
+                                                "fc": "1", "sha1": "x",
+                                                "size": 5}}
+
+        def boom(*a, **k):
+            raise RuntimeError("boom")
+
+        monkeypatch.setattr(p115, "get_client",
+                            lambda refresh=False: _BoomSweepClient())
+        monkeypatch.setattr(p115, "resolve_dir", lambda c, p: 10)
+        monkeypatch.setattr(p115, "_SWEEP_LIST_GAP", 0)
+        monkeypatch.setattr(p115, "_sweep_file", boom)
+        p115.track_add("FIT-008", "BOOMIH1", "magnet:?x", "fit-008ch")
+        for _ in range(4):
+            p115.organize_pass()
+            assert set(p115.track_records()) == {"BOOMIH1"}  # held, counting
+        p115.organize_pass()  # 5th exception -> give up and release
+        assert p115.track_records() == {}
+        assert p115.is_done("BOOMIH1") is True
+    finally:
+        conn.close()
+
+
 def test_gaveup_codes_and_done_mark_release_slot(monkeypatch):
     import json as _json
     import sqlite3

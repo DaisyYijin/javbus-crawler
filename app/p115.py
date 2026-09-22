@@ -1188,6 +1188,10 @@ def _organize_pass_locked(max_pages: int = 5) -> dict:
                 _organize_one(conn, c, t, ih, stats)
             except Exception as exc:
                 log.warning("115 整理失败 %s: %s", t.get("name"), exc)
+                # a task that keeps RAISING (not the counted retry paths
+                # inside) must not hold the serial slot forever either
+                _org_fail_bump(conn, ih, str(t.get("name") or ""),
+                               f"整理异常[{type(exc).__name__}: {exc}]")
         conn.execute("INSERT OR REPLACE INTO meta(key, value) VALUES (?, ?)",
                      ("p115:last_result", json.dumps(stats, ensure_ascii=False)))
         conn.commit()
@@ -1505,6 +1509,21 @@ def _sweep_folder(conn, c, fid: int, name: str, target: int, reject: int,
             return target
         return resolve_dir(c, f"{target_path}/{base}")
 
+    def junk_shell(label: str) -> bool:
+        # Move the emptied shell (ads / leftovers) to reject. Tolerate the
+        # move failing — e.g. the 10-min sweep ALREADY junked this shell and
+        # 115 refuses a move into the dir the folder already lives in. The
+        # movie itself is organized at that point; leftover placement must
+        # never wedge the serial slot, so report handled either way.
+        try:
+            check_response(c.fs_move(fid, reject, timeout=_TIMEOUT))
+        except Exception as exc:
+            log.warning("115 整理: %s 移入冗余失败（可能已在冗余目录内，忽略）: %s",
+                        label, exc)
+            return False
+        stats["rejected"] += 1
+        return True
+
     if not candidates:
         if not files and subdirs and sub_all_empty:
             # only empty subdir answers: likely throttled, retry later
@@ -1512,9 +1531,8 @@ def _sweep_folder(conn, c, fid: int, name: str, target: int, reject: int,
             log.info("115 整理: %s 子目录列表为空(疑似限流)，本次跳过", name)
             return False
         # nothing feature-sized anywhere: the whole folder is junk
-        check_response(c.fs_move(fid, reject, timeout=_TIMEOUT))
-        stats["rejected"] += 1
-        log.info("115 整理: 文件夹 %s 无正片 -> 冗余目录", name)
+        if junk_shell(name):
+            log.info("115 整理: 文件夹 %s 无正片 -> 冗余目录", name)
         return True
     # group the candidates by code: bundles that carry one file per title
     # can be split apart, each movie filed under its own 已整理/CODE Title/
@@ -1548,9 +1566,8 @@ def _sweep_folder(conn, c, fid: int, name: str, target: int, reject: int,
         # grouped (two folders both holding 广告.url must not melt into two
         # same-named loose files at the reject root), and one fs_move beats
         # N under the fs_files rate limit
-        check_response(c.fs_move(fid, reject, timeout=_TIMEOUT))
-        stats["rejected"] += 1
-        log.info("115 整理: 正片外的剩余内容随文件夹 %s 整体 -> 冗余目录", name)
+        if junk_shell(name):
+            log.info("115 整理: 正片外的剩余内容随文件夹 %s 整体 -> 冗余目录", name)
         return True
     # multi-title bundle (spam magnets stuff several movies into one
     # download): file each library-known movie under its own
@@ -1582,10 +1599,9 @@ def _sweep_folder(conn, c, fid: int, name: str, target: int, reject: int,
             stats["organized"] += 1
             log.info("115 整理: 正片 %s -> 已整理", new)
         if filed:
-            check_response(c.fs_move(fid, reject, timeout=_TIMEOUT))
-            stats["rejected"] += 1
-            log.info("115 整理: 捆绑下载 %s 的广告与未识别影片随文件夹整体 -> 冗余目录",
-                     name)
+            if junk_shell(name):
+                log.info("115 整理: 捆绑下载 %s 的广告与未识别影片随文件夹整体 -> 冗余目录",
+                         name)
             return True
     # CD sets / several cuts / unknown bundles: the folder IS the unit. File
     # it directly under the target root -> 已整理/<原目录名>/…; moving it into
