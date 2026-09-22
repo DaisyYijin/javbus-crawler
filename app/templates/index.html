@@ -1219,8 +1219,8 @@ async function pollStatus() {
   try {
     const j = await (await fetch('/api/crawl/status')).json();
     // skip ALL DOM writes when nothing changed — keeps the main thread idle
-    const tail = j.log_tail || [];
-    const sig = JSON.stringify([j.running, j.error, j.stats, j.finished_at, j.depths, tail.length, tail[tail.length - 1]]);
+    const tail = j.log_tail || [];   // newest first (server reverses)
+    const sig = JSON.stringify([j.running, j.error, j.stats, j.finished_at, j.depths, tail.length, tail[0]]);
     if (sig === _lastStatusSig) return;
     _lastStatusSig = sig;
     const st = $('crawl-state'), dot = $('side-dot'), ss = $('side-state');
@@ -1244,14 +1244,13 @@ async function pollStatus() {
       last = `新增 ${s.new||0} · 更新 ${s.updated||0} · 磁力 ${s.magnets||0} · 跳过 ${s.skipped||0} · 错误 ${s.errors||0}` + (s.stopped ? ' · 已手动停止' : '');
       $('s-lastnew').textContent = s.new ?? '–';
       if (j.error) last += ' ｜ ' + j.error;
-    } else { last = (j.finished_at ? j.finished_at.replace('T',' ').slice(0,16) + ' UTC' : '–'); }
+    } else { last = (j.finished_at ? j.finished_at.replace('T',' ').slice(0,16) : '–'); }
     $('last-run').textContent = '深度 有码' + (d.censored ?? 0) + ' / 无码 ' + (d.uncensored ?? 0) + ' ｜ ' + last;
     const log = $('log');
     if (log && (!$('log-auto') || $('log-auto').checked)) {  // 「自动刷新」未勾选时冻结日志视图
-      const atBottom = log.scrollTop + log.clientHeight >= log.scrollHeight - 30;
-      log.textContent = (j.log_tail || []).join('\n') || '（暂无日志）';
-      $('log-lines') && ($('log-lines').textContent = (j.log_tail || []).length + ' 行');
-      if (atBottom) log.scrollTop = log.scrollHeight;
+      log.textContent = tail.join('\n') || '（暂无日志）';   // newest on top
+      $('log-lines') && ($('log-lines').textContent = tail.length + ' 行');
+      log.scrollTop = 0;
     }
   } catch (e) {}
 }

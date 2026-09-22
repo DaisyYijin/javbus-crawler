@@ -23,6 +23,10 @@ logging.basicConfig(
     format="%(asctime)s %(levelname)-7s %(message)s",
     datefmt="%H:%M:%S",
 )
+# containers usually run UTC; the user reads Beijing time — shift every
+# asctime 8h forward regardless of the host TZ
+for _h in logging.getLogger().handlers:
+    _h.formatter.converter = lambda ts: time.gmtime(ts + 8 * 3600)
 log = logging.getLogger("seedmm")
 
 

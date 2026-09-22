@@ -981,17 +981,26 @@ def _split_path(path: str) -> list[str]:
     return [p.strip() for p in str(path or "").replace("\\", "/").split("/") if p.strip()]
 
 
+def _dir_cached(path: str) -> int | None:
+    """Cached cid for a dir path (None when absent / past the TTL)."""
+    key = "/".join(_split_path(path) or ["未命名"])
+    hit = _dir_cid.get(key)
+    if hit and time.time() - hit[1] < _DIR_TTL:
+        return hit[0]
+    return None
+
+
 def resolve_dir(c, name: str) -> int:
     """Resolve a 115 directory by path ("一级/二级"), creating missing levels.
 
     Results are cached per path (with a TTL — see _DIR_TTL); use
     reset_dir_cache() to force a refresh.
     """
+    hit = _dir_cached(name)
+    if hit:
+        return hit
     parts = _split_path(name) or ["未命名"]
     key = "/".join(parts)
-    hit = _dir_cid.get(key)
-    if hit and time.time() - hit[1] < _DIR_TTL:
-        return hit[0]
     cid = 0
     for part in parts:
         nxt = _find_dir(c, part, cid)
@@ -1130,7 +1139,7 @@ def reset_dir_cache() -> None:
 def organize_pass(max_pages: int = 5) -> dict:
     """Rename completed tasks (code + title) and move them to the target dir.
 
-    Serialized via _organize_lock: two background loops (the 60s organize
+    Serialized via _organize_lock: two background loops (the 30s organize
     loop and watch_pass finishing a download) can both trigger a pass; the
     loser just skips instead of running two interleaved passes.
     """
@@ -1243,7 +1252,7 @@ def _organize_one(conn, c, task: dict, info_hash: str, stats: dict) -> None:
         # file_id field lags behind the status flip). Faking a done mark
         # here released the slot while nothing had landed — the serial
         # gate then believed the movie was organized. Retry instead: the
-        # 60s organize loop re-runs this until the reference shows up (or
+        # 30s organize loop re-runs this until the reference shows up (or
         # _ORG_MAX_FAILS releases the task for good).
         _org_fail_bump(conn, info_hash, str(task.get("name") or ""),
                        "暂无文件信息")
@@ -1467,11 +1476,14 @@ def _sweep_folder(conn, c, fid: int, name: str, target: int, reject: int,
         _is_part_file(n) for _f, n, _s, _p in candidates)
 
     def nested(base: str) -> int:
-        # per-movie sub-dir under the target root; paced, because
-        # resolve_dir walks fs_files listings internally
+        # per-movie sub-dir under the target root. Paced ONLY on a cache
+        # miss: resolve_dir then walks fs_files listings, while a cached
+        # hit costs nothing — repeat organizes of the same movie (and the
+        # warm 已整理 root) used to burn a full listing gap for nothing
         if not (target_path and base):
             return target
-        _pace_list(sleep_s)
+        if _dir_cached(f"{target_path}/{base}") is None:
+            _pace_list(sleep_s)
         return resolve_dir(c, f"{target_path}/{base}")
 
     if not candidates:

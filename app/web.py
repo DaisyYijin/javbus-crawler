@@ -11,13 +11,22 @@ import sqlite3
 import threading
 import time
 from collections import deque
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from flask import Flask, jsonify, render_template, request
 
 from . import crawler, db, p115, selfupdate, settings, updater
 from .fetcher import BROWSER_UA, StopRequested
 from .version import __version__
+
+# logs / job timestamps always read in Beijing time (UTC+8) regardless of
+# the container's own TZ, which is usually UTC
+_CN_TZ = timezone(timedelta(hours=8))
+
+
+def _beijing(ts):
+    """logging.Formatter.converter: render %(asctime)s in UTC+8."""
+    return time.gmtime(ts + 8 * 3600)
 
 log = logging.getLogger("seedmm.web")
 
@@ -168,7 +177,7 @@ _job: dict = {
 
 
 def _now() -> str:
-    return datetime.now(timezone.utc).isoformat(timespec="seconds")
+    return datetime.now(_CN_TZ).isoformat(timespec="seconds")
 
 
 def _recompute_thread(keywords: list[str]) -> None:
@@ -396,7 +405,7 @@ def create_app() -> Flask:
         except Exception:
             depths = {"censored": "0", "uncensored": "0"}
         with _logs_lock:
-            log_tail = list(_logs)[-200:]
+            log_tail = list(_logs)[-200:][::-1]  # newest first for the UI
         return jsonify({
             "running": _job["running"],
             "params": _job["params"],
@@ -944,8 +953,8 @@ def _auto_crawl_loop() -> None:
                 next_run = now + interval * 3600
                 log.info("自动采集已启用: 每 %.1f 小时采集 %s 页（首次约 %s）",
                          interval, cfg.get("AUTO_CRAWL_PAGES"),
-                         datetime.fromtimestamp(next_run, tz=timezone.utc)
-                         .strftime("%m-%d %H:%M UTC"))
+                         datetime.fromtimestamp(next_run, tz=_CN_TZ)
+                         .strftime("%m-%d %H:%M 北京时间"))
                 continue
             if now < next_run:
                 continue
@@ -976,10 +985,15 @@ def _auto_crawl_loop() -> None:
 
 
 def _p115_organize_loop() -> None:
-    """Background loop: rename+move finished 115 tasks when enabled."""
+    """Background loop: rename+move finished 115 tasks when enabled.
+
+    Ticks every 30s: an idle pass only lists the (unthrottled) offline-task
+    endpoint, so a fast cadence just shortens the wait after a throttled
+    fs_files call without adding rate-limit pressure.
+    """
     last_sweep = 0.0
     while True:
-        time.sleep(60)
+        time.sleep(30)
         try:
             cfg = settings.load()
             if not cfg.get("P115_AUTO_ORGANIZE") or not p115.has_auth():
@@ -1019,7 +1033,9 @@ def run(host: str = "0.0.0.0", port: int | None = None) -> None:
     from waitress import serve
 
     handler = _WebLogHandler()
-    handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)-7s %(message)s", "%H:%M:%S"))
+    fmt = logging.Formatter("%(asctime)s %(levelname)-7s %(message)s", "%H:%M:%S")
+    fmt.converter = _beijing
+    handler.setFormatter(fmt)
     logging.getLogger().addHandler(handler)
 
     if port is None:
