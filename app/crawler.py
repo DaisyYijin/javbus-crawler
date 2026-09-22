@@ -602,6 +602,9 @@ def retry_queued(cfg: dict) -> int:
     return submitted
 
 
+_DEEP_MAX_PAGES = 200  # 连续采集单次翻页上限（防失控熔断，可从断点继续）
+
+
 def run_job(
     cfg: dict,
     pages: str = "1",
@@ -617,6 +620,11 @@ def run_job(
           "backfill" – continue the history: auto-start after the deepest page
                        crawled so far (per category); `pages` is the number of
                        pages to walk this run. Stops early at the site's end.
+          "deep"     – 连续采集: auto-paginate from the start page until a
+                       whole page adds nothing new (caught up with the
+                       library), the site's end, an anti-bot block, the
+                       per-run page cap or the user's stop. `pages` is the
+                       starting page number.
     """
     fetcher = Fetcher(
         base_url=cfg["BASE_URL"],
@@ -679,12 +687,18 @@ def run_job(
                      combo_label(c, g), depths[dk] + 1, count, depths[dk])
         if not plans:
             raise ValueError("尚无采集深度记录：请先用「追新」模式采集第 1 页")
+    elif mode == "deep":
+        try:
+            start = max(1, int(str(pages).strip().split("-")[0]))
+        except ValueError:
+            start = 1
+        plans = [(c, g, start) for c, g in combos]
     else:
         page_list = parse_pages(pages)
         mode = "new"
         plans = [(c, g, page_list) for c, g in combos]
     log.info("开始采集: 模式=%s 频道=%s pages=%s base=%s 已入库=%d delay=%.1fs",
-             "补历史" if mode == "backfill" else "追新",
+             {"backfill": "补历史", "deep": "连续"}.get(mode, "追新"),
              "/".join(combo_label(c, g) for c, g in combos), pages, fetcher.base_url,
              len(known), fetcher.delay)
 
@@ -692,10 +706,15 @@ def run_job(
              "magnets": 0, "errors": 0, "skipped": 0, "stopped": False}
 
     try:
-        for cat, genre, page_list in plans:
+        for cat, genre, plan in plans:
             section = sections[cat]
             dk = depth_key(cat, genre)
-            for page in page_list:
+            # deep mode plans carry the START page: paginate until caught up
+            page_seq = (range(int(plan), int(plan) + _DEEP_MAX_PAGES)
+                        if mode == "deep" else plan)
+            for page in page_seq:
+                page_new0 = stats["new"]
+                page_err0 = stats["errors"]
                 html = fetcher.get(listing_path(section, genre, page))
                 if not html:
                     log.error("第 %d 页抓取失败，跳过", page)
@@ -824,6 +843,20 @@ def run_job(
                         # one movie at a time: hold the crawl until this
                         # download finished organizing, then collect the next
                         _serial_settle(cfg, movie.code, stop_check)
+                if mode == "deep" and stats["new"] == page_new0 \
+                        and stats["errors"] == page_err0:
+                    # a whole page added nothing and nothing errored: the
+                    # library has caught up with the site's history here
+                    log.info("[%s] 第 %d 页整页无新增，已追平历史深度，"
+                             "连续采集结束（本频道深度 %d）",
+                             combo_label(cat, genre), page, depths[dk])
+                    break
+            else:  # page loop ran to the cap without breaking
+                if mode == "deep":
+                    log.info("[%s] 连续采集达到单次 %d 页上限，停止"
+                             "（下次可从第 %d 页继续）",
+                             combo_label(cat, genre), _DEEP_MAX_PAGES,
+                             depths[dk] + 1)
     except StopRequested:
         stats["stopped"] = True
         log.warning("采集已被用户停止")

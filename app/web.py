@@ -357,11 +357,12 @@ def create_app() -> Flask:
     def crawl_start():
         body = request.get_json(silent=True) or {}
         mode = body.get("mode", "new")
-        if mode not in ("new", "backfill"):
+        if mode not in ("new", "backfill", "deep"):
             mode = "new"
         pages = str(body.get("pages", "1"))
-        if mode == "new":
-            # only "new" uses a page range; backfill takes a page count
+        if mode in ("new", "deep"):
+            # "new" uses a page range; "deep" uses a start page; backfill a
+            # page count
             try:
                 crawler.parse_pages(pages)  # validate early
             except ValueError as exc:

@@ -421,6 +421,89 @@ def test_run_job_stop_interrupts_immediately(monkeypatch, tmp_path):
     assert stats["errors"] == 0        # 不计入单条错误
 
 
+# ---- v0.10.86: 连续采集（自动翻页） ----
+
+def test_run_job_deep_auto_pages_until_caught_up(monkeypatch, tmp_path):
+    """连续采集：自动翻页直到整页无新增——第 1 页 1 部新片、第 2 页全是
+    已入库番号即止步，第 3 页不再抓取。"""
+    from types import SimpleNamespace
+
+    from app import db
+
+    cfg = {"DB_PATH": str(tmp_path / "t.db"), "BASE_URL": "https://x.example",
+           "DELAY_SECONDS": 0, "JITTER_SECONDS": 0, "MAX_RETRIES": 1,
+           "TIMEOUT": 5, "CATEGORY": "censored", "GENRE_CENSORED": "42"}
+    conn = db.connect(cfg["DB_PATH"])
+    db.upsert_movie(conn, _full_movie("OLD-001"))
+    conn.commit()
+    conn.close()
+
+    fetched = []
+
+    class FakeFetcher:
+        base_url = "https://x.example"
+        delay = 0
+
+        def __init__(self, *a, **k):
+            pass
+
+        def get(self, path, referer=None):
+            if "/page/" in path or "/genre/" in path:
+                n = int(path.rstrip("/").rsplit("/", 1)[-1])
+                fetched.append(n)
+                return f"page{n}"
+            return "<html>detail</html>"
+
+    monkeypatch.setattr(crawler, "Fetcher", FakeFetcher)
+    monkeypatch.setattr(crawler, "looks_blocked", lambda html: False)
+
+    def fake_list(html, base):
+        n = int(html[4:])
+        code = "NEW-001" if n == 1 else "OLD-001"
+        return [SimpleNamespace(code=code, url=f"https://x.example/{code}")]
+
+    monkeypatch.setattr(crawler, "parse_list", fake_list)
+    monkeypatch.setattr(crawler, "parse_detail",
+                        lambda html, code, url: _full_movie(code))
+    stats = crawler.run_job(cfg, pages="1", magnets=False, mode="deep")
+    assert stats["new"] == 1
+    assert stats["pages"] == 2
+    assert fetched == [1, 2]  # page 2 all-known -> caught up, page 3 never hit
+
+
+def test_run_job_deep_page_cap(monkeypatch, tmp_path):
+    """连续采集熔断：每页都有新片时最多翻 _DEEP_MAX_PAGES 页即停。"""
+    from types import SimpleNamespace
+
+    cfg = {"DB_PATH": str(tmp_path / "t.db"), "BASE_URL": "https://x.example",
+           "DELAY_SECONDS": 0, "JITTER_SECONDS": 0, "MAX_RETRIES": 1,
+           "TIMEOUT": 5, "CATEGORY": "censored", "GENRE_CENSORED": "42"}
+
+    class FakeFetcher:
+        base_url = "https://x.example"
+        delay = 0
+
+        def __init__(self, *a, **k):
+            pass
+
+        def get(self, path, referer=None):
+            if "/page/" in path or "/genre/" in path:
+                return f"page{int(path.rstrip('/').rsplit('/', 1)[-1])}"
+            return "<html>detail</html>"
+
+    monkeypatch.setattr(crawler, "Fetcher", FakeFetcher)
+    monkeypatch.setattr(crawler, "looks_blocked", lambda html: False)
+    monkeypatch.setattr(crawler, "parse_list",
+                        lambda html, base: [
+                            SimpleNamespace(code=f"NEW-{html[4:]}",
+                                            url="https://x.example/x")])
+    monkeypatch.setattr(crawler, "parse_detail",
+                        lambda html, code, url: _full_movie(code))
+    monkeypatch.setattr(crawler, "_DEEP_MAX_PAGES", 3)
+    stats = crawler.run_job(cfg, pages="1", magnets=False, mode="deep")
+    assert stats["pages"] == 3 and stats["new"] == 3  # capped, not endless
+
+
 # ---- v0.10.71: 类别中文标签 + 采集与云下载串行对齐 ----
 
 def _full_movie(code, magnets=None):

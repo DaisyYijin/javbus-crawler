@@ -355,6 +355,7 @@
             <select id="mode" onchange="updateModeHint()">
               <option value="new">追新：检查新片</option>
               <option value="backfill">补历史：继续往后</option>
+              <option value="deep">连续：自动翻页</option>
             </select></div>
           <div><label id="pages-label">页码范围</label><input id="pages" type="text" value="1" style="width:120px" placeholder="如 1 或 2-10"></div>
           <label style="margin:22px 10px 0 0"><input type="checkbox" id="opt-magnets" checked> 抓取磁力</label>
@@ -1207,8 +1208,10 @@ async function testTabConnection() {
 /* ---------- crawl ---------- */
 function updateModeHint() {
   const m = $('mode').value;
-  $('mode-hint').textContent = m === 'backfill'
-    ? '自动从上次采集深度 +1 页继续往后翻；翻到站点尽头会自动停止。'
+  $('pages-label').textContent = m === 'backfill' ? '页数' : m === 'deep' ? '起始页' : '页码范围';
+  $('mode-hint').textContent =
+    m === 'backfill' ? '自动从上次采集深度 +1 页继续往后翻；翻到站点尽头会自动停止。'
+    : m === 'deep' ? '从起始页开始自动翻下一页，直到整页无新增影片（追平库内历史）、站点尽头、触发风控或达到 200 页上限自动停止；随时可点「停止」。深度会自动记录，中断后可从断点继续。'
     : '从第 1 页开始检查，已入库的番号自动跳过，只入库新片。';
 }
 async function startCrawl() {
