@@ -356,7 +356,7 @@ _QUEUED_PREFIX = "dl:queued:"
 # thread and the organize loop's retry_queued can both try to grab the free
 # slot at the same moment — this lock makes the check-and-submit atomic.
 _SUBMIT_LOCK = threading.Lock()
-_SERIAL_POLL_S = 15          # how often the settle loop re-checks the pipeline
+_SERIAL_POLL_S = 10          # how often the settle loop re-checks the pipeline
 _SERIAL_WAIT_MAX_S = 6 * 3600  # hard cap so a wedged pipeline can't hang a crawl
 # auto_download outcomes that mean "this movie is (or will be) in the
 # pipeline" — run_job must hold the crawl until it settles
