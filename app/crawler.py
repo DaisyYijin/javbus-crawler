@@ -383,7 +383,7 @@ def _queued_update(cfg: dict, code: str, queued: bool) -> None:
         log.debug("dl:queued 标记更新失败 %s", code, exc_info=True)
 
 
-def auto_download(cfg: dict, movie) -> str:
+def auto_download(cfg: dict, movie, *, quiet: bool = False) -> str:
     """AUTO_DOWNLOAD: submit the stored best magnet of a movie to 115.
 
     Best-effort: never raises, so a 115 failure cannot break the crawl.
@@ -392,6 +392,8 @@ def auto_download(cfg: dict, movie) -> str:
     submitted, "tracked" already downloading, "busy"/"cooldown" the serial
     slot or the interval gate deferred it (a dl:queued:{code} mark is
     persisted so retry_queued() can pick the movie back up once it frees).
+    quiet=True (retry_queued's 30s loop) logs waiting states at debug —
+    the serial settle loop already shows them without flooding the log.
     """
     if not cfg.get("AUTO_DOWNLOAD") or not getattr(movie, "magnets", None):
         return "off"
@@ -411,16 +413,18 @@ def auto_download(cfg: dict, movie) -> str:
             others = ", ".join(sorted({str(r.get("code") or "?")
                                        for r in recs.values()
                                        if r.get("code") != movie.code})) or "?"
-            log.info("%s: 上一个云下载（%s）还未完成整理，稍后自动提交（串行）",
-                     movie.code, others)
+            (log.debug if quiet else log.info)(
+                "%s: 上一个云下载（%s）还未完成整理，稍后自动提交（串行）",
+                movie.code, others)
             return "busy"
         interval = max(0, int(cfg.get("P115_DL_INTERVAL_SEC", 0)))
         if interval:  # cooldown after the last movie landed in the library
             wait = interval - (int(time.time()) - p115.last_release_at())
             if wait > 0:
                 _queued_update(cfg, movie.code, True)
-                log.info("%s: 上一部整理完成后冷却中，约 %d 秒后自动提交（串行间隔）",
-                         movie.code, wait)
+                (log.debug if quiet else log.info)(
+                    "%s: 上一部整理完成后冷却中，约 %d 秒后自动提交（串行间隔）",
+                    movie.code, wait)
                 return "cooldown"
         if movie.code in p115.gaveup_codes():
             _queued_update(cfg, movie.code, False)  # dead magnets: stop retrying
@@ -592,7 +596,7 @@ def retry_queued(cfg: dict) -> int:
                 _queued_update(cfg, code, False)  # movie gone: drop the mark
                 continue
             before = {r.get("code") for r in p115.track_records().values()}
-            auto_download(cfg, stored)  # re-runs serial/cooldown guards
+            auto_download(cfg, stored, quiet=True)  # re-runs serial/cooldown guards
             if code not in before and code in {
                     r.get("code") for r in p115.track_records().values()}:
                 submitted += 1
