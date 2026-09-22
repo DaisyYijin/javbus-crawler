@@ -616,6 +616,7 @@
         <button type="button" class="tab-btn active" data-tab="p115-login" onclick="switchTab(this)">账号登录</button>
         <button type="button" class="tab-btn" data-tab="p115-tasks" onclick="switchTab(this)">离线任务</button>
         <button type="button" class="tab-btn" data-tab="p115-organize" onclick="switchTab(this)">整理设置</button>
+        <button type="button" class="tab-btn" data-tab="p115-download" onclick="switchTab(this)">下载策略</button>
       </div>
       <div class="tabpane" id="tab-p115-login">
       <div class="card" id="p115-login-card">
@@ -697,6 +698,22 @@
               <input id="c_P115_REJECT_DIR" type="text" placeholder="冗余" style="flex:1">
               <button type="button" class="ghost dir-pick-btn" title="从 115 目录中点选" onclick="openDirPicker('c_P115_REJECT_DIR')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg></button>
             </div></div>
+        </div>
+        <div class="hint">整理流水线：下载完成实时整理 → 通过 info_hash 反查（失败时从任务名智能识别番号，支持 aaa-100-ch 等变体）→ 调 MetaTube（已配置时）优化剧名 → 提取正片重命名为「番号 剧名.ext」，归档为「已整理/番号 剧名/番号 剧名.ext」（每部影片一个同名子文件夹；文件夹内广告与疑似广告任务自动移入冗余目录；115 限速导致目录列表暂时为空时本次跳过、下一轮自动重试，不会误判）。目录可点输入框右侧文件夹图标从 115 网盘中直接选取。已整理任务自动记忆去重。「开始整理」不依赖任务记录，直接扫描下载目录存量——可随时手动点按钮触发，启用自动整理时后台也会每 10 分钟自动扫描：体积最大的正片（≥1GB，实时整理门槛为 ≥100MB）按库内番号重命名并移入同名子文件夹，广告图片 / 小体积剪辑等其余文件连同清空后的空目录一律移入冗余（多分段文件夹整体保留在已整理同名目录下，捆绑多部影片的文件夹会逐部拆出按各自番号重命名归档，115 限速故每次列表间隔约 1 分钟，请耐心等待）。</div>
+        <div class="row save-row">
+          <label class="switch" style="margin:0" title="下载完成后自动重命名并移动 · P115_AUTO_ORGANIZE"><input type="checkbox" id="c_P115_AUTO_ORGANIZE"><span class="track"></span><span>启用自动整理</span></label>
+          <button class="primary" onclick="saveConfig()">保存配置</button>
+          <button class="ghost" id="p115-sweep-btn" onclick="startSweep()" title="立即扫描下载目录并整理存量（与自动整理同一条流水线，可随时手动触发）">开始整理</button>
+          <span class="msg" id="p115-sweep-msg"></span>
+          <span class="msg cfg-msg"></span>
+        </div>
+      </div>
+      </div>
+
+      <div class="tabpane" id="tab-p115-download" hidden>
+      <div class="card">
+        <h2>下载策略 <small>（磁力监测 · 卡住换源 · 串行节奏）</small></h2>
+        <div class="form-grid">
           <div class="field w3"><label>卡住判定（分钟） <small>P115_DL_STALL_MIN · 下载中超过该时长无进度视为卡住，自动换磁力</small></label>
             <input id="c_P115_DL_STALL_MIN" type="number" min="1" max="720" placeholder="30"></div>
           <div class="field w3"><label>换磁力次数上限 <small>P115_DL_MAX_RETRIES · 超过后放弃该影片的下载</small></label>
@@ -706,12 +723,9 @@
           <div class="field w3"><label>串行间隔（秒） <small>P115_DL_INTERVAL_SEC · 上一部整理归档完成后，等待该时长再提交下一部（0 为不等待）</small></label>
             <input id="c_P115_DL_INTERVAL_SEC" type="number" min="0" max="86400" placeholder="0"></div>
         </div>
-        <div class="hint">全自动串行流水线：同一时间只下载一部影片，下载完成并整理归档、且达到「串行间隔」冷却时长后才提交下一部；提交磁力 → 每 15 秒监测下载（卡住无进度、下载失败或超过单磁力时长上限时自动换下一个磁力重试，全部磁力失败则放弃该番号继续下一部）→ 下载完成实时整理 → 通过 info_hash 反查（失败时从任务名智能识别番号，支持 aaa-100-ch 等变体）→ 调 MetaTube（已配置时）优化剧名 → 提取正片重命名为「番号 剧名.ext」，归档为「已整理/番号 剧名/番号 剧名.ext」（每部影片一个同名子文件夹；文件夹内广告与疑似广告任务自动移入冗余目录；115 限速导致目录列表暂时为空时本次跳过、下一轮自动重试，不会误判）。目录可点输入框右侧文件夹图标从 115 网盘中直接选取。已整理任务自动记忆去重。「开始整理」不依赖任务记录，直接扫描下载目录存量——可随时手动点按钮触发，启用自动整理时后台也会每 10 分钟自动扫描：体积最大的正片（≥1GB，实时整理门槛为 ≥100MB）按库内番号重命名并移入同名子文件夹，广告图片 / 小体积剪辑等其余文件连同清空后的空目录一律移入冗余（多分段文件夹整体保留在已整理同名目录下，捆绑多部影片的文件夹会逐部拆出按各自番号重命名归档，115 限速故每次列表间隔约 1 分钟，请耐心等待）。</div>
+        <div class="hint">全自动串行流水线：同一时间只下载一部影片，下载完成并整理归档、且达到「串行间隔」冷却时长后才提交下一部；提交磁力 → 每 15 秒监测下载（卡住无进度、下载失败或超过单磁力时长上限时自动换下一个磁力重试，全部磁力失败则放弃该番号继续下一部）。</div>
         <div class="row save-row">
-          <label class="switch" style="margin:0" title="下载完成后自动重命名并移动 · P115_AUTO_ORGANIZE"><input type="checkbox" id="c_P115_AUTO_ORGANIZE"><span class="track"></span><span>启用自动整理</span></label>
           <button class="primary" onclick="saveConfig()">保存配置</button>
-          <button class="ghost" id="p115-sweep-btn" onclick="startSweep()" title="立即扫描下载目录并整理存量（与自动整理同一条流水线，可随时手动触发）">开始整理</button>
-          <span class="msg" id="p115-sweep-msg"></span>
           <span class="msg cfg-msg"></span>
         </div>
       </div>
