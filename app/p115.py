@@ -1001,7 +1001,7 @@ def resolve_dir(c, name: str) -> int:
     hit = _dir_cached(name)
     if hit:
         return hit
-    _pace_list(_SWEEP_LIST_GAP)
+    _pace_list(_list_gap())
     parts = _split_path(name) or ["未命名"]
     key = "/".join(parts)
     cid = 0
@@ -1281,55 +1281,62 @@ def _organize_one(conn, c, task: dict, info_hash: str, stats: dict) -> None:
         target_name = (cfg.get("P115_TARGET_DIR") or "").strip() or "已整理"
         reject = resolve_dir(c, (cfg.get("P115_REJECT_DIR") or "").strip() or "冗余")
         target = resolve_dir(c, target_name)
-        # fs_file shares the throttled fs_files budget: join the queue
-        # instead of firing right after the dir walks spent it (that starved
-        # it into the 5-strike loop)
-        _pace_list(_SWEEP_LIST_GAP)
-        try:
-            data = check_response(c.fs_file(fid, timeout=_TIMEOUT))["data"]
-            if isinstance(data, list):
-                # 115's get_info wraps DIRECTORY info in a bare list —
-                # unwrap the first dict; anything else is an unknown shape
-                data = next((d for d in data if isinstance(d, dict)), None)
-            if not isinstance(data, dict):
-                raise RuntimeError(
-                    f"get_info 返回未知形状: {type(data).__name__}")
-            if "fc" in data:
-                # listing convention: fc == 0 -> folder, else file category
-                is_folder = str(data["fc"]) == "0"
-            else:
-                # no category field: decide from evidence, never a blind
-                # guess — files carry content hashes / sizes, dirs do not
-                is_folder = not ("sha1" in data or "file_size" in data
-                                 or "size" in data)
-            old = str(data.get("file_name") or old)
-            size = _to_int(data.get("size") or data.get("file_size"))
-        except Exception as exc:
-            # folder-vs-file is UNKNOWN and must not be guessed. Retry:
-            # the error text says whether it IS throttling (empty answer),
-            # a shape surprise, or something else (auth / deleted file …)
-            _org_fail_bump(conn, info_hash, old,
-                           f"文件信息获取失败[{type(exc).__name__}: {exc}]",
-                           max_fails=_ORG_MAX_FAILS * 3)
-            return
         base = _sanitize_name(f"{code} {title}")
-        if is_folder:
-            # the download folder goes through the sweep logic: it picks the
-            # largest feature (>= _ORG_MIN_SIZE), renames it 'CODE Title.ext',
-            # nests it under 已整理/CODE Title/ and junks ads + empty shells
+        # Optimistic folder-first: ONE listing both proves the id is a folder
+        # AND fetches its contents — saving the paced fs_file round-trip on
+        # the common (folder) download. An empty listing means "file or
+        # throttled"; fs_file disambiguates afterwards.
+        handled = False
+        try:
             handled = _sweep_folder(conn, c, int(fid), old, target, reject,
-                                    _SWEEP_LIST_GAP, stats,
+                                    _list_gap(), stats,
                                     target_path=target_name, prefer_name=base,
                                     min_size=_ORG_MIN_SIZE)
-        else:
+        except Exception:
+            handled = False  # e.g. the id isn't a folder at all
+        if not handled:
+            # listing came back empty / raised: file, or throttled. fs_file
+            # joins the throttled fs_files budget before firing.
+            _pace_list(_list_gap())
+            try:
+                data = check_response(c.fs_file(fid, timeout=_TIMEOUT))["data"]
+                if isinstance(data, list):
+                    # 115's get_info wraps DIRECTORY info in a bare list —
+                    # unwrap the first dict; anything else is unknown shape
+                    data = next((d for d in data if isinstance(d, dict)), None)
+                if not isinstance(data, dict):
+                    raise RuntimeError(
+                        f"get_info 返回未知形状: {type(data).__name__}")
+                if "fc" in data:
+                    # listing convention: fc == 0 -> folder, else file class
+                    is_folder = str(data["fc"]) == "0"
+                else:
+                    # no category field: decide from evidence, never a blind
+                    # guess — files carry hashes / sizes, dirs do not
+                    is_folder = not ("sha1" in data or "file_size" in data
+                                     or "size" in data)
+                old = str(data.get("file_name") or old)
+                size = _to_int(data.get("size") or data.get("file_size"))
+            except Exception as exc:
+                # folder-vs-file is UNKNOWN and must not be guessed. Retry:
+                # the error text says whether it IS throttling (empty
+                # answer), a shape surprise, or something else (auth / …)
+                _org_fail_bump(conn, info_hash, old,
+                               f"文件信息获取失败[{type(exc).__name__}: {exc}]",
+                               max_fails=_ORG_MAX_FAILS * 3)
+                return
+            if is_folder:
+                # a folder whose listing came back empty -> throttled
+                _org_fail_bump(conn, info_hash, old, "目录列表受限（疑似限流）")
+                return
             handled = _sweep_file(conn, c, int(fid), old, size, target,
                                   reject, stats, target_path=target_name,
                                   prefer_name=base)
-        if not handled:
-            # listing throttled -> info incomplete; retry on a later pass
-            _org_fail_bump(conn, info_hash, old, "列表受限")
-            return
-        # organized/rejected/skipped counters are kept by the sweep itself
+            if not handled:
+                # listing throttled -> info incomplete; retry on a later pass
+                _org_fail_bump(conn, info_hash, old, "列表受限")
+                return
+        # fall through to the common tail: stamp done + release the slot
     elif looks_ad(task.get("name")):
         # a completed task we don't know that smells like spam -> reject dir
         reject = resolve_dir(c, (cfg.get("P115_REJECT_DIR") or "").strip() or "冗余")
@@ -1353,6 +1360,19 @@ _MAIN_MIN_SIZE = 1024 * 1024 * 1024  # 1 GiB: feature film threshold
 _ORG_MIN_SIZE = 100 * 1024 * 1024    # real-time floor: tasks are picked on purpose
 _SWEEP_LIST_GAP = 55.0               # 115 fs_files throttled to ~1 req/min
 _sweep_state = {"running": False, "started_at": 0, "finished_at": 0}
+
+
+def _list_gap() -> float:
+    """Pacing gap between fs_files listings. Configurable via
+    P115_LIST_GAP_SEC (0/absent = the built-in default); smaller values are
+    an experiment — 115 punishes too-fast requests with EMPTY lists."""
+    try:
+        v = int(settings.load().get("P115_LIST_GAP_SEC") or 0)
+        if v > 0:
+            return float(max(5, v))
+    except Exception:
+        pass
+    return _SWEEP_LIST_GAP
 _sweep_last_list = 0.0
 
 
@@ -1626,7 +1646,7 @@ def _sweep_folder(conn, c, fid: int, name: str, target: int, reject: int,
     return True
 
 
-def sweep_existing(sleep_s: float = _SWEEP_LIST_GAP, max_folders: int = 0) -> dict:
+def sweep_existing(sleep_s: float | None = None, max_folders: int = 0) -> dict:
     """Organize whatever already sits in DOWNLOAD_DIR, ignoring task history.
 
     Independent from organize_pass (which only sees offline-download tasks
@@ -1651,6 +1671,8 @@ def sweep_existing(sleep_s: float = _SWEEP_LIST_GAP, max_folders: int = 0) -> di
         _sweep_state.update(running=False, finished_at=stats["at"])
         return stats
     t0 = time.time()
+    if sleep_s is None:
+        sleep_s = _list_gap()
     _sweep_state.update(running=True, started_at=stats["at"], finished_at=0)
     conn = None
     try:

@@ -723,6 +723,8 @@
             <input id="c_P115_DL_MAX_MIN" type="number" min="0" max="1440" placeholder="120"></div>
           <div class="field w3"><label>串行间隔（秒） <small>P115_DL_INTERVAL_SEC · 上一部整理归档完成后，等待该时长再提交下一部（0 为不等待）</small></label>
             <input id="c_P115_DL_INTERVAL_SEC" type="number" min="0" max="86400" placeholder="0"></div>
+          <div class="field w3"><label>目录列表间隔（秒） <small>P115_LIST_GAP_SEC · 115 目录列表限速约 1 次/分钟；0=默认 55 秒。可尝试调小提速，若日志频繁出现「列表为空(疑似限流)」请调回</small></label>
+            <input id="c_P115_LIST_GAP_SEC" type="number" min="0" max="300" placeholder="55"></div>
         </div>
         <div class="hint">全自动串行流水线：同一时间只下载一部影片，下载完成并整理归档、且达到「串行间隔」冷却时长后才提交下一部；提交磁力 → 每 15 秒监测下载（卡住无进度、下载失败或超过单磁力时长上限时自动换下一个磁力重试，全部磁力失败则放弃该番号继续下一部）。</div>
         <div class="row save-row">
@@ -928,7 +930,7 @@ async function saveConfig() {
   ['BASE_URL','PROXY','METATUBE_URL','METATUBE_TOKEN','DELAY_SECONDS','JITTER_SECONDS',
    'MAX_RETRIES','TIMEOUT','WEB_PORT','AUTO_CRAWL_INTERVAL_HOURS','AUTO_CRAWL_PAGES',
    'TAG_FILTERS','MAGNET_TIEBREAK','MAGNET_FALLBACK','P115_DOWNLOAD_DIR','P115_TARGET_DIR','P115_REJECT_DIR',
-   'P115_DL_STALL_MIN','P115_DL_MAX_MIN','P115_DL_MAX_RETRIES','P115_DL_INTERVAL_SEC']
+   'P115_DL_STALL_MIN','P115_DL_MAX_MIN','P115_DL_MAX_RETRIES','P115_DL_INTERVAL_SEC','P115_LIST_GAP_SEC']
     .forEach(k => { const el = $('c_' + k); if (el) body[k] = el.value; });
   body.CATEGORY = [...document.querySelectorAll('#cat-seg .seg-btn.active')].map(b => b.dataset.cat).join(',');
   body.GENRE_CENSORED = [...GENRE_SEL.censored].join(',');

@@ -552,16 +552,34 @@ def test_organize_get_info_file_without_fc(monkeypatch):
                             lambda refresh=False: _FileInfoClient())
         monkeypatch.setattr(p115, "resolve_dir", lambda c, p: 10)
         monkeypatch.setattr(p115, "_SWEEP_LIST_GAP", 0)
-        monkeypatch.setattr(p115, "_sweep_folder",
-                            lambda *a, **k: calls.setdefault("folder", 1) or True)
+
+        def folder_attempt(*a, **k):
+            calls.setdefault("folder", 1)
+            return False  # empty listing -> not a folder, fall through
+
+        monkeypatch.setattr(p115, "_sweep_folder", folder_attempt)
         monkeypatch.setattr(p115, "_sweep_file",
                             lambda *a, **k: calls.setdefault("file", 1) or True)
         p115.track_add("FIT-008", "FILIH01", "magnet:?x", "fit-008ch")
         p115.organize_pass()
-        assert calls.get("file") == 1 and "folder" not in calls
+        assert calls.get("file") == 1  # fs_file said file -> single-file path
         p115.track_del("FILIH01")
     finally:
         conn.close()
+
+
+def test_list_gap_configurable(monkeypatch):
+    """P115_LIST_GAP_SEC 覆盖列表间隔；0 回退内置默认（可被测试 monkeypatch）。"""
+    from app import settings
+    saved = settings.load().get("P115_LIST_GAP_SEC")
+    try:
+        settings.save({"P115_LIST_GAP_SEC": 20})
+        assert p115._list_gap() == 20
+        settings.save({"P115_LIST_GAP_SEC": 0})
+        monkeypatch.setattr(p115, "_SWEEP_LIST_GAP", 7.0)
+        assert p115._list_gap() == 7.0
+    finally:
+        settings.save({"P115_LIST_GAP_SEC": int(saved or 0)})
 
 
 def test_sweep_folder_junk_move_conflict_still_handled(monkeypatch):
