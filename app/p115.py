@@ -853,7 +853,7 @@ def watch_pass() -> dict:
             break
     now = int(time.time())
     stall_s = max(1, int(cfg.get("P115_DL_STALL_MIN", 30))) * 60
-    max_min = max(0, int(cfg.get("P115_DL_MAX_MIN", 120)))
+    max_min = max(0, int(cfg.get("P115_DL_MAX_MIN", 2)))
     max_retries = max(0, int(cfg.get("P115_DL_MAX_RETRIES", 3)))
     organize = False
     for ih, rec in recs.items():

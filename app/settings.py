@@ -43,7 +43,7 @@ DEFAULTS: dict = {
     "P115_REJECT_DIR": "冗余",        # 115 dir ad/spam files get swept into
     "P115_AUTO_ORGANIZE": True,       # organize finished downloads automatically
     "P115_DL_STALL_MIN": 30,          # minutes without progress -> swap magnet
-    "P115_DL_MAX_MIN": 120,           # total minutes per magnet -> swap (0 = no cap)
+    "P115_DL_MAX_MIN": 2,             # total minutes per magnet -> swap (0 = no cap)
     "P115_DL_MAX_RETRIES": 3,         # magnet swaps before giving up
     "P115_DL_INTERVAL_SEC": 0,        # cooldown seconds between movies (0 = off)
     "P115_LIST_GAP_SEC": 0,           # fs listing gap override, s (0 = default 55)
