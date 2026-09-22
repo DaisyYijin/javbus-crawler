@@ -1006,9 +1006,15 @@ def _p115_organize_loop() -> None:
             # were skipped while the serial pipeline was busy
             crawler.retry_queued(cfg)
             # every 10 min also sweep the download dir itself: backfills
-            # folders that predate task tracking (or lost their done mark)
+            # folders that predate task tracking (or lost their done mark).
+            # PAUSED while serial downloads are in flight: the fast task
+            # path owns those folders and the fs_files listing budget —
+            # a concurrent sweep only competes for the ~1/min quota.
             if time.time() - last_sweep >= 600:
                 last_sweep = time.time()
+                if p115.track_records():
+                    log.debug("串行下载进行中，10 分钟目录扫描顺延")
+                    continue
                 if not p115.sweep_busy():  # fence: a manual click may be running
                     p115.sweep_existing()  # logs its own start/finish summary
         except Exception:

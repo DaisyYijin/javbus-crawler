@@ -1479,8 +1479,14 @@ def _sweep_folder(conn, c, fid: int, name: str, target: int, reject: int,
         (subdirs if str(it.get("fc", "")) == "0" else files).append(entry)
     # descend one level (CD1/CD2-style layouts), remembering each file's parent
     deep = []
-    sub_all_empty = True  # every subdir listing came back empty
-    for sub_fid, _n, _s in subdirs:
+    sub_all_empty = True  # every LISTED subdir came back empty
+    listed_subs = 0
+    for sub_fid, n_sub, _s in subdirs:
+        if looks_ad(n_sub):
+            # promo dirs (最新地址 / 网址发布 / 宣传图…) never hold the
+            # feature — each skipped descent saves a full listing gap
+            continue
+        listed_subs += 1
         sub_items = _sweep_list(c, sub_fid, sleep_s)
         if sub_items:
             sub_all_empty = False
@@ -1525,12 +1531,13 @@ def _sweep_folder(conn, c, fid: int, name: str, target: int, reject: int,
         return True
 
     if not candidates:
-        if not files and subdirs and sub_all_empty:
+        if not files and listed_subs and sub_all_empty:
             # only empty subdir answers: likely throttled, retry later
             stats["skipped"] = stats.get("skipped", 0) + 1
             log.info("115 整理: %s 子目录列表为空(疑似限流)，本次跳过", name)
             return False
-        # nothing feature-sized anywhere: the whole folder is junk
+        # nothing feature-sized anywhere (ad-only subdirs are never listed):
+        # the whole folder is junk
         if junk_shell(name):
             log.info("115 整理: 文件夹 %s 无正片 -> 冗余目录", name)
         return True

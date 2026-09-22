@@ -632,6 +632,58 @@ def test_organize_pass_exception_counts_and_releases(monkeypatch):
         conn.close()
 
 
+def test_sweep_folder_skips_ad_subdirs(monkeypatch):
+    """广告名子目录（最新地址/宣传图等）不逐个列目录——每次省一个约 55 秒
+    的列表间隔；正片照常归档，广告子目录随壳进冗余。"""
+    conn = _sweep_db(monkeypatch, movies=[("MIDA-790", "下海")])
+    try:
+        fake = _FakeSweepClient({
+            700: [
+                {"n": "MIDA-790.mp4", "fid": 701, "s": 2 * GIB, "fc": "1"},
+                {"n": "最新地址", "cid": 702, "fc": "0"},
+                {"n": "宣传图", "cid": 703, "fc": "0"},
+            ],
+            702: [{"n": "广告.url", "fid": 704, "s": 64, "fc": "1"}],
+            703: [{"n": "海报.jpg", "fid": 705, "s": 8192, "fc": "1"}],
+        })
+        asked = []
+
+        def page(c, cid, off, limit=100):
+            asked.append(cid)
+            return fake.listings.get(cid, []), True
+
+        monkeypatch.setattr(p115, "_fs_page", page)
+        stats = {"organized": 0, "rejected": 0}
+        p115._sweep_folder(conn, fake, 700, "MIDA-790ch", 10, 20, 0, stats)
+        assert 702 not in asked and 703 not in asked  # ad dirs never listed
+        assert fake.renames == [(701, "MIDA-790 下海.mp4")]
+        assert (701, 10) in fake.moves
+        assert [f for f, t in fake.moves if t == 20] == [700]
+    finally:
+        conn.close()
+
+
+def test_sweep_folder_ad_only_subdirs_junked(monkeypatch):
+    """只有广告名子目录、无任何正片的下载文件夹：子目录不列表，整体直接
+    进冗余——不能因「没列过子目录」误判为限流无限跳过。"""
+    conn = _sweep_db(monkeypatch)
+    try:
+        fake = _FakeSweepClient({
+            800: [{"n": "最新网址", "cid": 801, "fc": "0"}],
+            801: [{"n": "广告.url", "fid": 802, "s": 64, "fc": "1"}],
+        })
+        monkeypatch.setattr(p115, "_fs_page", lambda c, cid, off, limit=100:
+                            (fake.listings.get(cid, []), True))
+        stats = {"organized": 0, "rejected": 0, "skipped": 0}
+        handled = p115._sweep_folder(conn, fake, 800, "垃圾下载", 10, 20,
+                                     0, stats)
+        assert handled is True                    # junked, not skipped
+        assert fake.moves == [(800, 20)]          # whole folder -> reject
+        assert stats["rejected"] == 1 and stats["skipped"] == 0
+    finally:
+        conn.close()
+
+
 def test_gaveup_codes_and_done_mark_release_slot(monkeypatch):
     import json as _json
     import sqlite3
