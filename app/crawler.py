@@ -668,6 +668,10 @@ def run_job(
     known = db.known_codes(conn)
     depths = {depth_key(c, g): int(db.get_meta(conn, depth_key(c, g), "0") or 0)
               for c, g in combos}
+    # depth snapshot at run START: pages <= this were swept before, so an
+    # all-known page there is NORMAL (the library was built from them) and
+    # means nothing — only an all-known page BEYOND it signals "caught up"
+    depth0 = dict(depths)
 
     if mode == "backfill":
         try:
@@ -844,12 +848,16 @@ def run_job(
                         # download finished organizing, then collect the next
                         _serial_settle(cfg, movie.code, stop_check)
                 if mode == "deep" and stats["new"] == page_new0 \
-                        and stats["errors"] == page_err0:
-                    # a whole page added nothing and nothing errored: the
-                    # library has caught up with the site's history here
-                    log.info("[%s] 第 %d 页整页无新增，已追平历史深度，"
-                             "连续采集结束（本频道深度 %d）",
-                             combo_label(cat, genre), page, depths[dk])
+                        and stats["errors"] == page_err0 \
+                        and page > depth0[dk]:
+                    # an all-known page BEYOND the previously swept depth:
+                    # the library has caught up with the site's history here.
+                    # (All-known pages INSIDE the swept depth are normal —
+                    # the library was literally built from them.)
+                    log.info("[%s] 第 %d 页整页无新增（已越过既往深度 %d），"
+                             "已追平历史深度，连续采集结束（本频道深度 %d）",
+                             combo_label(cat, genre), page, depth0[dk],
+                             depths[dk])
                     break
             else:  # page loop ran to the cap without breaking
                 if mode == "deep":

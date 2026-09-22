@@ -471,6 +471,57 @@ def test_run_job_deep_auto_pages_until_caught_up(monkeypatch, tmp_path):
     assert fetched == [1, 2]  # page 2 all-known -> caught up, page 3 never hit
 
 
+def test_run_job_deep_ignores_all_known_inside_swept_depth(monkeypatch, tmp_path):
+    """回归：库就是从第 1 页采来的（深度=1），第 1 页整页全旧属正常现象，
+    不代表追平——必须继续翻第 2 页。只有越过既往深度的整页全旧才停止。"""
+    from types import SimpleNamespace
+
+    from app import db
+
+    cfg = {"DB_PATH": str(tmp_path / "t.db"), "BASE_URL": "https://x.example",
+           "DELAY_SECONDS": 0, "JITTER_SECONDS": 0, "MAX_RETRIES": 1,
+           "TIMEOUT": 5, "CATEGORY": "censored", "GENRE_CENSORED": "42"}
+    conn = db.connect(cfg["DB_PATH"])
+    db.upsert_movie(conn, _full_movie("OLD-001"))
+    db.set_meta(conn, "max_page:censored:42", "1")  # page 1 swept before
+    conn.commit()
+    conn.close()
+
+    fetched = []
+
+    class FakeFetcher:
+        base_url = "https://x.example"
+        delay = 0
+
+        def __init__(self, *a, **k):
+            pass
+
+        def get(self, path, referer=None):
+            if "/page/" in path or "/genre/" in path:
+                n = int(path.rstrip("/").rsplit("/", 1)[-1])
+                fetched.append(n)
+                return f"page{n}"
+            return "<html>detail</html>"
+
+    monkeypatch.setattr(crawler, "Fetcher", FakeFetcher)
+    monkeypatch.setattr(crawler, "looks_blocked", lambda html: False)
+
+    def fake_list(html, base):
+        n = int(html[4:])
+        # page 1: already known; page 2: brand new; page 3: all known & past
+        # the swept depth -> the real catch-up stop
+        code = "OLD-001" if n != 2 else "NEW-002"
+        return [SimpleNamespace(code=code, url=f"https://x.example/{code}")]
+
+    monkeypatch.setattr(crawler, "parse_list", fake_list)
+    monkeypatch.setattr(crawler, "parse_detail",
+                        lambda html, code, url: _full_movie(code))
+    stats = crawler.run_job(cfg, pages="1", magnets=False, mode="deep")
+    assert stats["new"] == 1                       # page 2's movie collected
+    assert fetched == [1, 2, 3]                    # kept paging past page 1
+    assert stats["pages"] == 3                     # stopped at page 3, not 1
+
+
 def test_run_job_deep_page_cap(monkeypatch, tmp_path):
     """连续采集熔断：每页都有新片时最多翻 _DEEP_MAX_PAGES 页即停。"""
     from types import SimpleNamespace
