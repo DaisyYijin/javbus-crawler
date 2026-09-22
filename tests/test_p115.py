@@ -499,6 +499,71 @@ def test_organize_fs_file_throttled_does_not_guess(monkeypatch):
         conn.close()
 
 
+def test_organize_get_info_dir_wrapped_in_list(monkeypatch):
+    """115 的 get_info 对目录会把信息包在裸列表里返回：解包后按 fc=0 判定
+    走文件夹整理。此前 data.get 直接 AttributeError，被误当限流无限重试
+    ——文件夹任务从未真正走通过任务整理。"""
+    conn = _sweep_db(monkeypatch, movies=[("FIT-008", "初撮り")])
+    try:
+        class _DirInfoClient:
+            def clouddownload_task_list(self, payload, timeout=None):
+                return {"state": True, "count": 1, "tasks": [
+                    {"info_hash": "dirih01", "status": 2, "name": "fit-008ch",
+                     "file_id": 777, "percentDone": 100}]}
+
+            def fs_file(self, fid, timeout=None):
+                return {"state": True, "data": [{"file_name": "fit-008ch",
+                                                 "fc": "0"}]}
+
+        calls = {}
+        monkeypatch.setattr(p115, "get_client",
+                            lambda refresh=False: _DirInfoClient())
+        monkeypatch.setattr(p115, "resolve_dir", lambda c, p: 10)
+        monkeypatch.setattr(p115, "_SWEEP_LIST_GAP", 0)
+        monkeypatch.setattr(p115, "_sweep_folder",
+                            lambda *a, **k: calls.setdefault("folder", 1) or True)
+        monkeypatch.setattr(p115, "_sweep_file",
+                            lambda *a, **k: calls.setdefault("file", 1) or True)
+        p115.track_add("FIT-008", "DIRIH01", "magnet:?x", "fit-008ch")
+        p115.organize_pass()
+        assert calls.get("folder") == 1 and "file" not in calls
+        p115.track_del("DIRIH01")
+    finally:
+        conn.close()
+
+
+def test_organize_get_info_file_without_fc(monkeypatch):
+    """无 fc 字段的文件信息（带 sha1/体积）：按证据判为文件走单文件整理，
+    不进入猜错文件夹的重试循环。"""
+    conn = _sweep_db(monkeypatch, movies=[("FIT-008", "初撮り")])
+    try:
+        class _FileInfoClient:
+            def clouddownload_task_list(self, payload, timeout=None):
+                return {"state": True, "count": 1, "tasks": [
+                    {"info_hash": "filih01", "status": 2, "name": "fit-008ch",
+                     "file_id": 888, "percentDone": 100}]}
+
+            def fs_file(self, fid, timeout=None):
+                return {"state": True, "data": {"file_name": "fit-008ch",
+                                                "sha1": "ABC", "size": 5}}
+
+        calls = {}
+        monkeypatch.setattr(p115, "get_client",
+                            lambda refresh=False: _FileInfoClient())
+        monkeypatch.setattr(p115, "resolve_dir", lambda c, p: 10)
+        monkeypatch.setattr(p115, "_SWEEP_LIST_GAP", 0)
+        monkeypatch.setattr(p115, "_sweep_folder",
+                            lambda *a, **k: calls.setdefault("folder", 1) or True)
+        monkeypatch.setattr(p115, "_sweep_file",
+                            lambda *a, **k: calls.setdefault("file", 1) or True)
+        p115.track_add("FIT-008", "FILIH01", "magnet:?x", "fit-008ch")
+        p115.organize_pass()
+        assert calls.get("file") == 1 and "folder" not in calls
+        p115.track_del("FILIH01")
+    finally:
+        conn.close()
+
+
 def test_gaveup_codes_and_done_mark_release_slot(monkeypatch):
     import json as _json
     import sqlite3

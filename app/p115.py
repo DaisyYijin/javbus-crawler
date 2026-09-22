@@ -1282,16 +1282,28 @@ def _organize_one(conn, c, task: dict, info_hash: str, stats: dict) -> None:
         # it into the 5-strike loop)
         _pace_list(_SWEEP_LIST_GAP)
         try:
-            finfo = check_response(c.fs_file(fid, timeout=_TIMEOUT))["data"]
-            old = str(finfo.get("file_name") or old)
-            is_folder = str(finfo.get("fc")) == "0"
-            size = _to_int(finfo.get("size"))
+            data = check_response(c.fs_file(fid, timeout=_TIMEOUT))["data"]
+            if isinstance(data, list):
+                # 115's get_info wraps DIRECTORY info in a bare list —
+                # unwrap the first dict; anything else is an unknown shape
+                data = next((d for d in data if isinstance(d, dict)), None)
+            if not isinstance(data, dict):
+                raise RuntimeError(
+                    f"get_info 返回未知形状: {type(data).__name__}")
+            if "fc" in data:
+                # listing convention: fc == 0 -> folder, else file category
+                is_folder = str(data["fc"]) == "0"
+            else:
+                # no category field: decide from evidence, never a blind
+                # guess — files carry content hashes / sizes, dirs do not
+                is_folder = not ("sha1" in data or "file_size" in data
+                                 or "size" in data)
+            old = str(data.get("file_name") or old)
+            size = _to_int(data.get("size") or data.get("file_size"))
         except Exception as exc:
-            # folder-vs-file is UNKNOWN and must not be guessed (see the
-            # comment above is_folder). Retry: budget starvation is a wait,
-            # not a poison task — 15 strikes ≈ 7.5 min before giving up,
-            # and the error text says whether it IS throttling (empty
-            # answer) or something else (auth / deleted file / ...)
+            # folder-vs-file is UNKNOWN and must not be guessed. Retry:
+            # the error text says whether it IS throttling (empty answer),
+            # a shape surprise, or something else (auth / deleted file …)
             _org_fail_bump(conn, info_hash, old,
                            f"文件信息获取失败[{type(exc).__name__}: {exc}]",
                            max_fails=_ORG_MAX_FAILS * 3)
