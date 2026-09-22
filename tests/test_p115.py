@@ -487,6 +487,7 @@ def test_organize_fs_file_throttled_does_not_guess(monkeypatch):
         monkeypatch.setattr(p115, "get_client",
                             lambda refresh=False: _ThrottledClient())
         monkeypatch.setattr(p115, "resolve_dir", lambda c, p: 10)
+        monkeypatch.setattr(p115, "_SWEEP_LIST_GAP", 0)  # no pacing in tests
         p115.track_add("FIT-008", "FIT8HASH", "magnet:?x", "fit-008ch")
         stats = p115.organize_pass()
         assert renames == [] and moves == []      # nothing renamed or moved

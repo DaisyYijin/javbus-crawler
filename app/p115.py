@@ -994,11 +994,14 @@ def resolve_dir(c, name: str) -> int:
     """Resolve a 115 directory by path ("一级/二级"), creating missing levels.
 
     Results are cached per path (with a TTL — see _DIR_TTL); use
-    reset_dir_cache() to force a refresh.
+    reset_dir_cache() to force a refresh. A cache miss joins the shared
+    fs_files listing budget (walking = listings, and un-paced walks are
+    what starved fs_file into its throttle loop).
     """
     hit = _dir_cached(name)
     if hit:
         return hit
+    _pace_list(_SWEEP_LIST_GAP)
     parts = _split_path(name) or ["未命名"]
     key = "/".join(parts)
     cid = 0
@@ -1224,23 +1227,25 @@ def _lookup_movie(conn, code: str | None):
     return row
 
 
-def _org_fail_bump(conn, info_hash: str, label: str, why: str) -> None:
+def _org_fail_bump(conn, info_hash: str, label: str, why: str,
+                   max_fails: int = _ORG_MAX_FAILS) -> None:
     """Count one failed organize attempt; release the slot (with a done
-    mark) after _ORG_MAX_FAILS so a poison task can't wedge the serial
-    pipeline forever."""
+    mark) after max_fails so a poison task can't wedge the serial pipeline
+    forever. Throttle-class failures pass a higher cap: budget starvation
+    is a waiting problem, not a poison task."""
     fails = _to_int(db_get_meta(conn, f"p115:fail:{info_hash}")) + 1
     conn.execute("INSERT OR REPLACE INTO meta(key, value) VALUES (?, ?)",
                  (f"p115:fail:{info_hash}", str(fails)))
-    if fails >= _ORG_MAX_FAILS:
+    if fails >= max_fails:
         log.error("115 整理: %s 连续失败 %d 次，放行任务（不再自动重试）",
                   label, fails)
         conn.execute("INSERT OR REPLACE INTO meta(key, value) VALUES (?, '1')",
                      (f"p115:done:{info_hash}",))
     else:
         log.info("115 整理: %s %s，稍后重试（%d/%d）", label, why, fails,
-                 _ORG_MAX_FAILS)
+                 max_fails)
     conn.commit()
-    if fails >= _ORG_MAX_FAILS:
+    if fails >= max_fails:
         track_del(info_hash)
 
 
@@ -1272,18 +1277,24 @@ def _organize_one(conn, c, task: dict, info_hash: str, stats: dict) -> None:
         target_name = (cfg.get("P115_TARGET_DIR") or "").strip() or "已整理"
         reject = resolve_dir(c, (cfg.get("P115_REJECT_DIR") or "").strip() or "冗余")
         target = resolve_dir(c, target_name)
+        # fs_file shares the throttled fs_files budget: join the queue
+        # instead of firing right after the dir walks spent it (that starved
+        # it into the 5-strike loop)
+        _pace_list(_SWEEP_LIST_GAP)
         try:
             finfo = check_response(c.fs_file(fid, timeout=_TIMEOUT))["data"]
             old = str(finfo.get("file_name") or old)
             is_folder = str(finfo.get("fc")) == "0"
             size = _to_int(finfo.get("size"))
-        except Exception:
-            # fs_files throttled: folder-vs-file is UNKNOWN. Guessing 'file'
-            # renamed and moved the whole download FOLDER as if it were the
-            # feature — the real video inside stayed unrenamed and every ad
-            # traveled along (已整理/X/X.mp4/广告…, 拒收 0). Retry on a
-            # later pass instead of ever guessing.
-            _org_fail_bump(conn, info_hash, old, "文件信息暂不可用（限流）")
+        except Exception as exc:
+            # folder-vs-file is UNKNOWN and must not be guessed (see the
+            # comment above is_folder). Retry: budget starvation is a wait,
+            # not a poison task — 15 strikes ≈ 7.5 min before giving up,
+            # and the error text says whether it IS throttling (empty
+            # answer) or something else (auth / deleted file / ...)
+            _org_fail_bump(conn, info_hash, old,
+                           f"文件信息获取失败[{type(exc).__name__}: {exc}]",
+                           max_fails=_ORG_MAX_FAILS * 3)
             return
         base = _sanitize_name(f"{code} {title}")
         if is_folder:
@@ -1476,14 +1487,10 @@ def _sweep_folder(conn, c, fid: int, name: str, target: int, reject: int,
         _is_part_file(n) for _f, n, _s, _p in candidates)
 
     def nested(base: str) -> int:
-        # per-movie sub-dir under the target root. Paced ONLY on a cache
-        # miss: resolve_dir then walks fs_files listings, while a cached
-        # hit costs nothing — repeat organizes of the same movie (and the
-        # warm 已整理 root) used to burn a full listing gap for nothing
+        # per-movie sub-dir under the target root; resolve_dir itself joins
+        # the fs_files budget on a cache miss, a hit costs nothing
         if not (target_path and base):
             return target
-        if _dir_cached(f"{target_path}/{base}") is None:
-            _pace_list(sleep_s)
         return resolve_dir(c, f"{target_path}/{base}")
 
     if not candidates:
