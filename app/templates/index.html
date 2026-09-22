@@ -281,19 +281,12 @@
     font-size: 13px; color: var(--txt); cursor: pointer; font-family: inherit; }
   .h-btn:hover { border-color: var(--pri); color: var(--pri); }
   .h-btn.alert { border-color: #f0d48a; background: #fff8e6; color: var(--warn); font-weight: 600; }
-  /* desktop: the sidebar already shows the brand — hide the header copy
-     (mobile keeps it: the sidebar there is a hidden drawer) */
-  @media (min-width: 861px) {
-    header.app .logo, header.app .h-brand { display: none; }
-  }
 </style>
 </head>
 <body>
 
 <header class="app">
   <button class="h-burger" onclick="toggleMenu()" aria-label="菜单">≡</button>
-  <img class="logo" src="/static/logo.png" alt="logo">
-  <div class="h-brand"><b>JavBus Crawler</b> <small id="hd-ver">v{{ version }}</small></div>
   <div class="h-actions">
     <button class="h-btn" onclick="activatePage('logs')">运行日志</button>
   </div>
