@@ -684,6 +684,22 @@ def test_sweep_folder_ad_only_subdirs_junked(monkeypatch):
         conn.close()
 
 
+def test_sweep_defers_while_organizing():
+    """目录扫描与任务整理共用同一把锁：整理进行中扫描必须让路——否则两条
+    路径并发处理同一文件夹，各自创建 已整理/番号 剧名/（115 允许同名目录
+    并存）产生重复目录与重复重命名/移动日志。"""
+    p115._organize_lock.acquire()  # pretend an organize pass is running
+    try:
+        stats = p115.sweep_existing(sleep_s=0)
+        assert stats.get("busy") is True
+        assert p115.sweep_busy() is False  # early return reset the flag
+    finally:
+        p115._organize_lock.release()
+    # lock free again -> a real pass runs (throttled-empty listing is fine)
+    stats = p115.sweep_existing(sleep_s=0)
+    assert "busy" not in stats
+
+
 def test_gaveup_codes_and_done_mark_release_slot(monkeypatch):
     import json as _json
     import sqlite3

@@ -1642,6 +1642,14 @@ def sweep_existing(sleep_s: float = _SWEEP_LIST_GAP, max_folders: int = 0) -> di
     """
     stats = {"at": int(time.time()), "scanned": 0, "organized": 0,
              "rejected": 0, "skipped": 0, "errors": 0, "duration_s": 0}
+    # Same lock as organize_pass: a task-level organize and a directory sweep
+    # racing on one folder both create 已整理/CODE Title/ (115 permits
+    # same-named dirs) -> duplicate dirs, duplicate renames/moves.
+    if not _organize_lock.acquire(blocking=False):
+        log.info("115 整理已在进行中，跳过本次目录扫描")
+        stats["busy"] = True
+        _sweep_state.update(running=False, finished_at=stats["at"])
+        return stats
     t0 = time.time()
     _sweep_state.update(running=True, started_at=stats["at"], finished_at=0)
     conn = None
@@ -1704,6 +1712,7 @@ def sweep_existing(sleep_s: float = _SWEEP_LIST_GAP, max_folders: int = 0) -> di
                 conn.close()
         except Exception:
             log.exception("保存整理结果失败")
+        _organize_lock.release()
     return stats
 
 
