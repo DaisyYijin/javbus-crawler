@@ -514,6 +514,7 @@ def del_tasks(info_hashes: list[str], *, purge_files: bool = False) -> int:
 _TRACK_PREFIX = "p115:track:"
 _LAST_RELEASE_KEY = "p115:last_release_at"
 _VANISH_GRACE_S = 180  # fresh submissions may lag behind the 115 task list
+_last_prog_log: dict[str, int] = {}  # ih -> ts of the last progress log line
 
 _EXT_STRIP_RE = re.compile(
     r"\.(?:MP4|MKV|AVI|WMV|MOV|TS|M2TS|M2V|ISO|RMVB|RM|FLV|MPG|MPG4|DIVX|H264|SRT|ASS|JPG|PNG|NFO|TXT|URL|HTML?)$", re.I)
@@ -890,6 +891,13 @@ def watch_pass() -> dict:
             if fresh:
                 _track_update(ih, last_percent=pct, last_prog_at=now)
             submitted = int(rec.get("submitted_at") or now)
+            # visibility: a silent multi-minute download looks exactly like a
+            # wedged pipeline — surface progress once a minute per record
+            if now - _last_prog_log.get(ih, 0) >= 60:
+                _last_prog_log[ih] = now
+                log.info("115 下载中 %s: %s %.0f%%（已 %d 分钟，上限 %d）",
+                         rec.get("code"), rec.get("name"), float(pct),
+                         (now - submitted) // 60, max_min)
             if max_min > 0 and now - submitted > max_min * 60:
                 log.info("115 任务超时 %s: %s %.8s 已下载 %d 分钟（上限 %d），换磁力",
                          rec.get("code"), rec.get("name"), ih,

@@ -47,6 +47,7 @@ DEFAULTS: dict = {
     "P115_DL_MAX_RETRIES": 3,         # magnet swaps before giving up
     "P115_DL_INTERVAL_SEC": 0,        # cooldown seconds between movies (0 = off)
     "P115_LIST_GAP_SEC": 0,           # fs listing gap override, s (0 = default 55)
+    "CFG_VER": 2,                     # config schema version (for migrations)
 }
 
 # Types allowed per key, for validation on save.
@@ -81,6 +82,7 @@ _TYPES = {
     "P115_DL_MAX_RETRIES": int,
     "P115_DL_INTERVAL_SEC": int,
     "P115_LIST_GAP_SEC": int,
+    "CFG_VER": int,
 }
 
 _lock = threading.RLock()  # reentrant: save() holds it and calls load()
@@ -116,6 +118,7 @@ def load() -> dict:
 def _read_config_file() -> dict:
     cfg = dict(DEFAULTS)
     os.makedirs(DATADIR, exist_ok=True)
+    migrated = False
     if os.path.exists(CONFIG_PATH):
         try:
             with open(CONFIG_PATH, encoding="utf-8") as fh:
@@ -133,6 +136,18 @@ def _read_config_file() -> dict:
                             max(0, int(stored["P115_DL_INTERVAL_MIN"])) * 60
                     except (TypeError, ValueError):
                         pass
+                try:
+                    cfg_ver = int(stored.get("CFG_VER") or 0)
+                except (TypeError, ValueError):
+                    cfg_ver = 0
+                if cfg_ver < 2:
+                    # v0.10.90 retired the 120-minute per-magnet cap default
+                    # (user request: 2 min). A stored 120 from before is the
+                    # RETIRED default, not a deliberate choice — swap it.
+                    if cfg.get("P115_DL_MAX_MIN") == 120:
+                        cfg["P115_DL_MAX_MIN"] = 2
+                    cfg["CFG_VER"] = 2
+                    migrated = True
         except (OSError, ValueError) as exc:
             log = logging.getLogger(__name__)
             log.error("配置文件损坏，已回退默认值（原文件已备份为 config.json.bak）: %s", exc)
@@ -140,6 +155,16 @@ def _read_config_file() -> dict:
                 shutil.copy2(CONFIG_PATH, CONFIG_PATH + ".bak")
             except OSError:
                 pass
+    if migrated:
+        # persist the migration so later deliberate changes (even back to
+        # 120) survive: CFG_VER==2 marks it as done
+        try:
+            tmp = CONFIG_PATH + ".tmp"
+            with open(tmp, "w", encoding="utf-8") as fh:
+                json.dump(cfg, fh, ensure_ascii=False, indent=2)
+            os.replace(tmp, CONFIG_PATH)
+        except OSError:
+            pass
     return cfg
 
 

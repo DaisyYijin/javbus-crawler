@@ -53,6 +53,28 @@ def test_genre_validation():
         settings.save({"GENRE_UNCENSORED": "%%%"})
 
 
+def test_dl_max_min_migration_once():
+    """v0.10.90 退役了 120 分钟默认：存量为 120 的旧配置自动换成 2；
+    迁移一次性落盘（CFG_VER=2）——之后用户故意改回 120 不会被再次迁移。"""
+    import json as _json
+    import time as _time
+
+    settings.save({"P115_DL_MAX_MIN": 120})
+    with open(settings.CONFIG_PATH, "r", encoding="utf-8") as fh:
+        stored = _json.load(fh)
+    stored.pop("CFG_VER", None)  # pretend the file predates the migration
+    stored["P115_DL_MAX_MIN"] = 120
+    _time.sleep(0.02)
+    with open(settings.CONFIG_PATH, "w", encoding="utf-8") as fh:
+        _json.dump(stored, fh)
+    assert settings.load()["P115_DL_MAX_MIN"] == 2      # migrated
+    with open(settings.CONFIG_PATH, "r", encoding="utf-8") as fh:
+        assert _json.load(fh)["CFG_VER"] == 2           # persisted marker
+    settings.save({"P115_DL_MAX_MIN": 120})             # deliberate change
+    assert settings.load()["P115_DL_MAX_MIN"] == 120    # survives reload
+    settings.save({"P115_DL_MAX_MIN": 2})
+
+
 def test_tag_filter_mode_legacy_migration():
     assert settings.save({"TAG_FILTER_MODE": "all"})["TAG_FILTER_MODE"] == "mark"
     assert settings.save({"TAG_FILTER_MODE": "only"})["TAG_FILTER_MODE"] == "only"
